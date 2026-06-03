@@ -875,7 +875,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[derive(serde::Serialize)]",
         )
         .type_attribute(
-            "forge.SpdmListAttestationsResponse",
+            "forge.SpdmGetAttestationMachineResponse",
+            "#[derive(serde::Serialize)]",
+        )
+        .type_attribute(
+            "forge.SpdmListAttestationMachinesResponse",
+            "#[derive(serde::Serialize)]",
+        )
+        .type_attribute(
+            "forge.SpdmMachineAttestationStatus",
             "#[derive(serde::Serialize)]",
         )
         .type_attribute(
