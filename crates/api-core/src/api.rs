@@ -2306,6 +2306,13 @@ impl Forge for Api {
         crate::handlers::machine_validation::get_machine_validation_attempt(self, request).await
     }
 
+    async fn heartbeat_machine_validation_run(
+        &self,
+        request: Request<rpc::MachineValidationHeartbeatRequest>,
+    ) -> Result<Response<rpc::MachineValidationHeartbeatResponse>, Status> {
+        crate::handlers::machine_validation::heartbeat_machine_validation_run(self, request).await
+    }
+
     async fn admin_power_control(
         &self,
         request: Request<rpc::AdminPowerControlRequest>,
