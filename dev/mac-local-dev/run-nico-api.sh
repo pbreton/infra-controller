@@ -136,7 +136,10 @@ fi
 # -----------------------------------------------------------------------------
 # Environment
 # -----------------------------------------------------------------------------
-export NICO_WEB_AUTH_TYPE="${NICO_WEB_AUTH_TYPE:-none}"
+# api-web currently reads CARBIDE_WEB_AUTH_TYPE; keep both vars in sync during rename.
+WEB_AUTH_TYPE="${CARBIDE_WEB_AUTH_TYPE:-${NICO_WEB_AUTH_TYPE:-none}}"
+export NICO_WEB_AUTH_TYPE="$WEB_AUTH_TYPE"
+export CARBIDE_WEB_AUTH_TYPE="$WEB_AUTH_TYPE"
 export DATABASE_URL="postgresql://postgres:admin@localhost"
 export VAULT_ADDR="$VAULT_ADDR"
 # Vault runs without TLS in local dev (HTTP). The code requires VAULT_CACERT to
@@ -165,7 +168,8 @@ fi
 # We rewrite those paths to absolute ones in a throwaway /tmp copy so the
 # binary is always given correct paths regardless of CWD.
 # -----------------------------------------------------------------------------
-NICO_TMP_CONFIG="/tmp/nico-api-config-$$.toml"
+NICO_TMP_CONFIG="$(mktemp "${TMPDIR:-/tmp}/nico-api-config.XXXXXX.toml")" || die "Failed to create temporary config file"
+trap 'rm -f "$NICO_TMP_CONFIG"' EXIT
 sed "s|= \"dev/|= \"$REPO_ROOT/dev/|g" \
   "$REPO_ROOT/dev/mac-local-dev/nico-api-config.toml" > "$NICO_TMP_CONFIG"
 ok "Resolved config written to $NICO_TMP_CONFIG"
