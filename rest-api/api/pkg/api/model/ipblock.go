@@ -11,10 +11,12 @@ import (
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	validationis "github.com/go-ozzo/ozzo-validation/v4/is"
+	"github.com/google/uuid"
 
 	"github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/model/util"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	ipam "github.com/NVIDIA/infra-controller/rest-api/ipam"
+	corev1 "github.com/NVIDIA/infra-controller/rest-api/proto/core/gen/v1"
 )
 
 const (
@@ -160,6 +162,8 @@ func (ipbur APIIPBlockUpdateRequest) Validate() error {
 
 // APIIPBlock is the data structure to capture API representation of an IPBlock
 type APIIPBlock struct {
+	// Managed distinguishes provider-managed allocations from tenant-created roots.
+	Managed bool `json:"managed"`
 	// ID is the unique UUID v4 identifier for the IPBlock
 	ID string `json:"id"`
 	// Name is the name of the IPBlock
@@ -201,6 +205,7 @@ type APIIPBlock struct {
 // NewAPIIPBlock accepts a DB layer IPBlock object returns an API layer object
 func NewAPIIPBlock(dbipb *cdbm.IPBlock, dbsds []cdbm.StatusDetail, dbpu *ipam.Usage) *APIIPBlock {
 	apiIPBlock := APIIPBlock{
+		Managed:                  dbipb.Managed,
 		ID:                       dbipb.ID.String(),
 		Name:                     dbipb.Name,
 		Description:              dbipb.Description,
@@ -304,4 +309,44 @@ type APIIPBlockUsageStats struct {
 	AvailableSmallestPrefixes uint64 `json:"availableSmallestPrefixes"`
 	// AcquiredPrefixes the number of acquired prefixes from the IPBlock
 	AcquiredPrefixes uint64 `json:"acquiredPrefixes"`
+}
+
+// ValidateTenant restricts tenant-created roots to Core's private IPv4 contract.
+func (r *APIIPBlockCreateRequest) ValidateTenant() error {
+	err := r.Validate()
+	if err != nil {
+		return err
+	}
+	prefix := netip.MustParsePrefix(fmt.Sprintf("%s/%d", r.Prefix, r.PrefixLength))
+	if r.RoutingType != cdbm.IPBlockRoutingTypeDatacenterOnly || !prefix.Addr().Is4() || prefix.Bits() < 8 || prefix.Bits() > 31 || !prefix.Addr().IsPrivate() {
+		return errors.New("tenant IP Blocks require DatacenterOnly RFC1918 IPv4 /8 through /31")
+	}
+	// Aligned CIDRs beginning inside a private range must not extend beyond it.
+	private := false
+	for _, cidr := range []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"} {
+		root := netip.MustParsePrefix(cidr)
+		private = private || (root.Bits() <= prefix.Bits() && root.Contains(prefix.Addr()))
+	}
+	if !private {
+		return errors.New("tenant IP Block must be wholly contained in RFC1918 space")
+	}
+	return validation.Validate(r.Description, validation.Length(0, 1024))
+}
+
+// ValidateTenant checks metadata accepted by Core without changing provider validation.
+func (r APIIPBlockUpdateRequest) ValidateTenant() error {
+	err := r.Validate()
+	if err != nil {
+		return err
+	}
+	return validation.Validate(r.Description, validation.Length(0, 1024))
+}
+
+// ToSitePrefixCreationRequest maps a validated request to a tenant-owned Core root.
+func (r APIIPBlockCreateRequest) ToSitePrefixCreationRequest(id uuid.UUID, org string) *corev1.SitePrefixCreationRequest {
+	metadata := &corev1.Metadata{Name: r.Name}
+	if r.Description != nil {
+		metadata.Description = *r.Description
+	}
+	return &corev1.SitePrefixCreationRequest{Id: &corev1.SitePrefixId{Value: id.String()}, TenantOrganizationId: org, Prefix: fmt.Sprintf("%s/%d", r.Prefix, r.PrefixLength), Metadata: metadata}
 }

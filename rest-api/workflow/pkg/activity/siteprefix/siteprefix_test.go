@@ -360,15 +360,23 @@ func TestManageSitePrefix_UpdateSitePrefixesInDB(t *testing.T) {
 			prefix.Status.Authority = corev1.SitePrefixAuthority_SITE_PREFIX_AUTHORITY_TENANT_MANAGED
 			prefix.Config.TenantOrganizationId = &f.tenant.Org
 			inventory := testInventory(prefix)
-			for index, status := range []string{cdbm.IPBlockStatusProvisioning, cdbm.IPBlockStatusReady, cdbm.IPBlockStatusDeleting, cdbm.IPBlockStatusError} {
-				prefix.Status.LifecycleState = corev1.SitePrefixLifecycleState(index + 1)
+			for index, state := range []struct {
+				core corev1.SitePrefixLifecycleState
+				rest string
+			}{
+				{corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_PROVISIONING, cdbm.IPBlockStatusProvisioning},
+				{corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_ERROR, cdbm.IPBlockStatusError},
+				{corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_READY, cdbm.IPBlockStatusReady},
+				{corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_DELETING, cdbm.IPBlockStatusDeleting},
+			} {
+				prefix.Status.LifecycleState = state.core
 				inventory.Timestamp = timestamppb.New(time.Now().Add(time.Duration(index) * time.Millisecond))
 				require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
 				blocks := f.blocks(t)
 				require.Len(t, blocks, 1)
 				require.Equal(t, &f.tenant.ID, blocks[0].TenantID)
 				require.False(t, blocks[0].Managed)
-				require.Equal(t, status, blocks[0].Status)
+				require.Equal(t, state.rest, blocks[0].Status)
 			}
 			other := util.TestBuildTenant(t, f.session, "other", "other", nil, &cdbm.User{ID: f.site.CreatedBy})
 			prefix.Id.Value = uuid.NewString()

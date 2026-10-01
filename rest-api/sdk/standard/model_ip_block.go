@@ -14,15 +14,19 @@ API version: 2.0.0
 package standard
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
 // checks if the IpBlock type satisfies the MappedNullable interface at compile time
 var _ MappedNullable = &IpBlock{}
 
-// IpBlock IP block contains information about an IPv4 address pool owned by the Infrastructure Provider and assigned as an overlay network for a particular Site. It is equivalent to Network Resource in product terminology.
+// IpBlock An address range at a Site. Managed blocks are provider roots or tenant allocations; unmanaged blocks are private tenant-created Core SitePrefixes.
 type IpBlock struct {
+	// True for provider roots and blocks allocated to tenants; false for tenant-created blocks. Always present, including false.
+	Managed bool `json:"managed"`
 	// Unique UUID v4 identifier for the IP Block
 	Id *string `json:"id,omitempty"`
 	// Name of the IP Block
@@ -55,12 +59,15 @@ type IpBlock struct {
 	Updated *time.Time `json:"updated,omitempty"`
 }
 
+type _IpBlock IpBlock
+
 // NewIpBlock instantiates a new IpBlock object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewIpBlock() *IpBlock {
+func NewIpBlock(managed bool) *IpBlock {
 	this := IpBlock{}
+	this.Managed = managed
 	return &this
 }
 
@@ -70,6 +77,30 @@ func NewIpBlock() *IpBlock {
 func NewIpBlockWithDefaults() *IpBlock {
 	this := IpBlock{}
 	return &this
+}
+
+// GetManaged returns the Managed field value
+func (o *IpBlock) GetManaged() bool {
+	if o == nil {
+		var ret bool
+		return ret
+	}
+
+	return o.Managed
+}
+
+// GetManagedOk returns a tuple with the Managed field value
+// and a boolean to check if the value has been set.
+func (o *IpBlock) GetManagedOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Managed, true
+}
+
+// SetManaged sets field value
+func (o *IpBlock) SetManaged(v bool) {
+	o.Managed = v
 }
 
 // GetId returns the Id field value if set, zero value otherwise.
@@ -584,6 +615,7 @@ func (o IpBlock) MarshalJSON() ([]byte, error) {
 
 func (o IpBlock) ToMap() (map[string]interface{}, error) {
 	toSerialize := map[string]interface{}{}
+	toSerialize["managed"] = o.Managed
 	if !IsNil(o.Id) {
 		toSerialize["id"] = o.Id
 	}
@@ -630,6 +662,42 @@ func (o IpBlock) ToMap() (map[string]interface{}, error) {
 		toSerialize["updated"] = o.Updated
 	}
 	return toSerialize, nil
+}
+
+func (o *IpBlock) UnmarshalJSON(data []byte) (err error) {
+	// This validates that all required properties are included in the JSON object
+	// by unmarshalling the object into a generic map with string keys and checking
+	// that every required field exists as a key in the generic map.
+	requiredProperties := []string{
+		"managed",
+	}
+
+	allProperties := make(map[string]interface{})
+
+	err = json.Unmarshal(data, &allProperties)
+
+	if err != nil {
+		return err
+	}
+
+	for _, requiredProperty := range requiredProperties {
+		if value, exists := allProperties[requiredProperty]; !exists || value == nil {
+			return fmt.Errorf("no value given for required property %v", requiredProperty)
+		}
+	}
+
+	varIpBlock := _IpBlock{}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	err = decoder.Decode(&varIpBlock)
+
+	if err != nil {
+		return err
+	}
+
+	*o = IpBlock(varIpBlock)
+
+	return err
 }
 
 type NullableIpBlock struct {

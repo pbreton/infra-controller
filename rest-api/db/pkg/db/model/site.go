@@ -53,6 +53,7 @@ var (
 // Config stays flat so PostgreSQL JSONB concatenation can apply partial
 // updates without replacing unrelated settings.
 type SiteConfig struct {
+	TenantSitePrefix                 bool `json:"tenant_site_prefix"`
 	NetworkSecurityGroup             bool `json:"network_security_group"`
 	NativeNetworking                 bool `json:"native_networking"`
 	VpcSlaac                         bool `json:"vpc_slaac"`
@@ -149,6 +150,7 @@ type SiteCreateInput struct {
 }
 
 type SiteConfigUpdateInput struct {
+	TenantSitePrefix                 *bool `json:"tenant_site_prefix,omitempty"`
 	NetworkSecurityGroup             *bool `json:"network_security_group,omitempty"`
 	NativeNetworking                 *bool `json:"native_networking,omitempty"`
 	VpcSlaac                         *bool `json:"vpc_slaac,omitempty"`
