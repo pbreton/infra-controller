@@ -35,6 +35,7 @@ func TestNewAPIRoutes(t *testing.T) {
 
 	routeCount := map[string]int{
 		"metadata":                  1,
+		"site-prefix":               5,
 		"credential":                4,
 		"measured-boot":             6,
 		"site-explorer":             2,
@@ -116,6 +117,14 @@ func TestNewAPIRoutes(t *testing.T) {
 
 			for _, route := range got {
 				assert.Contains(t, route.Path, "/org/:orgName/"+cfg.GetAPIName())
+			}
+
+			sitePrefixPath := "/org/:orgName/" + cfg.GetAPIName() + "/site-prefix"
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				assertRouteExists(t, got, method, sitePrefixPath)
+			}
+			for _, method := range []string{http.MethodGet, http.MethodPatch, http.MethodDelete} {
+				assertRouteExists(t, got, method, sitePrefixPath+"/:id")
 			}
 
 			expectedInventoryBulkPaths := []string{

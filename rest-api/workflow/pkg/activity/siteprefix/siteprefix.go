@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"reflect"
 	"unicode/utf8"
 
 	cutil "github.com/NVIDIA/infra-controller/rest-api/common/pkg/util"
@@ -218,6 +219,10 @@ func (manager ManageSitePrefix) reconcile(ctx context.Context, tx *cdb.Tx, site 
 	if tenantID != nil || prefix.Metadata.Description != "" {
 		description = &prefix.Metadata.Description
 	}
+	coreStatus := status
+	if tenantID != nil && block != nil && block.SitePrefixRetirementRequestedAt != nil {
+		status = cdbm.IPBlockStatusDeleting
+	}
 	previousStatus := ""
 	if block == nil {
 		// Only operator roots need a cloud-IPAM entry here; tenant prefixes are
@@ -260,6 +265,28 @@ func (manager ManageSitePrefix) reconcile(ctx context.Context, tx *cdb.Tx, site 
 	}
 	if err != nil {
 		return false, err
+	}
+	if tenantID != nil {
+		state := cdbm.SitePrefixState{CreateSettled: true}
+		if block.SitePrefixState != nil {
+			state = *block.SitePrefixState
+		}
+		state.CoreStatus = &coreStatus
+		quota := prefix.Status.Quota
+		if quota != nil {
+			state.Quota = &cdbm.SitePrefixQuota{Used: quota.Used, Limit: quota.Limit}
+		}
+		if state.Operation == nil {
+			state.RetryMessage = nil
+		}
+		// Reports follow arrival order and cannot settle a pending mutation.
+		// Preserve idempotent replay without introducing collection timestamps.
+		if !reflect.DeepEqual(block.SitePrefixState, &state) {
+			_, err = dao.Update(ctx, tx, cdbm.IPBlockUpdateInput{IPBlockID: block.ID, SitePrefixState: &state})
+			if err != nil {
+				return false, err
+			}
+		}
 	}
 	// Record the initial status or a change from the stored status.
 	if previousStatus != status {

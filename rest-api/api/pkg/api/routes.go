@@ -24,6 +24,12 @@ func NewAPIRoutes(dbSession *cdb.Session, tc tClient.Client, tnc tClient.Namespa
 	apiPathPrefix := "/org/:orgName/" + apiName
 
 	apiRoutes := []Route{
+		// Tenant-managed SitePrefix lifecycle.
+		{Path: apiPathPrefix + "/site-prefix", Method: http.MethodPost, Handler: apiHandler.NewCreateSitePrefixHandler(dbSession, scp)},
+		{Path: apiPathPrefix + "/site-prefix", Method: http.MethodGet, Handler: apiHandler.NewGetAllSitePrefixHandler(dbSession, scp)},
+		{Path: apiPathPrefix + "/site-prefix/:id", Method: http.MethodGet, Handler: apiHandler.NewGetSitePrefixHandler(dbSession, scp)},
+		{Path: apiPathPrefix + "/site-prefix/:id", Method: http.MethodPatch, Handler: apiHandler.NewUpdateSitePrefixHandler(dbSession, scp)},
+		{Path: apiPathPrefix + "/site-prefix/:id", Method: http.MethodDelete, Handler: apiHandler.NewDeleteSitePrefixHandler(dbSession, scp)},
 		// Metadata endpoint
 		{
 			Path:    apiPathPrefix + "/metadata",

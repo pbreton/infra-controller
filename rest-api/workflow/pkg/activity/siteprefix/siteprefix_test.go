@@ -94,6 +94,81 @@ func TestManageSitePrefix_UpdateSitePrefixesInDB(t *testing.T) {
 		name  string
 		check func(*testing.T, fixture)
 	}{
+		{"tenant reports preserve pending recovery and retirement without collection metadata", func(t *testing.T, f fixture) {
+			prefix := testPrefix()
+			prefix.Status.Authority = corev1.SitePrefixAuthority_SITE_PREFIX_AUTHORITY_TENANT_MANAGED
+			prefix.Config.TenantOrganizationId = &f.tenant.Org
+			inventory := testInventory(prefix)
+			inventory.Timestamp, inventory.InventoryPage = nil, nil
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			block := f.blocks(t)[0]
+			operation := &cdbm.SitePrefixOperation{Kind: cdbm.SitePrefixCreate, WorkflowID: "unknown-create", CreatedAt: cdb.GetCurTime()}
+			message := "Retry the original create"
+			state := &cdbm.SitePrefixState{Operation: operation, RetryMessage: &message}
+			_, err := cdbm.NewIPBlockDAO(f.session).Update(ctx, nil, cdbm.IPBlockUpdateInput{IPBlockID: block.ID, SitePrefixState: state})
+			require.NoError(t, err)
+			retired, err := cdbm.NewIPBlockDAO(f.session).RequestSitePrefixRetirement(ctx, nil, block.ID, f.tenant.ID)
+			require.NoError(t, err)
+			prefix.Status.Quota = &corev1.SitePrefixQuotaUsage{Used: 1, Limit: 8}
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			persisted := f.blocks(t)[0]
+			require.Equal(t, cdbm.IPBlockStatusDeleting, persisted.Status)
+			require.Equal(t, retired.SitePrefixRetirementRequestedAt, persisted.SitePrefixRetirementRequestedAt)
+			require.Equal(t, operation.WorkflowID, persisted.SitePrefixState.Operation.WorkflowID)
+			require.False(t, persisted.SitePrefixState.CreateSettled)
+			require.Equal(t, &message, persisted.SitePrefixState.RetryMessage)
+			require.Equal(t, cutil.GetPtr(cdbm.IPBlockStatusReady), persisted.SitePrefixState.CoreStatus)
+			require.Equal(t, &cdbm.SitePrefixQuota{Used: 1, Limit: 8}, persisted.SitePrefixState.Quota)
+			// Replaying this report does not rewrite the block.
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			require.Equal(t, persisted.Updated, f.blocks(t)[0].Updated)
+		}},
+		{"tenant reports follow arrival order without collection metadata authority", func(t *testing.T, f fixture) {
+			prefix := testPrefix()
+			prefix.Status.Authority = corev1.SitePrefixAuthority_SITE_PREFIX_AUTHORITY_TENANT_MANAGED
+			prefix.Config.TenantOrganizationId = &f.tenant.Org
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, testInventory(prefix)))
+			inventory := testInventory(prefix)
+			inventory.Timestamp = timestamppb.New(time.Now().Add(-time.Hour))
+			prefix.Metadata.Name = "delayed-report"
+			prefix.Status.LifecycleState = corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_PROVISIONING
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			persisted := f.blocks(t)[0]
+			require.Equal(t, "delayed-report", persisted.Name)
+			require.Equal(t, cdbm.IPBlockStatusProvisioning, persisted.Status)
+			require.NotNil(t, persisted.SitePrefixState)
+			require.Equal(t, cutil.GetPtr(cdbm.IPBlockStatusProvisioning), persisted.SitePrefixState.CoreStatus)
+		}},
+		{"absent tenant roots remain visible regardless of apparent collection completeness", func(t *testing.T, f fixture) {
+			prefix := testPrefix()
+			prefix.Status.Authority = corev1.SitePrefixAuthority_SITE_PREFIX_AUTHORITY_TENANT_MANAGED
+			prefix.Config.TenantOrganizationId = &f.tenant.Org
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, testInventory(prefix)))
+			block := f.blocks(t)[0]
+			old := cdb.GetCurTime().Add(-time.Hour)
+			for _, retired := range []bool{false, true} {
+				state := &cdbm.SitePrefixState{CreateSettled: true}
+				status := cdbm.IPBlockStatusProvisioning
+				if retired {
+					state.RetirementSettledAt = &old
+					status = cdbm.IPBlockStatusDeleting
+					_, err := cdbm.NewIPBlockDAO(f.session).RequestSitePrefixRetirement(ctx, nil, block.ID, f.tenant.ID)
+					require.NoError(t, err)
+				}
+				_, err := cdbm.NewIPBlockDAO(f.session).Update(ctx, nil, cdbm.IPBlockUpdateInput{IPBlockID: block.ID, Status: &status, SitePrefixState: state})
+				require.NoError(t, err)
+				_, err = f.session.DB.NewUpdate().TableExpr("ip_block").Set("created = ?", old).Set("updated = ?", old).Where("id = ?", block.ID).Exec(ctx)
+				require.NoError(t, err)
+				inventory := &corev1.SitePrefixInventory{InventoryStatus: corev1.InventoryStatus_INVENTORY_STATUS_SUCCESS,
+					Timestamp: timestamppb.Now(), InventoryPage: &corev1.InventoryPage{CurrentPage: 1, TotalPages: 1, PageSize: 25}}
+				require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+				persisted := f.blocks(t)[0]
+				require.Nil(t, persisted.Deleted)
+				require.Equal(t, status, persisted.Status)
+				require.Equal(t, state, persisted.SitePrefixState)
+				require.True(t, old.Equal(persisted.Updated))
+			}
+		}},
 		{"nil inventory is rejected", func(t *testing.T, f fixture) {
 			require.ErrorContains(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, nil), "nil inventory")
 		}},

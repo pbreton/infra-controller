@@ -16,6 +16,8 @@ servers:
   - url: 'https://nico-rest-api.nico.svc.cluster.local'
     description: Kubernetes Cluster
 tags:
+  - name: Site Prefix
+    description: Tenant-managed private Site address ranges and their lifecycle.
   - name: Getting Started
     description:  |-
       This section provides a quick overview of the API and how to get started.
@@ -374,6 +376,239 @@ tags:
       - `rackLevelAdministration` capability attribute was deprecated in favor of `flow` and was removed on May 13th, 2026 0:00 UTC. Please use `flow` instead.
       - `isRackLevelAdministrationEnabled` query parameter was deprecated in favor of `isFlowEnabled` and was removed on May 13th, 2026 0:00 UTC. Please use `isFlowEnabled` instead.
 paths:
+  /v2/org/{org}/nico/site-prefix:
+    parameters:
+    - &id007
+      name: org
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Name of the Tenant organization.
+    post:
+      operationId: create-site-prefix
+      summary: Create a tenant SitePrefix
+      tags:
+      - Site Prefix
+      description: Requires membership in the path org, Tenant Admin authorization, a Registered Site, and an existing TenantSite
+        relationship. Resources belonging to another tenant are hidden. Commits a durable Provisioning resource before calling
+        Core. Repeating the same tenant/Site/canonical-CIDR request returns the same REST/Core identity and does not change
+        metadata; use PATCH for metadata changes. Responses return 201 and Location, including a durable Error on a definitive
+        Core rejection. An unknown result retains Provisioning and a retry message; retry the original create request to recover
+        the same resource. Inventory reports reconcile individual resources in arrival order; page metadata and collection
+        timestamps do not establish ordering or completeness. Missing reports do not trigger timeout errors. Complete-inventory
+        absence handling is deferred to https://github.com/dsx-ai-factory/infra-controller/issues/5763.
+        New roots require capabilities.tenantSitePrefix=true;
+        matching retries remain available when disabled. Owner, Site, CIDR, authority, routing type, and protocol are server-controlled
+        and immutable.
+      responses:
+        '201':
+          description: Durable SitePrefix lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SitePrefix'
+          headers:
+            Location:
+              description: Item route for the durable resource.
+              schema:
+                type: string
+                example: /v2/org/tenant/nico/site-prefix/497f6eca-6276-4993-bfeb-53cbbbba6f08
+        '400': &id001
+          $ref: '#/components/responses/ValidationError'
+        '403': &id002
+          $ref: '#/components/responses/ForbiddenError'
+        '404': &id003
+          $ref: '#/components/responses/NotFoundError'
+        '409': &id004
+          description: A conflicting mutation or accepted retirement prevents this request; retry the outstanding operation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NICoAPIError'
+        '412': &id005
+          description: The Site capability does not enable new tenant SitePrefixes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NICoAPIError'
+        '500': &id006
+          description: The resource could not be processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NICoAPIError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SitePrefixCreateRequest'
+    get:
+      operationId: get-all-site-prefix
+      summary: Retrieve tenant SitePrefixes
+      tags:
+      - Site Prefix
+      description: Requires membership in the path org, Tenant Admin authorization, a Registered Site, and an existing TenantSite
+        relationship. Resources belonging to another tenant are hidden. Lists only resources at this tenant's attached Registered
+        Sites. Text search matches name, description, and status. Sorts before pagination; default CREATED_ASC with ID ascending
+        as a stable tie-breaker for every ordering. Empty results return an empty array.
+      responses:
+        '200':
+          description: Durable SitePrefix lifecycle state.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SitePrefix'
+          headers:
+            X-Pagination:
+              description: Pagination metadata as JSON.
+              schema:
+                type: string
+                example: '{"pageNumber":1,"pageSize":20,"total":1,"orderBy":"CREATED_ASC"}'
+        '400': *id001
+        '403': *id002
+        '404': *id003
+        '409': *id004
+        '412': *id005
+        '500': *id006
+      parameters:
+      - name: siteId
+        in: query
+        schema:
+          type: string
+          format: uuid
+        description: Filter by an attached Registered Site.
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - Provisioning
+          - Ready
+          - Deleting
+          - Error
+        description: Filter by lifecycle state.
+      - name: query
+        in: query
+        schema:
+          type: string
+        description: Search names, descriptions, and status.
+      - name: pageNumber
+        in: query
+        schema:
+          $ref: '#/components/schemas/PageNumber'
+      - name: pageSize
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: orderBy
+        in: query
+        schema:
+          type: string
+          default: CREATED_ASC
+          enum:
+          - NAME_ASC
+          - NAME_DESC
+          - PREFIX_ASC
+          - PREFIX_DESC
+          - STATUS_ASC
+          - STATUS_DESC
+          - CREATED_ASC
+          - CREATED_DESC
+          - UPDATED_ASC
+          - UPDATED_DESC
+        description: Ordering applied before pagination. Default CREATED_ASC; equal values are ordered by ID ascending.
+  /v2/org/{org}/nico/site-prefix/{id}:
+    parameters:
+    - *id007
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Durable SitePrefix resource ID.
+    get:
+      operationId: get-site-prefix
+      summary: Retrieve a tenant SitePrefix
+      tags:
+      - Site Prefix
+      description: Requires membership in the path org, Tenant Admin authorization, a Registered Site, and an existing TenantSite
+        relationship. Resources belonging to another tenant are hidden. Read access remains available with the Site capability
+        disabled. No site-wide DPU or other-tenant diagnostics are exposed.
+      responses:
+        '200':
+          description: Durable SitePrefix lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SitePrefix'
+        '400': *id001
+        '403': *id002
+        '404': *id003
+        '409': *id004
+        '412': *id005
+        '500': *id006
+    patch:
+      operationId: update-site-prefix
+      summary: Update tenant SitePrefix metadata
+      tags:
+      - Site Prefix
+      description: Requires membership in the path org, Tenant Admin authorization, a Registered Site, and an existing TenantSite
+        relationship. Resources belonging to another tenant are hidden. Only name and description may change. Unknown or immutable
+        fields are rejected. Retirement prevents further updates. A matching retry recovers the outstanding metadata operation;
+        a different update returns 409.
+      responses:
+        '200':
+          description: Durable SitePrefix lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SitePrefix'
+        '400': *id001
+        '403': *id002
+        '404': *id003
+        '409': *id004
+        '412': *id005
+        '500': *id006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SitePrefixUpdateRequest'
+    delete:
+      operationId: delete-site-prefix
+      summary: Retire a tenant SitePrefix
+      tags:
+      - Site Prefix
+      description: Requires membership in the path org, Tenant Admin authorization, a Registered Site, and an existing TenantSite
+        relationship. Resources belonging to another tenant are hidden. Persists retirement intent and returns idempotent 202
+        with status Deleting, including while an earlier create result remains unknown. Retry DELETE to recover pending Core
+        operations. New children are rejected after retirement. The resource remains visible as Deleting even after Core retirement
+        is settled. Final deletion requires authoritative complete-inventory absence handling, deferred to
+        https://github.com/dsx-ai-factory/infra-controller/issues/5763; an omitted ID or an apparently final page never confirms
+        deletion. Earlier Ready inventory cannot undo retirement.
+        Retirement remains available when the Site capability is disabled.
+      responses:
+        '202':
+          description: Durable SitePrefix lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SitePrefix'
+        '400': *id001
+        '403': *id002
+        '404': *id003
+        '409': *id004
+        '412': *id005
+        '500': *id006
   '/v2/org/{org}/nico/service-account/current':
     parameters:
       - schema:
@@ -18121,6 +18356,199 @@ paths:
           $ref: '#/components/responses/GenericHttpError'
 components:
   schemas:
+    SitePrefixCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - siteId
+      - prefix
+      properties:
+        name: &id001
+          type: string
+          minLength: 2
+          maxLength: 256
+          description: ASCII name without leading or trailing whitespace.
+        description: &id002
+          type:
+          - string
+          - 'null'
+          maxLength: 1024
+          description: Optional description. On PATCH, omission or null preserves it; an empty string clears it.
+        siteId:
+          type: string
+          format: uuid
+        prefix:
+          type: string
+          description: Network-aligned IPv4 CIDR wholly inside 10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16, with prefix length
+            /8 through /31. Host bits, IPv6, public ranges, and shared address space are rejected. This is private east/west space,
+            not public-IP ownership or permission to advertise BGP routes.
+      example:
+        name: tenant-root
+        siteId: 60189e9c-7d12-438c-b9ca-6998d9c364b1
+        prefix: 10.0.0.0/24
+        description: null
+      title: SitePrefixCreateRequest
+    SitePrefixUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: *id001
+        description: *id002
+      example:
+        name: renamed-root
+        description: ''
+      title: SitePrefixUpdateRequest
+    SitePrefixQuota:
+      type: object
+      required:
+      - used
+      - limit
+      properties:
+        used:
+          type: integer
+          format: uint32
+          minimum: 0
+        limit:
+          type: integer
+          format: uint32
+          minimum: 0
+      example:
+        used: 1
+        limit: 8
+      title: SitePrefixQuota
+    SitePrefix:
+      type: object
+      x-go-has-nullable-required-properties: true
+      x-go-nullable-required-properties:
+        - description
+        - coreStatus
+        - retryMessage
+        - retirementRequestedAt
+        - quota
+      required:
+      - id
+      - name
+      - description
+      - siteId
+      - tenantId
+      - prefix
+      - authority
+      - protocolVersion
+      - routingType
+      - status
+      - coreStatus
+      - retryMessage
+      - retirementRequestedAt
+      - quota
+      - vpcPrefixIds
+      - statusHistory
+      - created
+      - updated
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        siteId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        prefix:
+          type: string
+        authority:
+          type: string
+          enum:
+          - TenantManaged
+        protocolVersion:
+          type: string
+          enum:
+          - IPv4
+        routingType:
+          type: string
+          enum:
+          - DatacenterOnly
+        status:
+          type: string
+          enum:
+          - Provisioning
+          - Ready
+          - Deleting
+          - Error
+        coreStatus:
+          type:
+          - string
+          - 'null'
+          enum:
+          - Provisioning
+          - Ready
+          - Deleting
+          - Error
+          - null
+          description: Latest observed Core lifecycle; null before a Core response or inventory observation.
+        retryMessage:
+          type:
+          - string
+          - 'null'
+          description: Tenant-safe recovery guidance. An unknown result is not proof that the Core operation failed. Retry the
+            same create, PATCH, or DELETE to recover its persisted operation.
+        retirementRequestedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: First accepted retirement intent. It remains set even when older Core inventory reports Ready.
+        quota:
+          anyOf:
+          - $ref: '#/components/schemas/SitePrefixQuota'
+          - type: 'null'
+          description: Latest Core-reported point-in-time usage for the owning tenant at this Site; null until Core reports it.
+            Admission remains authoritative.
+        vpcPrefixIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Active child VPC Prefix IDs owned by this tenant at this Site. Empty when none are known.
+        statusHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusDetail'
+        created:
+          type: string
+          format: date-time
+        updated:
+          type: string
+          format: date-time
+      example:
+        id: 497f6eca-6276-4993-bfeb-53cbbbba6f08
+        name: tenant-root
+        description: null
+        siteId: 60189e9c-7d12-438c-b9ca-6998d9c364b1
+        tenantId: 720dd013-b5f8-4662-818e-4f2338f7ef72
+        prefix: 10.0.0.0/24
+        authority: TenantManaged
+        protocolVersion: IPv4
+        routingType: DatacenterOnly
+        status: Provisioning
+        coreStatus: Provisioning
+        retryMessage: null
+        retirementRequestedAt: null
+        quota:
+          used: 1
+          limit: 8
+        vpcPrefixIds: []
+        statusHistory: []
+        created: '2026-10-01T12:00:00Z'
+        updated: '2026-10-01T12:00:01Z'
+      title: SitePrefix
     PageNumber:
       title: PageNumber
       type: integer
@@ -20616,6 +21044,12 @@ components:
       type: object
       description: Boolean flags to indicate features supported by a Site
       properties:
+        tenantSitePrefix:
+          type: boolean
+          default: false
+          description: Provider-controlled admission for new tenant-managed SitePrefixes and exact tenant VPC Prefixes. Defaults off.
+            Disabling preserves read, matching retry, and retirement access to existing roots. Omission or null on PATCH preserves
+            the stored value.
         nativeNetworking:
           type: boolean
           description: 'Whether the Site supports native networking'
@@ -20792,6 +21226,13 @@ components:
       type: object
       description: Request to modify Site's capabilities. Partial update allowed, only specify capabilities that should be updated.
       properties:
+        tenantSitePrefix:
+          type:
+          - boolean
+          - 'null'
+          description: Provider-controlled admission for new tenant-managed SitePrefixes and exact tenant VPC Prefixes. Defaults off.
+            Disabling preserves read, matching retry, and retirement access to existing roots. Omission or null on PATCH preserves
+            the stored value.
         nativeNetworking:
           type:
             - boolean

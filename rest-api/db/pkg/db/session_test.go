@@ -169,3 +169,40 @@ func TestSessionAcquireAdvisoryLock(t *testing.T) {
 		})
 	}
 }
+
+func TestSession_AcquireSessionLockConnection(t *testing.T) {
+	cases := []struct {
+		name  string
+		check func(*testing.T, *Session)
+	}{
+		{"lock budget is separate and bounded", func(t *testing.T, session *Session) {
+			ctx := context.Background()
+			for i := int32(0); i < session.sessionLockPool.Config().MaxConns; i++ {
+				conn, err := session.AcquireSessionLockConnection(ctx)
+				require.NoError(t, err)
+				t.Cleanup(conn.Release)
+			}
+			require.Zero(t, session.pool.Stat().AcquiredConns())
+			queryCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			var value int
+			err := session.DB.QueryRowContext(queryCtx, "SELECT 1").Scan(&value)
+			require.NoError(t, err, "lock holders must not prevent ordinary queries")
+			require.Equal(t, 1, value)
+			blockedCtx, cancelBlocked := context.WithTimeout(ctx, 100*time.Millisecond)
+			defer cancelBlocked()
+			conn, err := session.AcquireSessionLockConnection(blockedCtx)
+			if conn != nil {
+				conn.Release()
+			}
+			require.ErrorIs(t, err, context.DeadlineExceeded, "lock connections must stay within their separate budget")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			session := testTxGetTestSession(t)
+			t.Cleanup(session.Close)
+			tc.check(t, session)
+		})
+	}
+}

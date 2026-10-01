@@ -116,6 +116,10 @@ type IPBlock struct {
 	Updated                  time.Time               `bun:"updated,nullzero,notnull,default:current_timestamp"`
 	Deleted                  *time.Time              `bun:"deleted,soft_delete"`
 	CreatedBy                *uuid.UUID              `bun:"created_by,type:uuid"`
+
+	// SitePrefixRetirementRequestedAt records accepted tenant intent independently of Core inventory.
+	SitePrefixRetirementRequestedAt *time.Time       `bun:"site_prefix_retirement_requested_at"`
+	SitePrefixState                 *SitePrefixState `bun:"site_prefix_state,type:jsonb"`
 }
 
 // ContainsPrefix reports whether prefix belongs to this IPBlock.
@@ -171,6 +175,7 @@ type IPBlockCreateInput struct {
 
 // IPBlockUpdateInput input parameters for Update method
 type IPBlockUpdateInput struct {
+	SitePrefixState          *SitePrefixState
 	IPBlockID                uuid.UUID
 	Name                     *string
 	Description              *string
@@ -277,6 +282,8 @@ type IPBlockDAO interface {
 	// LinkSitePrefix attaches a Core SitePrefix ID, treats the same link as a
 	// no-op, and does not allow reassignment.
 	LinkSitePrefix(ctx context.Context, tx *db.Tx, id uuid.UUID, sitePrefixID uuid.UUID) (*IPBlock, error)
+	// RequestSitePrefixRetirement retains the tenant root and its first accepted retirement time.
+	RequestSitePrefixRetirement(ctx context.Context, tx *db.Tx, id, tenantID uuid.UUID) (*IPBlock, error)
 	//
 	Clear(ctx context.Context, tx *db.Tx, input IPBlockClearInput) (*IPBlock, error)
 	//
@@ -583,7 +590,7 @@ func (ipbsd IPBlockSQLDAO) GetAll(ctx context.Context, tx *db.Tx, filter IPBlock
 		return nil, 0, err
 	}
 
-	err = paginator.Query.Limit(paginator.Limit).Offset(paginator.Offset).Scan(ctx)
+	err = paginator.Query.Order("ipb.id ASC").Limit(paginator.Limit).Offset(paginator.Offset).Scan(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -606,6 +613,11 @@ func (ipbsd IPBlockSQLDAO) Update(ctx context.Context, tx *db.Tx, input IPBlockU
 	}
 
 	updatedFields := []string{}
+
+	if input.SitePrefixState != nil {
+		ipb.SitePrefixState = input.SitePrefixState
+		updatedFields = append(updatedFields, "site_prefix_state")
+	}
 
 	if input.Name != nil {
 		ipb.Name = *input.Name
@@ -702,6 +714,29 @@ func (ipbsd IPBlockSQLDAO) LinkSitePrefix(ctx context.Context, tx *db.Tx, id uui
 	}
 
 	return ipb, nil
+}
+
+// RequestSitePrefixRetirement records tenant intent without assuming Core has
+// received it. The caller must settle any outstanding create before calling
+// Core retirement, and confirm retirement before processing inventory absence.
+func (ipbsd IPBlockSQLDAO) RequestSitePrefixRetirement(ctx context.Context, tx *db.Tx, id, tenantID uuid.UUID) (_ *IPBlock, retErr error) {
+	ctx, span := cotel.StartSpan(ctx, "IPBlockDAO.RequestSitePrefixRetirement")
+	defer func() { cotel.EndSpan(span, retErr) }()
+	cotel.SetAttribute(span, attribute.String("id", id.String()))
+
+	ipb := &IPBlock{}
+	now := db.GetCurTime()
+	err := db.GetIDB(tx, ipbsd.dbSession).NewUpdate().Model(ipb).
+		Set("site_prefix_retirement_requested_at = COALESCE(site_prefix_retirement_requested_at, ?)", now).
+		Set("updated = CASE WHEN site_prefix_retirement_requested_at IS NULL THEN ? ELSE updated END", now).
+		Set("status = ?", IPBlockStatusDeleting).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("site_prefix_id IS NOT NULL AND deleted IS NULL").
+		Returning("ipb.*").Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, db.ErrDoesNotExist
+	}
+	return ipb, err
 }
 
 // ClearFromParams sets parameters of an existing IPBlock to null values in db

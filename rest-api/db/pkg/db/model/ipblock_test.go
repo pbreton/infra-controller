@@ -1765,3 +1765,66 @@ func TestIPBlockSQLDAO_LinkSitePrefix(t *testing.T) {
 		})
 	}
 }
+
+func TestIPBlockSQLDAO_RequestSitePrefixRetirement(t *testing.T) {
+	ctx := context.Background()
+	session := testIPBlockInitDB(t)
+	t.Cleanup(session.Close)
+	testIPBlockSetupSchema(t, session)
+	provider := testIPBlockBuildInfrastructureProvider(t, session, "provider")
+	site := testIPBlockBuildSite(t, session, provider, "site")
+	tenant := testIPBlockBuildTenant(t, session, "tenant")
+	dao := NewIPBlockDAO(session)
+	cases := []struct {
+		name             string
+		tenantID, coreID *uuid.UUID
+		requestTenant    uuid.UUID
+		deleted          bool
+		allowed          bool
+	}{
+		{"tenant root", &tenant.ID, cutil.GetPtr(uuid.New()), tenant.ID, false, true},
+		{"other tenant", &tenant.ID, cutil.GetPtr(uuid.New()), uuid.New(), false, false},
+		{"provider root", nil, cutil.GetPtr(uuid.New()), tenant.ID, false, false},
+		{"allocation", &tenant.ID, nil, tenant.ID, false, false},
+		{"deleted root", &tenant.ID, cutil.GetPtr(uuid.New()), tenant.ID, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			block, err := dao.Create(ctx, nil, IPBlockCreateInput{
+				Name: tc.name, SiteID: site.ID, InfrastructureProviderID: provider.ID,
+				TenantID: tc.tenantID, SitePrefixID: tc.coreID, Prefix: "10.0.0.0", PrefixLength: 24,
+				ProtocolVersion: IPBlockProtocolVersionV4, RoutingType: IPBlockRoutingTypeDatacenterOnly,
+				Status: IPBlockStatusProvisioning,
+			})
+			require.NoError(t, err)
+			if tc.deleted {
+				require.NoError(t, dao.Delete(ctx, nil, block.ID))
+			}
+			retired, err := dao.RequestSitePrefixRetirement(ctx, nil, block.ID, tc.requestTenant)
+			if !tc.allowed {
+				require.ErrorIs(t, err, db.ErrDoesNotExist)
+				if !tc.deleted {
+					persisted, err := dao.GetByID(ctx, nil, block.ID, nil)
+					require.NoError(t, err)
+					require.Equal(t, IPBlockStatusProvisioning, persisted.Status)
+					require.Nil(t, persisted.SitePrefixRetirementRequestedAt)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, IPBlockStatusDeleting, retired.Status)
+			require.NotNil(t, retired.SitePrefixRetirementRequestedAt)
+			require.Nil(t, retired.Deleted)
+			require.Equal(t, block.ID, retired.ID)
+			require.Equal(t, block.SitePrefixID, retired.SitePrefixID)
+			retried, err := dao.RequestSitePrefixRetirement(ctx, nil, block.ID, tc.requestTenant)
+			require.NoError(t, err)
+			require.True(t, retired.SitePrefixRetirementRequestedAt.Equal(*retried.SitePrefixRetirementRequestedAt))
+			require.True(t, retired.Updated.Equal(retried.Updated))
+			persisted, err := dao.GetByID(ctx, nil, block.ID, nil)
+			require.NoError(t, err)
+			require.Equal(t, IPBlockStatusDeleting, persisted.Status)
+			require.True(t, retired.SitePrefixRetirementRequestedAt.Equal(*persisted.SitePrefixRetirementRequestedAt))
+		})
+	}
+}

@@ -119,6 +119,8 @@ type APIClient struct {
 
 	SiteExplorerAPI *SiteExplorerAPIService
 
+	SitePrefixAPI *SitePrefixAPIService
+
 	SpectrumXPartitionAPI *SpectrumXPartitionAPIService
 
 	SubnetAPI *SubnetAPIService
@@ -196,6 +198,7 @@ func NewAPIClient(cfg *Configuration) *APIClient {
 	c.ServiceAccountAPI = (*ServiceAccountAPIService)(&c.common)
 	c.SiteAPI = (*SiteAPIService)(&c.common)
 	c.SiteExplorerAPI = (*SiteExplorerAPIService)(&c.common)
+	c.SitePrefixAPI = (*SitePrefixAPIService)(&c.common)
 	c.SpectrumXPartitionAPI = (*SpectrumXPartitionAPIService)(&c.common)
 	c.SubnetAPI = (*SubnetAPIService)(&c.common)
 	c.TaskAPI = (*TaskAPIService)(&c.common)

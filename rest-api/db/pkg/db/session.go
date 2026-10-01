@@ -20,10 +20,11 @@ import (
 
 // Session is a wrapper for an ORM DB object
 type Session struct {
-	DBName       string
-	DB           *bun.DB
-	pool         *pgxpool.Pool
-	errorChecker ErrorChecker
+	DBName          string
+	DB              *bun.DB
+	pool            *pgxpool.Pool
+	sessionLockPool *pgxpool.Pool
+	errorChecker    ErrorChecker
 }
 
 // NewSession creates and returns a new session object using pgx v5 + pgxpool.
@@ -49,6 +50,17 @@ func NewSessionFromConfig(ctx context.Context, c Config) (*Session, error) {
 		return nil, err
 	}
 
+	// Session locks may span a Core call. Their bounded pool must be separate
+	// from query connections needed to persist the outcome of that call.
+	lockConfig := pool.Config()
+	lockConfig.MaxConns = 4
+	lockConfig.MinConns = 0
+	sessionLockPool, err := pgxpool.NewWithConfig(ctx, lockConfig)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+
 	// NOTE: WithDiscardUnknownColumns is recommended to be used in production environments.
 	// Reference: https://bun.uptrace.dev/guide/running-bun-in-production.html
 	db := bun.NewDB(stdlib.OpenDBFromPool(pool), pgdialect.New(), bun.WithDiscardUnknownColumns())
@@ -58,10 +70,11 @@ func NewSessionFromConfig(ctx context.Context, c Config) (*Session, error) {
 	}
 
 	return &Session{
-		DBName:       c.DBName,
-		DB:           db,
-		pool:         pool,
-		errorChecker: &PostgresErrorChecker{},
+		DBName:          c.DBName,
+		DB:              db,
+		pool:            pool,
+		sessionLockPool: sessionLockPool,
+		errorChecker:    &PostgresErrorChecker{},
 	}, nil
 }
 
@@ -79,10 +92,19 @@ func tracingQueryHook(dbName string) bun.QueryHook {
 // Close closes the session and the underlying connection pool.
 func (s *Session) Close() {
 	s.DB.Close()
+	if s.sessionLockPool != nil {
+		s.sessionLockPool.Close()
+	}
 
 	if s.pool != nil {
 		s.pool.Close()
 	}
+}
+
+// AcquireSessionLockConnection reserves a connection independently of the query
+// pool. Callers must release their locks (or close the connection) before Release.
+func (s *Session) AcquireSessionLockConnection(ctx context.Context) (*pgxpool.Conn, error) {
+	return s.sessionLockPool.Acquire(ctx)
 }
 
 // GetErrorChecker returns the error classifier for this session.
