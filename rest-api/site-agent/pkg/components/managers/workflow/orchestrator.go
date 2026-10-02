@@ -229,6 +229,11 @@ func workflowOrchestrator() error {
 		return err
 	}
 
+	err = ManagerAccess.API.SitePrefix.RegisterPublisher()
+	if err != nil {
+		return err
+	}
+
 	ManagerAccess.API.VPC.RegisterSubscriber()
 	ManagerAccess.API.VPC.RegisterPublisher()
 

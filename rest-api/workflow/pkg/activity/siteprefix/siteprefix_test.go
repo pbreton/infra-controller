@@ -62,7 +62,7 @@ func (f fixture) inventorySite(t *testing.T) *cdbm.Site {
 func (f fixture) blocks(t *testing.T) []cdbm.IPBlock {
 	t.Helper()
 	blocks, _, err := cdbm.NewIPBlockDAO(f.session).GetAll(context.Background(), nil,
-		cdbm.IPBlockFilterInput{IncludeDeleted: true}, paginator.PageInput{}, nil)
+		cdbm.IPBlockFilterInput{IncludeDeleted: true}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 	require.NoError(t, err)
 	return blocks
 }
@@ -121,6 +121,150 @@ func TestManageSitePrefix_UpdateSitePrefixesInDB(t *testing.T) {
 		name  string
 		check func(*testing.T, fixture)
 	}{
+		{"reported Deleting removes free root and restores same identity", func(t *testing.T, f fixture) {
+			root := f.root(t, true)
+			prefix := testPrefix()
+			prefix.Id.Value = root.SitePrefixID.String()
+			prefix.Status.LifecycleState = corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_DELETING
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, testInventory(prefix)))
+			require.NotNil(t, f.blocks(t)[0].Deleted)
+			_, err := ipam.NewIpamStorage(f.session.DB, nil).ReadPrefix(ctx, "10.0.0.0/24", f.namespace())
+			require.Error(t, err)
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, testInventory(prefix)))
+			require.NotNil(t, f.blocks(t)[0].Deleted)
+			prefix.Status.LifecycleState = corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_READY
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, testInventory(prefix)))
+			require.Nil(t, f.blocks(t)[0].Deleted)
+			require.Equal(t, root.ID, f.blocks(t)[0].ID)
+			_, err = ipam.NewIpamStorage(f.session.DB, nil).ReadPrefix(ctx, "10.0.0.0/24", f.namespace())
+			require.NoError(t, err)
+		}},
+		{"last page alone removes old missing root", func(t *testing.T, f fixture) {
+			root := f.root(t, true)
+			_, err := f.session.DB.NewUpdate().Model((*cdbm.IPBlock)(nil)).Set("created = ?", time.Now().Add(-time.Hour)).Where("id = ?", root.ID).Exec(ctx)
+			require.NoError(t, err)
+			inventory := testInventory(testPrefix())
+			inventory.SitePrefixes = nil
+			inventory.InventoryPage = &corev1.InventoryPage{CurrentPage: 2, TotalPages: 2, TotalItems: 1, ItemIds: []string{uuid.NewString()}}
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			require.NotNil(t, f.blocks(t)[0].Deleted)
+		}},
+		{"collection recovers within its schedule", checkCollectionSchedule},
+		{"missing allocated root clears its link and is adopted by a new Core ID", func(t *testing.T, f fixture) {
+			root := f.root(t, true)
+			ageBlock(t, f, root)
+			allocator := cipam.NewWithStorage(ipam.NewIpamStorage(f.session.DB, nil))
+			allocator.SetNamespace(f.namespace())
+			child, err := allocator.AcquireChildPrefix(ctx, "10.0.0.0/24", 28)
+			require.NoError(t, err)
+			inventory := &corev1.SitePrefixInventory{InventoryStatus: corev1.InventoryStatus_INVENTORY_STATUS_SUCCESS}
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			retained := f.blocks(t)[0]
+			require.Nil(t, retained.Deleted)
+			require.Nil(t, retained.SitePrefixID)
+			require.Equal(t, cdbm.IPBlockStatusDeleting, retained.Status)
+			prefix := testPrefix()
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, testInventory(prefix)))
+			adopted := f.blocks(t)[0]
+			require.Equal(t, root.ID, adopted.ID)
+			require.Equal(t, prefix.Id.Value, adopted.SitePrefixID.String())
+			require.Equal(t, cdbm.IPBlockStatusReady, adopted.Status)
+			preserved, err := ipam.NewIpamStorage(f.session.DB, nil).ReadPrefix(ctx, child.Cidr, f.namespace())
+			require.NoError(t, err)
+			require.Equal(t, *child, preserved)
+		}},
+		{"absence only sweeps eligible linked blocks", func(t *testing.T, f fixture) {
+			for _, row := range []struct {
+				name                            string
+				managed, tenant, linked, recent bool
+				status, wantStatus              string
+				wantDeleted                     bool
+			}{
+				{"unlinked operator", true, false, false, false, cdbm.IPBlockStatusReady, cdbm.IPBlockStatusReady, false},
+				{"allocated tenant", true, true, true, false, cdbm.IPBlockStatusReady, cdbm.IPBlockStatusReady, false},
+				{"missing tenant", false, true, true, false, cdbm.IPBlockStatusReady, cdbm.IPBlockStatusError, false},
+				{"retiring tenant", false, true, true, false, cdbm.IPBlockStatusDeleting, cdbm.IPBlockStatusDeleting, true},
+				{"recent retiring tenant", false, true, true, true, cdbm.IPBlockStatusDeleting, cdbm.IPBlockStatusDeleting, false},
+			} {
+				t.Run(row.name, func(t *testing.T) {
+					var tenantID, prefixID *uuid.UUID
+					if row.tenant {
+						tenantID = &f.tenant.ID
+					}
+					if row.linked {
+						prefixID = cutil.GetPtr(uuid.New())
+					}
+					dao := cdbm.NewIPBlockDAO(f.session)
+					block, err := dao.Create(ctx, nil, cdbm.IPBlockCreateInput{
+						Name: row.name, Prefix: "10.1.0.0", PrefixLength: 24, SiteID: f.site.ID,
+						InfrastructureProviderID: f.site.InfrastructureProviderID, TenantID: tenantID,
+						SitePrefixID: prefixID, Managed: &row.managed, Status: row.status,
+						RoutingType: cdbm.IPBlockRoutingTypeDatacenterOnly, ProtocolVersion: cdbm.IPBlockProtocolVersionV4,
+					})
+					require.NoError(t, err)
+					if !row.recent {
+						ageBlock(t, f, block)
+					}
+					inventory := &corev1.SitePrefixInventory{InventoryStatus: corev1.InventoryStatus_INVENTORY_STATUS_SUCCESS,
+						InventoryPage: &corev1.InventoryPage{CurrentPage: 1}}
+					require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+					all := f.blocks(t)
+					index := slices.IndexFunc(all, func(b cdbm.IPBlock) bool { return b.ID == block.ID })
+					require.NotEqual(t, -1, index)
+					require.Equal(t, row.wantStatus, all[index].Status)
+					require.Equal(t, row.wantDeleted, all[index].Deleted != nil)
+					require.Equal(t, prefixID, all[index].SitePrefixID)
+				})
+			}
+		}},
+		{"nonfinal and failed inventories preserve old missing root", func(t *testing.T, f fixture) {
+			root := f.root(t, true)
+			ageBlock(t, f, root)
+			before := f.blocks(t)
+			for _, inventory := range []*corev1.SitePrefixInventory{
+				{InventoryStatus: corev1.InventoryStatus_INVENTORY_STATUS_SUCCESS, InventoryPage: &corev1.InventoryPage{CurrentPage: 1, TotalPages: 2, TotalItems: 1}},
+				{InventoryStatus: corev1.InventoryStatus_INVENTORY_STATUS_SUCCESS, InventoryPage: &corev1.InventoryPage{CurrentPage: 2, TotalPages: 2, TotalItems: 1}},
+				{InventoryStatus: corev1.InventoryStatus_INVENTORY_STATUS_FAILED},
+			} {
+				require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+				require.Equal(t, before, f.blocks(t))
+			}
+		}},
+		{"final page IDs protect earlier payloads", func(t *testing.T, f fixture) {
+			root := f.root(t, true)
+			ageBlock(t, f, root)
+			before := f.blocks(t)
+			inventory := &corev1.SitePrefixInventory{InventoryStatus: corev1.InventoryStatus_INVENTORY_STATUS_SUCCESS,
+				InventoryPage: &corev1.InventoryPage{CurrentPage: 2, TotalPages: 2, TotalItems: 1, ItemIds: []string{root.SitePrefixID.String()}}}
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			require.Equal(t, before, f.blocks(t))
+		}},
+		{"root deletion rolls back IPAM and lifecycle on database failure then retries", func(t *testing.T, f fixture) {
+			root := f.root(t, true)
+			_, err := f.session.DB.ExecContext(ctx, `CREATE FUNCTION reject_prefix_retirement() RETURNS trigger AS $$ BEGIN IF NEW.deleted IS NOT NULL THEN RAISE EXCEPTION 'injected retirement failure'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`)
+			require.NoError(t, err)
+			_, err = f.session.DB.ExecContext(ctx, `CREATE TRIGGER reject_prefix_retirement BEFORE UPDATE ON ip_block FOR EACH ROW EXECUTE FUNCTION reject_prefix_retirement()`)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				_, cleanupErr := f.session.DB.ExecContext(ctx, `DROP FUNCTION reject_prefix_retirement() CASCADE`)
+				require.NoError(t, cleanupErr)
+			})
+			prefix := testPrefix()
+			prefix.Id.Value = root.SitePrefixID.String()
+			prefix.Status.LifecycleState = corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_DELETING
+			inventory := testInventory(prefix)
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			require.Equal(t, *root, f.blocks(t)[0])
+			_, err = ipam.NewIpamStorage(f.session.DB, nil).ReadPrefix(ctx, "10.0.0.0/24", f.namespace())
+			require.NoError(t, err)
+			_, err = f.session.DB.ExecContext(ctx, `DROP TRIGGER reject_prefix_retirement ON ip_block`)
+			require.NoError(t, err)
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			require.NotNil(t, f.blocks(t)[0].Deleted)
+			_, err = ipam.NewIpamStorage(f.session.DB, nil).ReadPrefix(ctx, "10.0.0.0/24", f.namespace())
+			require.Error(t, err)
+		}},
+
 		{"nil inventory is rejected", func(t *testing.T, f fixture) {
 			require.ErrorContains(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, nil), "nil inventory")
 		}},
@@ -253,16 +397,13 @@ func TestManageSitePrefix_UpdateSitePrefixesInDB(t *testing.T) {
 			prefix.Config.Prefix = "2001:db8::/48"
 			prefix.Status.LifecycleState = corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_DELETING
 			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, testInventory(prefix)))
-			adopted, err := dao.GetByID(ctx, nil, root.ID, nil)
+			adopted, err := dao.GetBySitePrefixID(ctx, nil, uuid.MustParse(prefix.Id.Value))
 			require.NoError(t, err)
 			require.Equal(t, prefix.Id.Value, adopted.SitePrefixID.String())
 			require.Equal(t, cdbm.IPBlockStatusDeleting, adopted.Status)
 			require.Equal(t, root.Name, adopted.Name)
 			require.Equal(t, root.Description, adopted.Description)
-			// Model retirement without implementing the follow-up cleanup workflow.
-			require.NoError(t, dao.Delete(ctx, nil, root.ID))
-			require.NoError(t, ipam.DeleteIpamEntryForIPBlock(ctx, storage, root.Prefix, root.PrefixLength,
-				root.RoutingType, root.InfrastructureProviderID.String(), root.SiteID.String()))
+			require.NotNil(t, adopted.Deleted)
 			prefix.Status.LifecycleState = corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_READY
 			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, testInventory(prefix)))
 			restored, err := dao.GetByID(ctx, nil, root.ID, nil)
@@ -426,7 +567,7 @@ func TestManageSitePrefix_UpdateSitePrefixesInDB(t *testing.T) {
 			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
 			require.Equal(t, block, f.blocks(t)[0])
 		}},
-		{"empty inventory does not infer absence", func(t *testing.T, f fixture) {
+		{"empty inventory protects recently created roots", func(t *testing.T, f fixture) {
 			inventory := testInventory(testPrefix())
 			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
 			block := f.blocks(t)[0]
@@ -751,7 +892,7 @@ func TestManageSitePrefix_UpdateSitePrefixesInDB(t *testing.T) {
 			old.Status.LifecycleState = corev1.SitePrefixLifecycleState_SITE_PREFIX_LIFECYCLE_STATE_DELETING
 			replacement := testPrefix()
 			replacement.Id.Value = ids[1-oldIndex]
-			replacement.Config.Prefix = "10.0.0.0/25"
+			replacement.Config.Prefix = "10.0.0.0/23"
 			inventory := testInventory(old)
 			inventory.SitePrefixes = []*corev1.SitePrefix{old, replacement}
 			if replacementFirst {
@@ -759,6 +900,10 @@ func TestManageSitePrefix_UpdateSitePrefixesInDB(t *testing.T) {
 			}
 			inventory.InventoryPage.ItemIds = ids
 			inventory.InventoryPage.TotalItems = 2
+			allocator := cipam.NewWithStorage(ipam.NewIpamStorage(f.session.DB, nil))
+			allocator.SetNamespace(f.namespace())
+			child, err := allocator.AcquireChildPrefix(ctx, "10.0.0.0/24", 28)
+			require.NoError(t, err)
 			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
 			blocks := f.blocks(t)
 			require.Len(t, blocks, 1)
@@ -768,6 +913,19 @@ func TestManageSitePrefix_UpdateSitePrefixesInDB(t *testing.T) {
 			require.NoError(t, err)
 			defer func() { _ = tx.Rollback() }()
 			require.ErrorContains(t, ipam.LockAndValidateParentIPBlockForAllocation(ctx, tx, f.session, root), "not Ready")
+			require.NoError(t, tx.Rollback())
+			err = allocator.ReleaseChildPrefix(ctx, child)
+			require.NoError(t, err)
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			require.NoError(t, f.manager.UpdateSitePrefixesInDB(ctx, f.site.ID, inventory))
+			retired, err := cdbm.NewIPBlockDAO(f.session).GetBySitePrefixID(ctx, nil, *root.SitePrefixID)
+			require.NoError(t, err)
+			require.NotNil(t, retired.Deleted)
+			created, err := cdbm.NewIPBlockDAO(f.session).GetBySitePrefixID(ctx, nil, uuid.MustParse(replacement.Id.Value))
+			require.NoError(t, err)
+			require.Nil(t, created.Deleted)
+			require.Equal(t, 23, created.PrefixLength)
+			require.Equal(t, cdbm.IPBlockStatusReady, created.Status)
 		})
 	}
 
@@ -866,6 +1024,7 @@ func checkAllocationCreation(t *testing.T, f fixture) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	root := f.root(t, true)
+	allocation := util.TestBuildAllocation(t, f.session, &cdbm.InfrastructureProvider{ID: f.site.InfrastructureProviderID}, f.tenant, f.site, "concurrent allocation")
 	tx, err := cdb.BeginTx(ctx, f.session, nil)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback() }()
@@ -898,6 +1057,17 @@ func checkAllocationCreation(t *testing.T, f fixture) {
 		RoutingType: root.RoutingType, ProtocolVersion: root.ProtocolVersion,
 		Status: cdbm.IPBlockStatusReady, CreatedBy: &f.site.CreatedBy,
 	})
+	if insertErr == nil {
+		allocator := cipam.NewWithStorage(ipam.NewIpamStorage(f.session.DB, tx.GetBunTx()))
+		allocator.SetNamespace(f.namespace())
+		_, insertErr = allocator.AcquireChildPrefix(ctx, "10.0.0.0/24", 25)
+	}
+	if insertErr == nil {
+		_, insertErr = cdbm.NewAllocationConstraintDAO(f.session).Create(ctx, tx, cdbm.AllocationConstraintCreateInput{
+			AllocationID: allocation.ID, ResourceType: cdbm.AllocationResourceTypeIPBlock, ResourceTypeID: root.ID,
+			ConstraintType: cdbm.AllocationConstraintTypeOnDemand, ConstraintValue: 25, CreatedBy: f.site.CreatedBy,
+		})
+	}
 	var commitErr error
 	if insertErr == nil {
 		commitErr = tx.Commit()
@@ -1076,4 +1246,10 @@ func TestValidatePrefix(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ageBlock(t *testing.T, f fixture, block *cdbm.IPBlock) {
+	t.Helper()
+	_, err := f.session.DB.NewUpdate().Model((*cdbm.IPBlock)(nil)).Set("created = ?", time.Now().Add(-time.Hour)).Where("id = ?", block.ID).Exec(context.Background())
+	require.NoError(t, err)
 }

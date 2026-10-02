@@ -23,7 +23,7 @@ import (
 
 const sitePrefixInventoryStatusMessage = "Reported by Core SitePrefix inventory"
 
-// ManageSitePrefix reconciles reported Core roots without inferring absence.
+// ManageSitePrefix reconciles Core SitePrefixes and their absence.
 type ManageSitePrefix struct {
 	dbSession *cdb.Session
 }
@@ -37,8 +37,6 @@ func NewManageSitePrefix(session *cdb.Session) ManageSitePrefix {
 // It looks up the active IP Block, creates, adopts, or restores one when missing, then
 // applies lifecycle without changing REST metadata or the block's identity.
 // Unreconcilable entries are logged and skipped; later entries still proceed.
-// Publication, absence processing, and retiring the legacy importer belong to
-// the follow-up SitePrefix publication and retirement implementation.
 func (manager ManageSitePrefix) UpdateSitePrefixesInDB(ctx context.Context, siteID uuid.UUID, inventory *corev1.SitePrefixInventory) error {
 	logger := log.With().Str("Activity", "UpdateSitePrefixesInDB").Str("Site ID", siteID.String()).Logger()
 	logger.Info().Msg("starting activity")
@@ -75,7 +73,7 @@ func (manager ManageSitePrefix) UpdateSitePrefixesInDB(ctx context.Context, site
 			return ctx.Err()
 		}
 		// Validate per entry so a malformed report cannot hold back the rest of
-		// the page. Page IDs do not imply absence.
+		// the page.
 		err := validatePrefix(prefix)
 		if err != nil {
 			logger.Warn().Err(err).Str("Site Prefix ID", prefix.GetId().GetValue()).
@@ -143,17 +141,12 @@ func (manager ManageSitePrefix) UpdateSitePrefixesInDB(ctx context.Context, site
 			// REST owns metadata after creation, including on adopted and restored
 			// roots. Only lifecycle changes produce writes and status details.
 			status := getSitePrefixStatus(prefix.Status.LifecycleState)
-			if status != block.Status {
-				_, err = dao.Update(ctx, tx, cdbm.IPBlockUpdateInput{IPBlockID: block.ID, Status: &status})
-				if err != nil {
-					return err
-				}
-				_, err = cdbm.NewStatusDetailDAO(manager.dbSession).Create(ctx, tx, cdbm.StatusDetailCreateInput{
-					EntityID: block.ID.String(), Status: status, Message: cutil.GetPtr(sitePrefixInventoryStatusMessage),
-				})
-				if err != nil {
-					return err
-				}
+			err = manager.updateStatus(ctx, tx, block, status, sitePrefixInventoryStatusMessage)
+			if err != nil {
+				return err
+			}
+			if block.Managed && block.TenantID == nil && status == cdbm.IPBlockStatusDeleting {
+				return manager.removeOperatorRoot(ctx, tx, block, false)
 			}
 			return nil
 		})
@@ -162,8 +155,9 @@ func (manager ManageSitePrefix) UpdateSitePrefixesInDB(ctx context.Context, site
 				Msg("failed to reconcile SitePrefix in DB")
 		}
 	}
+	err = manager.reconcileAbsence(ctx, site, inventory)
 	logger.Info().Msg("completing activity")
-	return ctx.Err()
+	return err
 }
 
 // createOrUpdateSitePrefixFromSite creates, adopts, or restores an IP Block for a
