@@ -15,6 +15,7 @@ import (
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/util"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/uptrace/bun/extra/bundebug"
 	otrace "go.opentelemetry.io/otel/trace"
 )
@@ -1359,7 +1360,16 @@ func TestSiteSQLDAO_Update(t *testing.T) {
 		verifyAgentCert    bool
 		agentCertExpected  *time.Time
 		wantVpcSlaac       *bool
+		failCommit         bool
 	}{
+		{
+			name:       "failed internal commit returns no Site and preserves persisted config",
+			fields:     fields{dbSession: dbSession},
+			ctx:        ctx,
+			input:      SiteUpdateInput{SiteID: ust.ID, Config: &SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(false)}},
+			wantErr:    true,
+			failCommit: true,
+		},
 		{
 			name: "update only site config from params",
 			fields: fields{
@@ -1460,7 +1470,29 @@ func TestSiteSQLDAO_Update(t *testing.T) {
 			ssd := SiteSQLDAO{
 				dbSession: tt.fields.dbSession,
 			}
+			var before *Site
+			if tt.failCommit {
+				before, err = ssd.GetByID(tt.ctx, nil, tt.input.SiteID, nil, false)
+				require.NoError(t, err)
+				_, err = dbSession.DB.Exec(`CREATE FUNCTION fail_site_lint_test_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected Site commit failure'; END $$`)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_, err := dbSession.DB.Exec("DROP TRIGGER fail_site_lint_test_commit ON site")
+					assert.NoError(t, err)
+					_, err = dbSession.DB.Exec("DROP FUNCTION fail_site_lint_test_commit()")
+					assert.NoError(t, err)
+				})
+				_, err = dbSession.DB.Exec(`CREATE CONSTRAINT TRIGGER fail_site_lint_test_commit AFTER UPDATE ON site DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_site_lint_test_commit()`)
+				require.NoError(t, err)
+			}
 			got, err := ssd.Update(tt.ctx, nil, tt.input)
+			if tt.failCommit {
+				require.ErrorContains(t, err, "injected Site commit failure")
+				assert.Nil(t, got)
+				persisted, readErr := ssd.GetByID(tt.ctx, nil, tt.input.SiteID, nil, false)
+				require.NoError(t, readErr)
+				assert.Equal(t, before.Config, persisted.Config)
+			}
 
 			if tt.wantErr {
 				assert.Error(t, err)

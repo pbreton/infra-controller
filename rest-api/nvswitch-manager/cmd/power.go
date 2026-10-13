@@ -44,9 +44,9 @@ Examples:
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		conn, err := grpc.DialContext(ctx, powerServerAddr,
+		conn, err := grpc.DialContext(ctx, powerServerAddr, //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
+			grpc.WithBlock(), //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 		)
 		if err != nil {
 			log.Fatalf("Failed to connect to server %s: %v", powerServerAddr, err)

@@ -10,7 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -82,10 +82,13 @@ func NewSiteManager(ctx context.Context, o Options) (*SiteMgr, error) {
 	}
 
 	if o.sentryDSN != "" {
-		sentry.Init(sentry.ClientOptions{
+		err = sentry.Init(sentry.ClientOptions{
 			Dsn:   o.sentryDSN,
 			Debug: true,
 		})
+		if err != nil {
+			core.GetLogger(ctx).WithError(err).Error("failed to initialize Sentry")
+		}
 	}
 
 	return newSiteManager(ctx, o, c)
@@ -218,6 +221,9 @@ func (s *SiteMgr) getCertificate(ctx context.Context, name, app string, ttl int)
 	}
 	url := s.credsMgrURL + "/v1/pki/cloud-cert"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, payloadBuf)
+	if err != nil {
+		return nil, errors.Wrap(err, "create certificate request")
+	}
 	content, err := s.roundTrip(req)
 	if err != nil {
 		return nil, errors.Wrap(err, "s.roundTrip(req)")
@@ -237,6 +243,9 @@ func (s *SiteMgr) getCertificate(ctx context.Context, name, app string, ttl int)
 func (s *SiteMgr) getCA(ctx context.Context) (string, error) {
 	url := s.credsMgrURL + "/v1/pki/ca/pem"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", errors.Wrap(err, "create CA request")
+	}
 	content, err := s.roundTrip(req)
 	if err != nil {
 		return "", errors.Wrap(err, "s.roundTrip(req)")
@@ -256,7 +265,7 @@ func (s *SiteMgr) roundTrip(req *http.Request) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode > http.StatusIMUsed {
-		content, _ := ioutil.ReadAll(resp.Body)
+		content, _ := io.ReadAll(resp.Body)
 		err = fmt.Errorf("%s, %s", resp.Status, content)
 		return nil, err
 	}
@@ -265,7 +274,7 @@ func (s *SiteMgr) roundTrip(req *http.Request) ([]byte, error) {
 		return nil, nil
 	}
 
-	return ioutil.ReadAll(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 func (s *SiteMgr) siteCreateHandler() http.Handler {

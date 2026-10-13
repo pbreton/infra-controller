@@ -7,5 +7,5 @@ import "errors"
 
 var (
 	// NotImplementedError is an error that is returned when a method is not implemented
-	NotImplementedError = errors.New("not implemented")
+	NotImplementedError = errors.New("not implemented") //nolint:staticcheck // Preserve the exported error name for callers.
 )

@@ -63,6 +63,9 @@ jobs:
       - name: Test local nico-api address configuration
         run: python3 -B scripts/test_local_core_address.py
 
+      - name: Test lint failure propagation
+        run: python3 -B scripts/test_lint_go.py
+
   lint-go:
     name: Lint Go
     runs-on: linux-amd64-cpu8
@@ -90,7 +93,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
-          args: --timeout=10m --issues-exit-code=0 ./...
+          args: --timeout=10m --max-issues-per-linter=0 --max-same-issues=0 ./...
           working-directory: rest-api
 
   lint-openapi:

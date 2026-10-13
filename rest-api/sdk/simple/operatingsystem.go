@@ -84,10 +84,10 @@ func (osm OperatingSystemManager) Create(ctx context.Context, request OperatingS
 	apiReq := standard.OperatingSystemCreateRequest{Name: request.Name}
 	apiReq.Description.Set(request.Description)
 	if osm.client.apiMetadata.TenantID != "" {
-		apiReq.TenantId.Set(&osm.client.apiMetadata.TenantID)
+		apiReq.TenantId.Set(&osm.client.apiMetadata.TenantID) //nolint:staticcheck // The simple SDK still supports the legacy OS request fields.
 	}
 	if request.IpxeScript != nil {
-		apiReq.IpxeScript.Set(request.IpxeScript)
+		apiReq.IpxeScript.Set(request.IpxeScript) //nolint:staticcheck // The simple SDK still supports the legacy OS request fields.
 	}
 	if request.UserData != nil {
 		apiReq.UserData.Set(request.UserData)

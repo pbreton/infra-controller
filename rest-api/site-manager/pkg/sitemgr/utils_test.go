@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
+
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -46,7 +48,7 @@ func (util *testUtils) setup(t *testing.T) {
 		}
 
 		var req csmtypes.SiteCreateRequest
-		content, err := ioutil.ReadAll(r.Body)
+		content, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 		err = json.Unmarshal(content, &req)
 		require.NoError(t, err)
@@ -156,4 +158,43 @@ func TestUtils(t *testing.T) {
 	err = DeleteSite(context.Background(), logger, siteUUID, url)
 	// When DELETE receives a forced error, our helper returns ErrSiteNotFound.
 	assert.Equal(t, ErrSiteNotFound, err)
+}
+
+func TestGetSiteOTP(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		truncated bool
+	}{
+		{name: "complete response"},
+		{name: "valid JSON followed by a body read failure", truncated: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(csmtypes.SiteGetResponse{
+				OTP:       "test-otp",
+				OTPExpiry: time.Now().Add(time.Hour).Format("2006-01-02 15:04:05.999999999 -0700 MST"),
+			})
+			require.NoError(t, err)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				length := len(body)
+				if tc.truncated {
+					length++
+				}
+				w.Header().Set("Content-Length", strconv.Itoa(length))
+				_, err := w.Write(body)
+				assert.NoError(t, err)
+			}))
+			defer server.Close()
+			otp, expiry, err := GetSiteOTP(context.Background(), log.Logger, "test-site", server.URL)
+			if tc.truncated {
+				require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+				assert.Nil(t, otp)
+				assert.Nil(t, expiry)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, otp)
+			assert.Equal(t, "test-otp", *otp)
+			assert.NotNil(t, expiry)
+		})
+	}
 }

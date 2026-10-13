@@ -619,7 +619,7 @@ func (c *Config) WatchSecretFilePaths() {
 						eventsWG.Done()
 						return
 					}
-					if !(event.Has(fsnotify.Write) || event.Has(fsnotify.Create)) {
+					if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) {
 						continue
 					}
 					eventFilePath := filepath.Clean(event.Name)
@@ -642,7 +642,12 @@ func (c *Config) WatchSecretFilePaths() {
 
 		// Add secret file paths to watcher
 		log.Info().Str("WatchSecretFilePaths", dbPassFileDir).Msg("adding db path for watcher")
-		watcher.Add(dbPassFileDir)
+		{
+			watchErr := watcher.Add(dbPassFileDir)
+			if watchErr != nil {
+				log.Error().Err(watchErr).Msg("failed to watch secret directory")
+			}
+		}
 
 		initWG.Done()   // done initializing the watch in this go routine, so the parent routine can move on...
 		eventsWG.Wait() // now, wait for event loop to end in this go-routine...

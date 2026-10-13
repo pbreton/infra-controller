@@ -37,8 +37,8 @@ func init() {
 	ruleAssociateCmd.Flags().StringVar(&assocRackID, "rack-id", "", "Rack ID (required)")
 	ruleAssociateCmd.Flags().StringVar(&assocRuleID, "rule-id", "", "Rule ID (required)")
 
-	ruleAssociateCmd.MarkFlagRequired("rack-id")
-	ruleAssociateCmd.MarkFlagRequired("rule-id")
+	_ = ruleAssociateCmd.MarkFlagRequired("rack-id") // The flag is defined immediately above.
+	_ = ruleAssociateCmd.MarkFlagRequired("rule-id") // The flag is defined immediately above.
 }
 
 // runRuleAssociate is the RunE handler for ruleAssociateCmd. It parses the

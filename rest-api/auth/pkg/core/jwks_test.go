@@ -64,7 +64,10 @@ func TestJWKS_GetKIDPublicKeyMap(t *testing.T) {
 			testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 				res.WriteHeader(http.StatusOK)
 				res.Header().Set("Content-Type", "application/json")
-				res.Write([]byte(tt.jwksJSON))
+				{
+					_, err := res.Write([]byte(tt.jwksJSON))
+					assert.NoError(t, err)
+				}
 			}))
 			defer testServer.Close()
 
@@ -126,21 +129,33 @@ func TestNewJWKSFromURL(t *testing.T) {
 		if strings.Contains(req.URL.Path, "/kas") {
 			res.WriteHeader(http.StatusOK)
 			res.Header().Set("Content-Type", "application/json")
-			res.Write([]byte(legacyKasJwks))
+			{
+				_, err := res.Write([]byte(legacyKasJwks))
+				assert.NoError(t, err)
+			}
 		} else if strings.Contains(req.URL.Path, "/ssa") {
 			res.WriteHeader(http.StatusOK)
 			res.Header().Set("Content-Type", "application/json")
-			res.Write([]byte(ssaJwks))
+			{
+				_, err := res.Write([]byte(ssaJwks))
+				assert.NoError(t, err)
+			}
 		} else if strings.Contains(req.URL.Path, "/keycloak") {
 			res.WriteHeader(http.StatusOK)
 			res.Header().Set("Content-Type", "application/json")
-			res.Write([]byte(keycloakJwks))
+			{
+				_, err := res.Write([]byte(keycloakJwks))
+				assert.NoError(t, err)
+			}
 		} else if strings.Contains(req.URL.Path, "/error") {
 			res.WriteHeader(http.StatusInternalServerError)
 		} else if strings.Contains(req.URL.Path, "/invalid") {
 			res.WriteHeader(http.StatusOK)
 			res.Header().Set("Content-Type", "application/json")
-			res.Write([]byte(`invalid json`))
+			{
+				_, err := res.Write([]byte(`invalid json`))
+				assert.NoError(t, err)
+			}
 		} else {
 			res.WriteHeader(http.StatusNotFound)
 		}
@@ -245,7 +260,10 @@ func TestJWKS_GetKIDPublicKeyMap_EmptyKeys(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		res.WriteHeader(http.StatusOK)
 		res.Header().Set("Content-Type", "application/json")
-		res.Write([]byte(emptyJwks))
+		{
+			_, err := res.Write([]byte(emptyJwks))
+			assert.NoError(t, err)
+		}
 	}))
 	defer testServer.Close()
 

@@ -339,14 +339,14 @@ func (cac *CoreGrpcAtomicClient) CheckAndReloadCerts(initialClientCertMD5, initi
 			reloadStarted = time.Now()
 			reloadBackoff = CoreGrpcConnectionBackoffInitial
 		} else if time.Since(reloadStarted) >= CoreGrpcConnectionRetryTimeout {
-			panic(fmt.Errorf("Core gRPC: failed to reinitialize gRPC client with new certificates within %s",
+			panic(fmt.Errorf("Core gRPC: failed to reinitialize gRPC client with new certificates within %s", //nolint:staticcheck // Preserve the established error text and service names.
 				CoreGrpcConnectionRetryTimeout))
 		}
 
 		newClient, err := NewCoreGrpcClient(cac.Config)
 		if err != nil {
 			if time.Since(reloadStarted) >= CoreGrpcConnectionRetryTimeout {
-				panic(fmt.Errorf("Core gRPC: failed to reinitialize gRPC client with new certificates within %s: %w",
+				panic(fmt.Errorf("Core gRPC: failed to reinitialize gRPC client with new certificates within %s: %w", //nolint:staticcheck // Preserve the established error text and service names.
 					CoreGrpcConnectionRetryTimeout, err))
 			}
 			logger.Error().Err(err).Dur("RetryIn", reloadBackoff).Msg("Failed to reinitialize gRPC client with new certificates, retrying")
@@ -467,10 +467,7 @@ func equalMD5(a, b []byte) bool {
 
 func SliceToChunks[T any](slice []T, chunkSize int) (chunks [][]T) {
 	chunks = [][]T{}
-	for {
-		if len(slice) == 0 {
-			break
-		}
+	for len(slice) != 0 {
 
 		if len(slice) < chunkSize {
 			chunkSize = len(slice)

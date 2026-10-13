@@ -128,9 +128,9 @@ func (s *UIServer) getGRPCClient() (pb.NVSwitchManagerClient, *grpc.ClientConn, 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, s.grpcAddr,
+	conn, err := grpc.DialContext(ctx, s.grpcAddr, //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
+		grpc.WithBlock(), //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
@@ -424,7 +424,10 @@ func (s *UIServer) handleSwitches(w http.ResponseWriter, r *http.Request) {
 		"SortBy":       sortBy,
 	}
 
-	s.templates.ExecuteTemplate(w, "layout.html", data)
+	err = s.templates.ExecuteTemplate(w, "layout.html", data)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 // statusPriority returns a sort priority for update status (lower = higher priority)
@@ -602,7 +605,10 @@ func (s *UIServer) handleUpdates(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	s.templates.ExecuteTemplate(w, "layout.html", data)
+	err = s.templates.ExecuteTemplate(w, "layout.html", data)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 // API handlers for AJAX calls
@@ -622,7 +628,10 @@ func (s *UIServer) handleAPISwitches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp.Nvswitches)
+	err = json.NewEncoder(w).Encode(resp.Nvswitches)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 func (s *UIServer) handleAPIUpdates(w http.ResponseWriter, r *http.Request) {
@@ -646,7 +655,10 @@ func (s *UIServer) handleAPIUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp.Updates)
+	err = json.NewEncoder(w).Encode(resp.Updates)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 func (s *UIServer) handleAPIBundles(w http.ResponseWriter, r *http.Request) {
@@ -664,7 +676,10 @@ func (s *UIServer) handleAPIBundles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp.Bundles)
+	err = json.NewEncoder(w).Encode(resp.Bundles)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 func (s *UIServer) handleAPIPowerControl(w http.ResponseWriter, r *http.Request) {
@@ -717,7 +732,10 @@ func (s *UIServer) handleAPIPowerControl(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	err = json.NewEncoder(w).Encode(resp)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 // BulkQueueUpdateRequest wraps a bulk firmware update request
@@ -800,7 +818,10 @@ func (s *UIServer) handleAPIQueueUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	err = json.NewEncoder(w).Encode(resp)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 func (s *UIServer) handleAPICancelUpdate(w http.ResponseWriter, r *http.Request) {
@@ -829,7 +850,10 @@ func (s *UIServer) handleAPICancelUpdate(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	err = json.NewEncoder(w).Encode(resp)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 // SwitchRegistrationRequest represents a single switch registration in JSON format
@@ -961,7 +985,10 @@ func (s *UIServer) handleAPIRegisterSwitch(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	err = json.NewEncoder(w).Encode(resp)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 func parseInt32(s string) (int32, error) {
@@ -980,7 +1007,7 @@ func (s *UIServer) handleAPIUpdateLog(w http.ResponseWriter, r *http.Request) {
 	// Sanitize the update ID to prevent path traversal
 	// UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 	for _, c := range updateID {
-		if !((c >= 'a' && c <= 'f') || (c >= '0' && c <= '9') || c == '-') {
+		if (c < 'a' || c > 'f') && (c < '0' || c > '9') && c != '-' {
 			http.Error(w, "invalid update ID format", http.StatusBadRequest)
 			return
 		}
@@ -992,10 +1019,13 @@ func (s *UIServer) handleAPIUpdateLog(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			err = json.NewEncoder(w).Encode(map[string]interface{}{
 				"found": false,
 				"error": "Log file not found. This update may not use the script strategy or hasn't started yet.",
 			})
+			if err != nil {
+				log.WithError(err).Error("failed to write HTTP response")
+			}
 			return
 		}
 		http.Error(w, "failed to read log: "+err.Error(), http.StatusInternalServerError)
@@ -1003,11 +1033,14 @@ func (s *UIServer) handleAPIUpdateLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	err = json.NewEncoder(w).Encode(map[string]interface{}{
 		"found":   true,
 		"content": string(content),
 		"path":    logPath,
 	})
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }
 
 func (s *UIServer) renderError(w http.ResponseWriter, title, message string) {
@@ -1016,5 +1049,8 @@ func (s *UIServer) renderError(w http.ResponseWriter, title, message string) {
 		"ErrorMessage": message,
 		"Page":         "error",
 	}
-	s.templates.ExecuteTemplate(w, "layout.html", data)
+	err := s.templates.ExecuteTemplate(w, "layout.html", data)
+	if err != nil {
+		log.WithError(err).Error("failed to write HTTP response")
+	}
 }

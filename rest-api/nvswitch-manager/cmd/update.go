@@ -53,9 +53,9 @@ Examples:
 func createUpdateClient() (pb.NVSwitchManagerClient, *grpc.ClientConn, context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 
-	conn, err := grpc.DialContext(ctx, updateServerAddr,
+	conn, err := grpc.DialContext(ctx, updateServerAddr, //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
+		grpc.WithBlock(), //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 	)
 	if err != nil {
 		cancel()

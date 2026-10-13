@@ -505,7 +505,7 @@ func TestOperatingSystemHandler_GetAll(t *testing.T) {
 	assert.NotNil(t, ts4)
 
 	imageoss := []cdbm.OperatingSystem{}
-	imageossa := []cdbm.OperatingSystemSiteAssociation{}
+
 	ipxeoss := []cdbm.OperatingSystem{}
 	totalCount2 := 18
 
@@ -536,13 +536,12 @@ func TestOperatingSystemHandler_GetAll(t *testing.T) {
 			)
 			assert.Nil(t, err)
 
-			ossa := common.TestBuildOperatingSystemSiteAssociation(t, dbSession, os.ID, site2.ID, cutil.GetPtr("test"), cdbm.OperatingSystemSiteAssociationStatusSyncing, tnu)
+			common.TestBuildOperatingSystemSiteAssociation(t, dbSession, os.ID, site2.ID, cutil.GetPtr("test"), cdbm.OperatingSystemSiteAssociationStatusSyncing, tnu)
 			common.TestBuildStatusDetail(t, dbSession, os.ID.String(), cdbm.OperatingSystemStatusSyncing, cutil.GetPtr("received Operating System creation request, syncing"))
 			common.TestBuildStatusDetail(t, dbSession, os.ID.String(), cdbm.OperatingSystemStatusReady, cutil.GetPtr("Operating System is now ready for use"))
 
 			assert.Nil(t, err)
 			imageoss = append(imageoss, *os)
-			imageossa = append(imageossa, *ossa)
 
 		} else {
 			os, err := osDAO.Create(
@@ -956,16 +955,19 @@ func TestOperatingSystemHandler_GetByID(t *testing.T) {
 	assert.NotNil(t, os3)
 
 	ossaDAO := cdbm.NewOperatingSystemSiteAssociationDAO(dbSession)
-	ossaDAO.Create(
-		ctx,
-		nil,
-		cdbm.OperatingSystemSiteAssociationCreateInput{
-			OperatingSystemID: os3.ID,
-			SiteID:            site.ID,
-			Status:            cdbm.OperatingSystemSiteAssociationStatusSynced,
-			CreatedBy:         user.ID,
-		},
-	)
+	{
+		_, err := ossaDAO.Create(
+			ctx,
+			nil,
+			cdbm.OperatingSystemSiteAssociationCreateInput{
+				OperatingSystemID: os3.ID,
+				SiteID:            site.ID,
+				Status:            cdbm.OperatingSystemSiteAssociationStatusSynced,
+				CreatedBy:         user.ID,
+			},
+		)
+		assert.NoError(t, err)
+	}
 
 	// OTEL Spanner configuration
 	ctx = common.TestCommonTraceProviderSetup(t, ctx)
@@ -1280,16 +1282,19 @@ func TestOperatingSystemHandler_Update(t *testing.T) {
 	assert.NotNil(t, os5)
 
 	ossaDAO := cdbm.NewOperatingSystemSiteAssociationDAO(dbSession)
-	ossaDAO.Create(
-		ctx,
-		nil,
-		cdbm.OperatingSystemSiteAssociationCreateInput{
-			OperatingSystemID: os5.ID,
-			SiteID:            site.ID,
-			Status:            cdbm.OperatingSystemSiteAssociationStatusSynced,
-			CreatedBy:         user.ID,
-		},
-	)
+	{
+		_, err := ossaDAO.Create(
+			ctx,
+			nil,
+			cdbm.OperatingSystemSiteAssociationCreateInput{
+				OperatingSystemID: os5.ID,
+				SiteID:            site.ID,
+				Status:            cdbm.OperatingSystemSiteAssociationStatusSynced,
+				CreatedBy:         user.ID,
+			},
+		)
+		assert.NoError(t, err)
+	}
 
 	os6, err := osDAO.Create(
 		ctx,
@@ -1375,16 +1380,19 @@ func TestOperatingSystemHandler_Update(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, os9)
 
-	ossaDAO.Create(
-		ctx,
-		nil,
-		cdbm.OperatingSystemSiteAssociationCreateInput{
-			OperatingSystemID: os9.ID,
-			SiteID:            site1.ID,
-			Status:            cdbm.OperatingSystemSiteAssociationStatusSyncing,
-			CreatedBy:         user.ID,
-		},
-	)
+	{
+		_, err := ossaDAO.Create(
+			ctx,
+			nil,
+			cdbm.OperatingSystemSiteAssociationCreateInput{
+				OperatingSystemID: os9.ID,
+				SiteID:            site1.ID,
+				Status:            cdbm.OperatingSystemSiteAssociationStatusSyncing,
+				CreatedBy:         user.ID,
+			},
+		)
+		assert.NoError(t, err)
+	}
 
 	// OS to be deactivated (1)
 	os10, err := osDAO.Create(
@@ -2047,17 +2055,20 @@ func TestOperatingSystemHandler_Delete(t *testing.T) {
 
 	// Add Operating System Site Association
 	ossaDAO := cdbm.NewOperatingSystemSiteAssociationDAO(dbSession)
-	ossaDAO.Create(
-		ctx,
-		nil,
-		cdbm.OperatingSystemSiteAssociationCreateInput{
-			OperatingSystemID: os5.ID,
-			SiteID:            site.ID,
-			Version:           cutil.GetPtr("test"),
-			Status:            cdbm.OperatingSystemSiteAssociationStatusSyncing,
-			CreatedBy:         tnu.ID,
-		},
-	)
+	{
+		_, err := ossaDAO.Create(
+			ctx,
+			nil,
+			cdbm.OperatingSystemSiteAssociationCreateInput{
+				OperatingSystemID: os5.ID,
+				SiteID:            site.ID,
+				Version:           cutil.GetPtr("test"),
+				Status:            cdbm.OperatingSystemSiteAssociationStatusSyncing,
+				CreatedBy:         tnu.ID,
+			},
+		)
+		assert.NoError(t, err)
+	}
 
 	os6, err := osDAO.Create(
 		ctx,
@@ -2080,17 +2091,20 @@ func TestOperatingSystemHandler_Delete(t *testing.T) {
 	assert.NotNil(t, os6)
 
 	// Add Operating System Site Association
-	ossaDAO.Create(
-		ctx,
-		nil,
-		cdbm.OperatingSystemSiteAssociationCreateInput{
-			OperatingSystemID: os6.ID,
-			SiteID:            site2.ID,
-			Version:           cutil.GetPtr("test"),
-			Status:            cdbm.OperatingSystemSiteAssociationStatusSyncing,
-			CreatedBy:         tnu.ID,
-		},
-	)
+	{
+		_, err := ossaDAO.Create(
+			ctx,
+			nil,
+			cdbm.OperatingSystemSiteAssociationCreateInput{
+				OperatingSystemID: os6.ID,
+				SiteID:            site2.ID,
+				Version:           cutil.GetPtr("test"),
+				Status:            cdbm.OperatingSystemSiteAssociationStatusSyncing,
+				CreatedBy:         tnu.ID,
+			},
+		)
+		assert.NoError(t, err)
+	}
 
 	// OTEL Spanner configuration
 	ctx = common.TestCommonTraceProviderSetup(t, ctx)

@@ -67,9 +67,9 @@ var registerSwitchCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		conn, err := grpc.DialContext(ctx, regServerAddr,
+		conn, err := grpc.DialContext(ctx, regServerAddr, //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
+			grpc.WithBlock(), //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 		)
 		if err != nil {
 			log.Fatalf("Failed to connect to server %s: %v", regServerAddr, err)
@@ -132,9 +132,9 @@ var registerListCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		conn, err := grpc.DialContext(ctx, regServerAddr,
+		conn, err := grpc.DialContext(ctx, regServerAddr, //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
+			grpc.WithBlock(), //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 		)
 		if err != nil {
 			log.Fatalf("Failed to connect to server %s: %v", regServerAddr, err)
@@ -190,9 +190,9 @@ var registerBundlesCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		conn, err := grpc.DialContext(ctx, regServerAddr,
+		conn, err := grpc.DialContext(ctx, regServerAddr, //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
+			grpc.WithBlock(), //nolint:staticcheck // Preserve the blocking connection deadline; supported throughout gRPC 1.x.
 		)
 		if err != nil {
 			log.Fatalf("Failed to connect to server %s: %v", regServerAddr, err)

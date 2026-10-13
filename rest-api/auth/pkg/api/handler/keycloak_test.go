@@ -44,7 +44,7 @@ func createMockKeycloakServer() *httptest.Server {
 			// Mock JWKS endpoint
 			res.WriteHeader(http.StatusOK)
 			res.Header().Set("Content-Type", "application/json")
-			res.Write([]byte(`{"keys":[{"kty":"RSA","e":"AQAB","use":"sig","kid":"test-key-id","n":"test-key-value"}]}`))
+			_, _ = res.Write([]byte(`{"keys":[{"kty":"RSA","e":"AQAB","use":"sig","kid":"test-key-id","n":"test-key-value"}]}`)) // Test clients may close before reading the response.
 		default:
 			res.WriteHeader(http.StatusNotFound)
 		}
@@ -82,7 +82,7 @@ func handleMockTokenEndpoint(res http.ResponseWriter, req *http.Request) {
 		if username == "admin" && password == "admin-password" {
 			res.WriteHeader(http.StatusOK)
 			res.Header().Set("Content-Type", "application/json")
-			res.Write([]byte(mockAdminLoginResponse))
+			_, _ = res.Write([]byte(mockAdminLoginResponse)) // Test clients may close before reading the response.
 		} else {
 			res.WriteHeader(http.StatusUnauthorized)
 		}
@@ -92,7 +92,7 @@ func handleMockTokenEndpoint(res http.ResponseWriter, req *http.Request) {
 		if code == "valid-auth-code" {
 			res.WriteHeader(http.StatusOK)
 			res.Header().Set("Content-Type", "application/json")
-			res.Write([]byte(mockTokenResponse))
+			_, _ = res.Write([]byte(mockTokenResponse)) // Test clients may close before reading the response.
 		} else {
 			res.WriteHeader(http.StatusBadRequest)
 		}
@@ -103,7 +103,7 @@ func handleMockTokenEndpoint(res http.ResponseWriter, req *http.Request) {
 		if refreshToken == "valid-refresh-token" {
 			res.WriteHeader(http.StatusOK)
 			res.Header().Set("Content-Type", "application/json")
-			res.Write([]byte(`{"access_token":"new-access-token","expires_in":3600,"refresh_expires_in":1800,"refresh_token":"new-refresh-token","token_type":"Bearer","scope":"openid profile email"}`))
+			_, _ = res.Write([]byte(`{"access_token":"new-access-token","expires_in":3600,"refresh_expires_in":1800,"refresh_token":"new-refresh-token","token_type":"Bearer","scope":"openid profile email"}`)) // Test clients may close before reading the response.
 		} else {
 			res.WriteHeader(http.StatusBadRequest)
 		}
@@ -120,7 +120,7 @@ func handleMockTokenEndpoint(res http.ResponseWriter, req *http.Request) {
 				response = mockTokenResponse
 			}
 			// fmt.Printf("Mock server sending response: %s\n", response)
-			res.Write([]byte(response))
+			_, _ = res.Write([]byte(response)) // Test clients may close before reading the response.
 		} else {
 			res.WriteHeader(http.StatusUnauthorized)
 		}
@@ -133,7 +133,7 @@ func handleMockIDPEndpoint(res http.ResponseWriter, req *http.Request) {
 	// Accept requests without proper auth headers for testing
 	res.Header().Set("Content-Type", "application/json")
 	res.WriteHeader(http.StatusOK)
-	res.Write([]byte(mockIDPsResponse))
+	_, _ = res.Write([]byte(mockIDPsResponse)) // Test clients may close before reading the response.
 }
 
 func handleMockUserInfoEndpoint(res http.ResponseWriter, req *http.Request) {
@@ -141,7 +141,7 @@ func handleMockUserInfoEndpoint(res http.ResponseWriter, req *http.Request) {
 	if authHeader == "Bearer valid-access-token" {
 		res.WriteHeader(http.StatusOK)
 		res.Header().Set("Content-Type", "application/json")
-		res.Write([]byte(`{"sub":"user-123","email":"john.doe@testorg.com","preferred_username":"john.doe"}`))
+		_, _ = res.Write([]byte(`{"sub":"user-123","email":"john.doe@testorg.com","preferred_username":"john.doe"}`)) // Test clients may close before reading the response.
 	} else {
 		res.WriteHeader(http.StatusUnauthorized)
 	}

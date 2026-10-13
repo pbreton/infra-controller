@@ -256,7 +256,7 @@ func (ibp *InfiniBandPartition) FromProto(proto *corev1.IBPartition) {
 	ibp.Description = nil
 	ibp.Labels = nil
 	if proto.Config != nil {
-		ibp.Name = proto.Config.Name
+		ibp.Name = proto.Config.Name //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 		ibp.Org = proto.Config.TenantOrganizationId
 	}
 	if proto.Metadata != nil {

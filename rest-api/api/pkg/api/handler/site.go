@@ -36,7 +36,6 @@ import (
 	cdb "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
-	cdbp "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
 	siteWorkflow "github.com/NVIDIA/infra-controller/rest-api/workflow/pkg/workflow/site"
 )
 
@@ -270,7 +269,10 @@ func (csh CreateSiteHandler) Handle(c echo.Context) error {
 		// match the prior behavior (it was likewise left in place on commit
 		// failures by the legacy BeginTx/Commit scaffolding).
 		if siteManagerCreated {
-			csm.DeleteSite(ctx, logger, st.ID.String(), siteManagerURL)
+			cleanupErr := csm.DeleteSite(ctx, logger, st.ID.String(), siteManagerURL)
+			if cleanupErr != nil {
+				logger.Error().Err(cleanupErr).Msg("failed to remove Site Manager entry after transaction failure")
+			}
 		}
 		return common.HandleTxError(c, logger, err, "Failed to create Site, DB transaction error")
 	}
@@ -374,7 +376,7 @@ func (ush UpdateSiteHandler) Handle(c echo.Context) error {
 
 	if !isAssociated && tenant != nil {
 		// Check if Tenant is associated with Site
-		tss, _, err := tsDAO.GetAll(ctx, nil, cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{siteID}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		tss, _, err := tsDAO.GetAll(ctx, nil, cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{siteID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if err != nil {
 			logger.Warn().Err(err).Msg("error retrieving TenantSite records from DB")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to determine Tenant's access to Site, DB error", nil)
@@ -455,7 +457,7 @@ func (ush UpdateSiteHandler) Handle(c echo.Context) error {
 			// Native Networking is being disabled
 			// Check if there are VPCs that have virtualization type set to FNN
 			vpcDAO := cdbm.NewVpcDAO(ush.dbSession)
-			_, vpcCount, err := vpcDAO.GetAll(ctx, nil, cdbm.VpcFilterInput{SiteIDs: []uuid.UUID{es.ID}, NetworkVirtualizationType: cutil.GetPtr(cdbm.VpcFNN)}, cdbp.PageInput{}, nil)
+			_, vpcCount, err := vpcDAO.GetAll(ctx, nil, cdbm.VpcFilterInput{SiteIDs: []uuid.UUID{es.ID}, NetworkVirtualizationType: cutil.GetPtr(cdbm.VpcFNN)}, paginator.PageInput{}, nil)
 			if err != nil {
 				logger.Error().Err(err).Msg("error retrieving VPCs for Site from DB")
 				return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve VPCs for Site, unable to determine if Native Networking can be disabled", nil)
@@ -530,7 +532,7 @@ func (ush UpdateSiteHandler) Handle(c echo.Context) error {
 
 		// Get status details (inside the tx for read-your-writes consistency
 		// with the StatusDetail created above)
-		details, _, derr := sdDAO.GetAll(ctx, tx, cdbm.StatusDetailFilterInput{EntityIDs: []string{siteID.String()}}, cdbp.PageInput{Limit: cutil.GetPtr(pagination.MaxPageSize)})
+		details, _, derr := sdDAO.GetAll(ctx, tx, cdbm.StatusDetailFilterInput{EntityIDs: []string{siteID.String()}}, paginator.PageInput{Limit: cutil.GetPtr(pagination.MaxPageSize)})
 		if derr != nil {
 			logger.Error().Err(derr).Msg("error retrieving Status Details for Site from DB")
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve Status Details for Site", nil)
@@ -637,7 +639,7 @@ func (gsh GetSiteHandler) Handle(c echo.Context) error {
 	if !isAssociated && tenant != nil {
 		tsDAO := cdbm.NewTenantSiteDAO(gsh.dbSession)
 
-		tss, tsCount, serr := tsDAO.GetAll(ctx, nil, cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{stID}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		tss, tsCount, serr := tsDAO.GetAll(ctx, nil, cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{stID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if serr != nil {
 			logger.Error().Err(serr).Msg("error retrieving TenantSite from DB")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenant/Site association to determine access to Site, DB error", nil)
@@ -849,7 +851,7 @@ func (gash GetAllSiteHandler) Handle(c echo.Context) error {
 
 	if provider != nil {
 		// Retrieve Sites from Provider perspective
-		sites, _, serr := stDAO.GetAll(ctx, nil, cdbm.SiteFilterInput{InfrastructureProviderIDs: []uuid.UUID{provider.ID}}, paginator.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		sites, _, serr := stDAO.GetAll(ctx, nil, cdbm.SiteFilterInput{InfrastructureProviderIDs: []uuid.UUID{provider.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if serr != nil {
 			logger.Error().Err(serr).Msg("error retrieving all Sites by param from DB")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Sites", nil)
@@ -862,7 +864,7 @@ func (gash GetAllSiteHandler) Handle(c echo.Context) error {
 	if tenant != nil {
 		// Get Sites from Tenant perspective
 		tsDAO := cdbm.NewTenantSiteDAO(gash.dbSession)
-		tss, _, serr := tsDAO.GetAll(ctx, nil, cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		tss, _, serr := tsDAO.GetAll(ctx, nil, cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if serr != nil {
 			logger.Error().Err(serr).Msg("error retrieving Tenant Site associations from DB by Tenant ID")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Site associated with Tenant", nil)
@@ -1180,7 +1182,7 @@ func (gssdh GetSiteStatusDetailsHandler) Handle(c echo.Context) error {
 	if !isAssociated && tenant != nil {
 		tsDAO := cdbm.NewTenantSiteDAO(gssdh.dbSession)
 
-		_, tsCount, serr := tsDAO.GetAll(ctx, nil, cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{stID}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		_, tsCount, serr := tsDAO.GetAll(ctx, nil, cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{stID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if serr != nil {
 			logger.Error().Err(serr).Msg("error retrieving TenantSite from DB")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenant/Site association to determine access to Site, DB error", nil)

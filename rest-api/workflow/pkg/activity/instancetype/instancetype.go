@@ -216,7 +216,10 @@ func (mv ManageInstanceType) UpdateInstanceTypeInCloud(ctx context.Context, site
 	txCommitted := false
 	defer func(dbTx *cdb.Tx, committed *bool) {
 		if committed != nil && !*committed {
-			dbTx.Rollback()
+			err := dbTx.Rollback()
+			if err != nil {
+				log.Ctx(ctx).Error().Err(err).Msg("failed to roll back Instance Type transaction")
+			}
 		}
 	}(tx, &txCommitted)
 
@@ -309,7 +312,10 @@ func (mv ManageInstanceType) AddInstanceTypeToCloud(ctx context.Context, site *c
 	txCommitted := false
 	defer func(dbTx *cdb.Tx, committed *bool) {
 		if committed != nil && !*committed {
-			dbTx.Rollback()
+			err := dbTx.Rollback()
+			if err != nil {
+				log.Ctx(ctx).Error().Err(err).Msg("failed to roll back Instance Type transaction")
+			}
 		}
 	}(tx, &txCommitted)
 

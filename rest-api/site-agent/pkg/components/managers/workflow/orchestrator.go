@@ -253,20 +253,37 @@ func workflowOrchestrator() (*workflowtypes.WorkerStatus, error) {
 	}
 
 	// Register all manager flows here
-	// TODO: all RegisterSubscriber calls return an error and we ignore them. Should we?
 	err = ManagerAccess.API.Site.RegisterPublisher()
 	if err != nil {
 		return nil, err
 	}
 
-	ManagerAccess.API.VPC.RegisterSubscriber()
-	ManagerAccess.API.VPC.RegisterPublisher()
+	err = ManagerAccess.API.VPC.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("VPC: failed to register subscriber")
+	}
+	err = ManagerAccess.API.VPC.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("VPC: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.VpcPrefix.RegisterSubscriber()
-	ManagerAccess.API.VpcPrefix.RegisterPublisher()
+	err = ManagerAccess.API.VpcPrefix.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("VpcPrefix: failed to register subscriber")
+	}
+	err = ManagerAccess.API.VpcPrefix.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("VpcPrefix: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.VpcPeering.RegisterSubscriber()
-	ManagerAccess.API.VpcPeering.RegisterPublisher()
+	err = ManagerAccess.API.VpcPeering.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("VpcPeering: failed to register subscriber")
+	}
+	err = ManagerAccess.API.VpcPeering.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("VpcPeering: failed to register inventory publisher")
+	}
 
 	// Inventory only: SpectrumX Partition CRUD goes through the generic Core gRPC proxy.
 	err = ManagerAccess.API.SpectrumXPartition.RegisterPublisher()
@@ -274,72 +291,183 @@ func workflowOrchestrator() (*workflowtypes.WorkerStatus, error) {
 		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("SpectrumXPartition: failed to register inventory publisher")
 	}
 
-	ManagerAccess.API.Subnet.RegisterSubscriber()
-	ManagerAccess.API.Subnet.RegisterPublisher()
+	err = ManagerAccess.API.Subnet.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Subnet: failed to register subscriber")
+	}
+	err = ManagerAccess.API.Subnet.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Subnet: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.InfiniBandPartition.RegisterSubscriber()
-	ManagerAccess.API.InfiniBandPartition.RegisterPublisher()
+	err = ManagerAccess.API.InfiniBandPartition.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("InfiniBandPartition: failed to register subscriber")
+	}
+	err = ManagerAccess.API.InfiniBandPartition.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("InfiniBandPartition: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.SSHKeyGroup.RegisterSubscriber()
-	ManagerAccess.API.SSHKeyGroup.RegisterPublisher()
+	err = ManagerAccess.API.SSHKeyGroup.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("SSHKeyGroup: failed to register subscriber")
+	}
+	err = ManagerAccess.API.SSHKeyGroup.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("SSHKeyGroup: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.Machine.RegisterSubscriber()
-	ManagerAccess.API.Machine.RegisterPublisher()
+	err = ManagerAccess.API.Machine.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Machine: failed to register subscriber")
+	}
+	err = ManagerAccess.API.Machine.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Machine: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.Instance.RegisterSubscriber()
-	ManagerAccess.API.Instance.RegisterPublisher()
+	err = ManagerAccess.API.Instance.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Instance: failed to register subscriber")
+	}
+	err = ManagerAccess.API.Instance.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Instance: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.Bootstrap.RegisterSubscriber()
+	err = ManagerAccess.API.Bootstrap.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Bootstrap: failed to register subscriber")
+	}
 
-	ManagerAccess.API.Tenant.RegisterSubscriber()
-	ManagerAccess.API.Tenant.RegisterPublisher()
+	err = ManagerAccess.API.Tenant.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Tenant: failed to register subscriber")
+	}
+	err = ManagerAccess.API.Tenant.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("Tenant: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.OperatingSystem.RegisterSubscriber()
-	ManagerAccess.API.OperatingSystem.RegisterPublisher()
+	err = ManagerAccess.API.OperatingSystem.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("OperatingSystem: failed to register subscriber")
+	}
+	err = ManagerAccess.API.OperatingSystem.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("OperatingSystem: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.MachineValidation.RegisterSubscriber()
+	err = ManagerAccess.API.MachineValidation.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("MachineValidation: failed to register subscriber")
+	}
 
 	// Generic Core gRPC proxy: one workflow/activity for all proxied operations,
 	// registered on the Core gRPC manager that owns the connection.
-	ManagerAccess.API.CoreGrpc.RegisterSubscriber()
+	err = ManagerAccess.API.CoreGrpc.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("CoreGrpc: failed to register subscriber")
+	}
 
-	ManagerAccess.API.InstanceType.RegisterSubscriber()
-	ManagerAccess.API.InstanceType.RegisterPublisher()
+	err = ManagerAccess.API.InstanceType.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("InstanceType: failed to register subscriber")
+	}
+	err = ManagerAccess.API.InstanceType.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("InstanceType: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.NetworkSecurityGroup.RegisterSubscriber()
-	ManagerAccess.API.NetworkSecurityGroup.RegisterPublisher()
+	err = ManagerAccess.API.NetworkSecurityGroup.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("NetworkSecurityGroup: failed to register subscriber")
+	}
+	err = ManagerAccess.API.NetworkSecurityGroup.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("NetworkSecurityGroup: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.ExpectedMachine.RegisterSubscriber()
-	ManagerAccess.API.ExpectedMachine.RegisterPublisher()
+	err = ManagerAccess.API.ExpectedMachine.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedMachine: failed to register subscriber")
+	}
+	err = ManagerAccess.API.ExpectedMachine.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedMachine: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.ExpectedPowerShelf.RegisterSubscriber()
-	ManagerAccess.API.ExpectedPowerShelf.RegisterPublisher()
+	err = ManagerAccess.API.ExpectedPowerShelf.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedPowerShelf: failed to register subscriber")
+	}
+	err = ManagerAccess.API.ExpectedPowerShelf.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedPowerShelf: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.ExpectedRack.RegisterSubscriber()
-	ManagerAccess.API.ExpectedRack.RegisterPublisher()
+	err = ManagerAccess.API.ExpectedRack.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedRack: failed to register subscriber")
+	}
+	err = ManagerAccess.API.ExpectedRack.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedRack: failed to register inventory publisher")
+	}
 	err = ManagerAccess.API.ExpectedRackGroup.RegisterPublisher()
 	if err != nil {
 		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedRackGroup: failed to register publisher")
 	}
 
-	ManagerAccess.API.ExpectedSwitch.RegisterSubscriber()
-	ManagerAccess.API.ExpectedSwitch.RegisterPublisher()
+	err = ManagerAccess.API.ExpectedSwitch.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedSwitch: failed to register subscriber")
+	}
+	err = ManagerAccess.API.ExpectedSwitch.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("ExpectedSwitch: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.SKU.RegisterSubscriber()
-	ManagerAccess.API.SKU.RegisterPublisher()
+	err = ManagerAccess.API.SKU.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("SKU: failed to register subscriber")
+	}
+	err = ManagerAccess.API.SKU.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("SKU: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.DpuExtensionService.RegisterSubscriber()
-	ManagerAccess.API.DpuExtensionService.RegisterPublisher()
+	err = ManagerAccess.API.DpuExtensionService.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("DpuExtensionService: failed to register subscriber")
+	}
+	err = ManagerAccess.API.DpuExtensionService.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("DpuExtensionService: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.NVLinkLogicalPartition.RegisterSubscriber()
-	ManagerAccess.API.NVLinkLogicalPartition.RegisterPublisher()
+	err = ManagerAccess.API.NVLinkLogicalPartition.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("NVLinkLogicalPartition: failed to register subscriber")
+	}
+	err = ManagerAccess.API.NVLinkLogicalPartition.RegisterPublisher()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("NVLinkLogicalPartition: failed to register inventory publisher")
+	}
 
-	ManagerAccess.API.TenantIdentity.RegisterSubscriber()
+	err = ManagerAccess.API.TenantIdentity.RegisterSubscriber()
+	if err != nil {
+		ManagerAccess.Data.EB.Log.Error().Err(err).Msg("TenantIdentity: failed to register subscriber")
+	}
 
 	// Flow workflows (only registered if Flow gRPC is enabled)
 	if ManagerAccess.Conf.EB.FlowGrpc.Enabled {
 		if ManagerAccess.API.FlowGrpc != nil {
-			ManagerAccess.API.FlowGrpc.RegisterSubscriber()
+			err = ManagerAccess.API.FlowGrpc.RegisterSubscriber()
+			if err != nil {
+				ManagerAccess.Data.EB.Log.Error().Err(err).Msg("FlowGrpc: failed to register subscriber")
+			}
 		} else {
 			log.Error().Msg("FlowGrpc: Flow gRPC is enabled in config but Flow gRPC manager is not initialized")
 		}

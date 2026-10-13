@@ -609,7 +609,7 @@ func (f *NICoServerImpl) CreateIBPartition(c context.Context, req *corev1.IBPart
 	nibp := &corev1.IBPartition{
 		Id: &corev1.IBPartitionId{Value: nid},
 		Config: &corev1.IBPartitionConfig{
-			Name:                 req.Config.Name,
+			Name:                 req.Config.Name, //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 			TenantOrganizationId: req.Config.TenantOrganizationId,
 		},
 	}
@@ -632,8 +632,8 @@ func (f *NICoServerImpl) UpdateIBPartition(c context.Context, req *corev1.IBPart
 		if ibp.Config == nil {
 			ibp.Config = &corev1.IBPartitionConfig{}
 		}
-		if req.Config.Name != "" {
-			ibp.Config.Name = req.Config.Name
+		if req.Config.Name != "" { //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
+			ibp.Config.Name = req.Config.Name //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 		}
 		if req.Config.TenantOrganizationId != "" {
 			ibp.Config.TenantOrganizationId = req.Config.TenantOrganizationId
@@ -1328,11 +1328,6 @@ func generateES256KeyMaterial() (*identityKeyMaterial, error) {
 	}, nil
 }
 
-// jwksDocumentForKey returns a one-key JWKS JSON document.
-func jwksDocumentForKey(km *identityKeyMaterial, use string) (string, error) {
-	return jwksDocumentForKeys([]*identityKeyMaterial{km}, use)
-}
-
 // jwksDocumentForKeys returns a JWKS JSON document for the supplied keys
 // (two during a rotation overlap window; one in steady state).
 func jwksDocumentForKeys(kms []*identityKeyMaterial, use string) (string, error) {
@@ -1342,8 +1337,12 @@ func jwksDocumentForKeys(kms []*identityKeyMaterial, use string) (string, error)
 			return "", fmt.Errorf("nil key material")
 		}
 		pub := km.privateKey.PublicKey
-		xb := pub.X.FillBytes(make([]byte, p256CoordinateLen))
-		yb := pub.Y.FillBytes(make([]byte, p256CoordinateLen))
+		encoded, err := pub.Bytes()
+		if err != nil {
+			return "", fmt.Errorf("encode public key: %w", err)
+		}
+		xb := encoded[1 : 1+p256CoordinateLen]
+		yb := encoded[1+p256CoordinateLen:]
 		jwks = append(jwks, map[string]string{
 			"kty": "EC",
 			"crv": "P-256",

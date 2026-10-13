@@ -32,7 +32,6 @@ import (
 	cdb "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
-	cdbp "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
 	swe "github.com/NVIDIA/infra-controller/rest-api/site-workflow/pkg/error"
 	"github.com/NVIDIA/infra-controller/rest-api/workflow/pkg/queue"
 )
@@ -212,7 +211,7 @@ func validateIpxeTemplateAvailableAtSites(ctx context.Context, dbSession *cdb.Se
 			IpxeTemplateIDs: []uuid.UUID{tid},
 			SiteIDs:         siteIDs,
 		},
-		cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+		paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 		nil,
 	)
 	if err != nil {
@@ -244,7 +243,7 @@ func getTenantSiteIDs(ctx context.Context, dbSession *cdb.Session, tenant *cdbm.
 	tsDAO := cdbm.NewTenantSiteDAO(dbSession)
 	tss, _, err := tsDAO.GetAll(ctx, nil,
 		cdbm.TenantSiteFilterInput{TenantIDs: []uuid.UUID{tenant.ID}},
-		cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+		paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 		nil,
 	)
 	if err != nil {
@@ -362,7 +361,7 @@ func (csh CreateOperatingSystemHandler) Handle(c echo.Context) error {
 	} else {
 		uniquenessFilter.TenantIDs = []uuid.UUID{tenant.ID}
 	}
-	oss, tot, err := osDAO.GetAll(ctx, nil, uniquenessFilter, cdbp.PageInput{}, nil)
+	oss, tot, err := osDAO.GetAll(ctx, nil, uniquenessFilter, paginator.PageInput{}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("db error checking for name uniqueness of os")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to create OperatingSystem due to DB error", nil)
@@ -404,7 +403,7 @@ func (csh CreateOperatingSystemHandler) Handle(c echo.Context) error {
 			ctx,
 			nil,
 			cdbm.SiteFilterInput{SiteIDs: requestedSiteIDs},
-			cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 			nil,
 		)
 		if serr != nil {
@@ -431,8 +430,8 @@ func (csh CreateOperatingSystemHandler) Handle(c echo.Context) error {
 				TenantIDs: []uuid.UUID{tenant.ID},
 				SiteIDs:   requestedSiteIDs,
 			},
-			cdbp.PageInput{
-				Limit: cutil.GetPtr(cdbp.TotalLimit),
+			paginator.PageInput{
+				Limit: cutil.GetPtr(paginator.TotalLimit),
 			},
 			nil,
 		)
@@ -604,8 +603,8 @@ func (csh CreateOperatingSystemHandler) Handle(c echo.Context) error {
 			cdbm.OperatingSystemSiteAssociationFilterInput{
 				OperatingSystemIDs: []uuid.UUID{os.ID},
 			},
-			cdbp.PageInput{
-				Limit: cutil.GetPtr(cdbp.TotalLimit),
+			paginator.PageInput{
+				Limit: cutil.GetPtr(paginator.TotalLimit),
 			},
 			[]string{cdbm.SiteRelationName, cdbm.OperatingSystemRelationName},
 		)
@@ -742,7 +741,7 @@ func reloadOperatingSystemForResponse(ctx context.Context, logger zerolog.Logger
 	ossas := priorOSSAs
 	if v, _, err := ossaDAO.GetAll(ctx, nil,
 		cdbm.OperatingSystemSiteAssociationFilterInput{OperatingSystemIDs: []uuid.UUID{os.ID}},
-		cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+		paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 		[]string{cdbm.SiteRelationName}); err == nil {
 		ossas = v
 	} else {
@@ -872,7 +871,7 @@ func (gash GetAllOperatingSystemHandler) Handle(c echo.Context) error {
 			ctx,
 			nil,
 			cdbm.SiteFilterInput{SiteIDs: requestedSiteIDs},
-			cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 			nil,
 		)
 		if serr != nil {
@@ -895,7 +894,7 @@ func (gash GetAllOperatingSystemHandler) Handle(c echo.Context) error {
 					TenantIDs: []uuid.UUID{tenant.ID},
 					SiteIDs:   requestedSiteIDs,
 				},
-				cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+				paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 				nil,
 			)
 			if terr != nil {
@@ -965,7 +964,7 @@ func (gash GetAllOperatingSystemHandler) Handle(c echo.Context) error {
 
 	if tenant != nil && ip == nil {
 		mergedOSIDs := make(map[uuid.UUID]struct{})
-		selectionPage := cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}
+		selectionPage := paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}
 
 		tenantFilter := filter
 		tenantFilter.TenantIDs = []uuid.UUID{tenant.ID}
@@ -1015,7 +1014,7 @@ func (gash GetAllOperatingSystemHandler) Handle(c echo.Context) error {
 		ctx,
 		nil,
 		filter,
-		cdbp.PageInput{
+		paginator.PageInput{
 			Offset:  pageRequest.Offset,
 			Limit:   pageRequest.Limit,
 			OrderBy: pageRequest.OrderBy,
@@ -1062,7 +1061,7 @@ func (gash GetAllOperatingSystemHandler) Handle(c echo.Context) error {
 			OperatingSystemIDs: osIDs,
 			SiteIDs:            siteIDs,
 		},
-		cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+		paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 		[]string{cdbm.SiteRelationName},
 	)
 	if err != nil {
@@ -1091,8 +1090,8 @@ func (gash GetAllOperatingSystemHandler) Handle(c echo.Context) error {
 					TenantIDs: []uuid.UUID{tenant.ID},
 					SiteIDs:   siteIDs,
 				},
-				cdbp.PageInput{
-					Limit: cutil.GetPtr(cdbp.TotalLimit),
+				paginator.PageInput{
+					Limit: cutil.GetPtr(paginator.TotalLimit),
 				},
 				nil,
 			)
@@ -1234,7 +1233,7 @@ func (gsh GetOperatingSystemHandler) Handle(c echo.Context) error {
 
 	// If caller has dual role (Tenant+Provider) we already know we can go forward.
 	// Otherwise we need additional checks:
-	if !(tenant != nil && ip != nil) {
+	if tenant == nil || ip == nil {
 		if ip != nil && !ownedByProvider {
 			logger.Warn().Msg("provider admin cannot view tenant-owned operating system")
 			return cutil.NewAPIErrorResponse(c, http.StatusForbidden, "Operating System does not belong to the infrastructure provider in org", nil)
@@ -1244,7 +1243,7 @@ func (gsh GetOperatingSystemHandler) Handle(c echo.Context) error {
 			ossaDAO := cdbm.NewOperatingSystemSiteAssociationDAO(gsh.dbSession)
 			ossas, _, ossaErr := ossaDAO.GetAll(ctx, nil,
 				cdbm.OperatingSystemSiteAssociationFilterInput{OperatingSystemIDs: []uuid.UUID{os.ID}},
-				cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+				paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 				nil,
 			)
 			if ossaErr != nil {
@@ -1290,8 +1289,8 @@ func (gsh GetOperatingSystemHandler) Handle(c echo.Context) error {
 				OperatingSystemIDs: []uuid.UUID{os.ID},
 				SiteIDs:            tenantSiteIDs,
 			},
-			cdbp.PageInput{
-				Limit: cutil.GetPtr(cdbp.TotalLimit),
+			paginator.PageInput{
+				Limit: cutil.GetPtr(paginator.TotalLimit),
 			},
 			[]string{cdbm.SiteRelationName},
 		)
@@ -1310,8 +1309,8 @@ func (gsh GetOperatingSystemHandler) Handle(c echo.Context) error {
 			cdbm.TenantSiteFilterInput{
 				TenantIDs: []uuid.UUID{tenant.ID},
 			},
-			cdbp.PageInput{
-				Limit: cutil.GetPtr(cdbp.TotalLimit),
+			paginator.PageInput{
+				Limit: cutil.GetPtr(paginator.TotalLimit),
 			},
 			nil,
 		)
@@ -1456,7 +1455,7 @@ func (ush UpdateOperatingSystemHandler) Handle(c echo.Context) error {
 		} else {
 			uniquenessFilter.TenantIDs = []uuid.UUID{tenant.ID}
 		}
-		oss, tot, serr := osDAO.GetAll(ctx, nil, uniquenessFilter, cdbp.PageInput{}, nil)
+		oss, tot, serr := osDAO.GetAll(ctx, nil, uniquenessFilter, paginator.PageInput{}, nil)
 		if serr != nil {
 			logger.Error().Err(serr).Msg("db error checking for name uniqueness of os")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to update OperatingSystem due to DB error", nil)
@@ -1482,7 +1481,7 @@ func (ush UpdateOperatingSystemHandler) Handle(c echo.Context) error {
 			cdbm.OperatingSystemSiteAssociationFilterInput{
 				OperatingSystemIDs: []uuid.UUID{os.ID},
 			},
-			cdbp.PageInput{},
+			paginator.PageInput{},
 			[]string{cdbm.SiteRelationName},
 		)
 		if err != nil {
@@ -1497,7 +1496,7 @@ func (ush UpdateOperatingSystemHandler) Handle(c echo.Context) error {
 			cdbm.TenantSiteFilterInput{
 				TenantIDs: []uuid.UUID{tenant.ID},
 			},
-			cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 			nil,
 		)
 		if err != nil {
@@ -1534,7 +1533,7 @@ func (ush UpdateOperatingSystemHandler) Handle(c echo.Context) error {
 	if os.Type == cdbm.OperatingSystemTypeTemplatedIPXE {
 		templatedOssas, _, oerr := ossaDAO.GetAll(ctx, nil,
 			cdbm.OperatingSystemSiteAssociationFilterInput{OperatingSystemIDs: []uuid.UUID{os.ID}},
-			cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+			paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if oerr != nil {
 			logger.Error().Err(oerr).Msg("error retrieving Operating System Site associations for iPXE template validation")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Operating System Site associations from DB", nil)
@@ -1633,7 +1632,7 @@ func (ush UpdateOperatingSystemHandler) Handle(c echo.Context) error {
 		}
 
 		// get status details for the response
-		retssds, _, derr := sdDAO.GetAll(ctx, tx, cdbm.StatusDetailFilterInput{EntityIDs: []string{uos.ID.String()}}, cdbp.PageInput{Limit: cutil.GetPtr(pagination.MaxPageSize)})
+		retssds, _, derr := sdDAO.GetAll(ctx, tx, cdbm.StatusDetailFilterInput{EntityIDs: []string{uos.ID.String()}}, paginator.PageInput{Limit: cutil.GetPtr(pagination.MaxPageSize)})
 		if derr != nil {
 			logger.Error().Err(derr).Msg("error retrieving Status Details for os from DB")
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve Status Details for Operating System", nil)
@@ -1739,8 +1738,8 @@ func (ush UpdateOperatingSystemHandler) Handle(c echo.Context) error {
 				cdbm.OperatingSystemSiteAssociationFilterInput{
 					OperatingSystemIDs: []uuid.UUID{uos.ID},
 				},
-				cdbp.PageInput{
-					Limit: cutil.GetPtr(cdbp.TotalLimit),
+				paginator.PageInput{
+					Limit: cutil.GetPtr(paginator.TotalLimit),
 				},
 				[]string{cdbm.SiteRelationName},
 			)
@@ -1763,7 +1762,7 @@ func (ush UpdateOperatingSystemHandler) Handle(c echo.Context) error {
 				ctx,
 				tx,
 				cdbm.OperatingSystemSiteAssociationFilterInput{OperatingSystemIDs: []uuid.UUID{uos.ID}},
-				cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+				paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 				nil,
 			)
 			if derr != nil {
@@ -1815,7 +1814,7 @@ func (ush UpdateOperatingSystemHandler) Handle(c echo.Context) error {
 	if cdbm.IsIPXEType(uos.Type) {
 		ipxeOssas, _, oerr := ossaDAO.GetAll(ctx, nil,
 			cdbm.OperatingSystemSiteAssociationFilterInput{OperatingSystemIDs: []uuid.UUID{uos.ID}},
-			cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 			[]string{cdbm.SiteRelationName})
 		if oerr != nil {
 			logger.Error().Err(oerr).Msg("error retrieving Operating System Site associations for proxy sync")
@@ -1935,7 +1934,7 @@ func (dsh DeleteOperatingSystemHandler) Handle(c echo.Context) error {
 			cdbm.OperatingSystemSiteAssociationFilterInput{
 				OperatingSystemIDs: []uuid.UUID{os.ID},
 			},
-			cdbp.PageInput{},
+			paginator.PageInput{},
 			[]string{cdbm.SiteRelationName},
 		)
 		if err != nil {

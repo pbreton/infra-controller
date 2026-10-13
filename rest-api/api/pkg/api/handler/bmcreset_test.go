@@ -30,7 +30,7 @@ func TestResetMachineBMCHandlerProxiesRequest(t *testing.T) {
 
 	var coreReq corev1.AdminBmcResetRequest
 	require.NoError(t, protojson.Unmarshal(fixture.ProxiedReq.RequestJSON, &coreReq))
-	assert.Equal(t, fixture.MachineID, coreReq.GetMachineId())
+	assert.Equal(t, fixture.MachineID, coreReq.GetMachineId()) //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 	assert.True(t, coreReq.GetUseIpmitool())
 	var resp model.APIMessageResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))

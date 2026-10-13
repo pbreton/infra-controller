@@ -1894,7 +1894,7 @@ func TestVpc_FromProto(t *testing.T) {
 			want string
 		}{
 			{name: "FLAT", in: corev1.VpcVirtualizationType_FLAT, want: VpcFlat},
-			{name: "unhandled defaults to ETHERNET_VIRTUALIZER", in: corev1.VpcVirtualizationType_FNN_CLASSIC, want: VpcEthernetVirtualizer},
+			{name: "unhandled defaults to ETHERNET_VIRTUALIZER", in: corev1.VpcVirtualizationType_FNN_CLASSIC, want: VpcEthernetVirtualizer}, //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {

@@ -35,19 +35,19 @@ const (
 )
 
 var (
-	LeadingWhitespaceRegexp  = regexp.MustCompile("^\\s+.*")
-	TrailingWhitespaceRegexp = regexp.MustCompile(".*\\s+$")
-	NotAllWhitespaceRegexp   = regexp.MustCompile("[^\\s]+")
+	LeadingWhitespaceRegexp  = regexp.MustCompile(`^\s+.*`)
+	TrailingWhitespaceRegexp = regexp.MustCompile(`.*\s+$`)
+	NotAllWhitespaceRegexp   = regexp.MustCompile(`[^\s]+`)
 	ShaHashRegex             = regexp.MustCompile("^[A-Fa-f0-9]+$")
 	Sha256LowercaseHexRegex  = regexp.MustCompile("^[a-f0-9]{64}$")
 	DiskImagePathRegex       = regexp.MustCompile(`^(smallest|/dev/(nvme[0-9]+n[0-9]+|[sv]d[a-z]+|disk/by-id/[^/[:space:]]+))$`)
 	diskImagePartitionRegex  = regexp.MustCompile(`^/dev/disk/by-id/.*-part[0-9]+$`)
 	errInvalidDiskImagePath  = errors.New("not a valid disk path")
 
-	ValidationErrorNameHasLeadingWhitespace  = errors.New("name field has leading whitespace")
-	ValidationErrorNameHasTrailingWhitespace = errors.New("name field has trailing whitespace")
-	ValidationErrorNameFieldIsEmpty          = errors.New("name field is empty")
-	ValidationErrorOnlyWhitespace            = errors.New("field consists only of whitespace")
+	ValidationErrorNameHasLeadingWhitespace  = errors.New("name field has leading whitespace")  //nolint:staticcheck // Preserve the exported error name for callers.
+	ValidationErrorNameHasTrailingWhitespace = errors.New("name field has trailing whitespace") //nolint:staticcheck // Preserve the exported error name for callers.
+	ValidationErrorNameFieldIsEmpty          = errors.New("name field is empty")                //nolint:staticcheck // Preserve the exported error name for callers.
+	ValidationErrorOnlyWhitespace            = errors.New("field consists only of whitespace")  //nolint:staticcheck // Preserve the exported error name for callers.
 
 	// Label restrictions
 	LabelKeyMaxLength   = 255

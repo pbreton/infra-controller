@@ -270,9 +270,9 @@ func TestManageVpcPeeringInventory_DiscoverVpcPeeringInventory(t *testing.T) {
 			// Mock: vpcFindIDs uses ctx "wantCount" (see testing.go FindVpcIds); at least one VPC is
 			// required so VpcPeeringFindIDs queries FindVpcPeeringIds per vpc_id.
 			if tt.args.wantTotalItems > 0 {
-				ctx = context.WithValue(ctx, "wantCount", 1)
+				ctx = context.WithValue(ctx, cClient.MockWantCount, 1)
 			}
-			ctx = context.WithValue(ctx, "WantCount", tt.args.wantTotalItems)
+			ctx = context.WithValue(ctx, cClient.MockLegacyWantCount, tt.args.wantTotalItems)
 
 			totalPages := tt.args.wantTotalItems / tt.fields.cloudPageSize
 			if tt.args.wantTotalItems%tt.fields.cloudPageSize > 0 {

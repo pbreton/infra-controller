@@ -1019,7 +1019,7 @@ func TestGetUnallocatedMachineForInstanceType(t *testing.T) {
 
 	tx, _ := cdb.BeginTx(ctx, dbSession, &sql.TxOptions{})
 	assert.NotNil(t, tx)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // The transaction may already be committed.
 
 	// Add user entry
 	ipOrg1 := "test-ip-org-1"
@@ -1245,7 +1245,7 @@ func TestGetSiteMachineCountStats(t *testing.T) {
 
 	tx, _ := cdb.BeginTx(ctx, dbSession, &sql.TxOptions{})
 	assert.NotNil(t, tx)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // The transaction may already be committed.
 
 	// Add user entry
 	ipOrg1 := "test-ip-org-1"
@@ -2393,7 +2393,7 @@ func TestMatchInstanceTypeCapabilitiesForMachines(t *testing.T) {
 
 	tx, _ := cdb.BeginTx(ctx, dbSession, &sql.TxOptions{})
 	assert.NotNil(t, tx)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // The transaction may already be committed.
 
 	// Add user entry
 	ipOrg1 := "test-ip-org-1"

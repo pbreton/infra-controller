@@ -63,13 +63,13 @@ const (
 
 var (
 	// ErrOrgInstrastructureProviderNotFound is returned when the org does not have an infrastructure provider
-	ErrOrgInstrastructureProviderNotFound = errors.New("Org does not have an Infrastructure Provider")
+	ErrOrgInstrastructureProviderNotFound = errors.New("Org does not have an Infrastructure Provider") //nolint:staticcheck // Preserve the established error text and service names.
 	// ErrOrgTenantNotFound is returned when the org does not have a tenant
-	ErrOrgTenantNotFound = errors.New("Org does not have a Tenant")
+	ErrOrgTenantNotFound = errors.New("Org does not have a Tenant") //nolint:staticcheck // Preserve the established error text and service names.
 	// ErrAllocationConstraintNotFound
-	ErrAllocationConstraintNotFound = errors.New("Allocation does not have an associated Constraint")
+	ErrAllocationConstraintNotFound = errors.New("Allocation does not have an associated Constraint") //nolint:staticcheck // Preserve the established error text and service names.
 	// ErrInstanceTypeMachineNotFound
-	ErrInstanceTypeMachineNotFound = errors.New("Instance Type does not have a Machine available for allocation")
+	ErrInstanceTypeMachineNotFound = errors.New("Instance Type does not have a Machine available for allocation") //nolint:staticcheck // Preserve the established error text and service names.
 	// ErrSpectrumXMachineSelection distinguishes incompatible selectors from an empty allocation pool.
 	ErrSpectrumXMachineSelection = errors.New("no Machines with the requested SpectrumX capabilities are available for specified Instance Type")
 	// ErrMachineUnavailable is returned when a candidate Machine, re-read under its lock, is no longer Ready, unassigned, or matching the label selector
@@ -751,7 +751,10 @@ func GetAllAllocationConstraintsForInstanceType(ctx context.Context, tx *cdb.Tx,
 // if transaction was committed, this will do nothing
 func RollbackTx(ctx context.Context, tx *cdb.Tx, committed *bool) {
 	if committed != nil && !*committed {
-		tx.Rollback()
+		err := tx.Rollback()
+		if err != nil {
+			zerolog.Ctx(ctx).Error().Err(err).Msg("failed to roll back transaction")
+		}
 	}
 }
 
@@ -1277,7 +1280,7 @@ func TerminateWorkflowOnTimeOutError(logger zerolog.Logger, temporalClient tclie
 
 // UnwrapWorkflowError removes Temporal wrappers and maps backend errors to HTTP status codes.
 func UnwrapWorkflowError(err error) (code int, unwrappedError error) {
-	code, unwrappedError = http.StatusInternalServerError, err
+	code = http.StatusInternalServerError
 
 	// Attempt to unwrap our way through Temporal's WorkflowExecutionError
 	// and ActivityError layers to reach the underlying cause. These types
@@ -2068,7 +2071,7 @@ var queryTagCache sync.Map // map[reflect.Type][]string
 // Results are cached per type.
 func QueryTagsFor(v any) []string {
 	t := reflect.TypeOf(v)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if cached, ok := queryTagCache.Load(t); ok {
@@ -2095,7 +2098,7 @@ func ValidateKnownQueryParams(rawParams url.Values, structs ...any) error {
 	}
 	for key := range rawParams {
 		if _, ok := allowed[key]; !ok {
-			return fmt.Errorf("Unknown query parameter specified in request: %s", key)
+			return fmt.Errorf("Unknown query parameter specified in request: %s", key) //nolint:staticcheck // Preserve the established error text and service names.
 		}
 	}
 	return nil

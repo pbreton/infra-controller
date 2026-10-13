@@ -44,7 +44,7 @@ func BeginTx(ctx context.Context, dbSession *Session, txOptions *sql.TxOptions) 
 	// will block indefinitely.
 	_, err = tx.Exec(fmt.Sprintf("SET LOCAL lock_timeout = '%ds'", DefaultTxLockTimeoutSeconds))
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback() // Preserve the primary failure while making a best-effort rollback.
 		return nil, err
 	}
 
@@ -57,7 +57,7 @@ func BeginTx(ctx context.Context, dbSession *Session, txOptions *sql.TxOptions) 
 // if transaction was committed, this will do nothing
 func RollbackTx(ctx context.Context, tx *Tx, committed *bool) {
 	if committed != nil && !*committed {
-		tx.Rollback()
+		_ = tx.Rollback() // Preserve the primary failure while making a best-effort rollback.
 	}
 }
 

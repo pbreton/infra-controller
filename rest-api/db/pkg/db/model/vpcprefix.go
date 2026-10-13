@@ -629,7 +629,7 @@ func vpcPrefixUsageFromInterfaces(ctx context.Context, cidr string, ifcCountWith
 
 	ipamPrefix = ipamer.PrefixFrom(ctx, validatedCidr)
 	if ipamPrefix == nil {
-		return nil, fmt.Errorf("Prefix %q was not found in IPAM after loading IPs", validatedCidr)
+		return nil, fmt.Errorf("Prefix %q was not found in IPAM after loading IPs", validatedCidr) //nolint:staticcheck // Preserve the established error text and service names.
 	}
 
 	usage := ipamPrefix.Usage()
@@ -666,7 +666,7 @@ func (vpsd VpcPrefixSQLDAO) GetPrefixUsage(ctx context.Context, tx *db.Tx, vpcPr
 	vpcPrefixIDs := make([]uuid.UUID, 0, len(vpcPrefixes))
 	for _, vp := range vpcPrefixes {
 		if vp == nil {
-			return nil, fmt.Errorf("Failed to calculate usage stats for VPC Prefix: nil argument")
+			return nil, fmt.Errorf("Failed to calculate usage stats for VPC Prefix: nil argument") //nolint:staticcheck // Preserve the established error text and service names.
 		}
 		prefix, err := vp.GetCIDR()
 		if err != nil {

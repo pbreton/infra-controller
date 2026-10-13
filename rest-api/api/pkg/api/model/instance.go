@@ -120,7 +120,7 @@ func ValidateMultiEthernetDeviceInterfaces(itNetworkCaps []cdbm.MachineCapabilit
 			_, exists := itDeviceInstanceCountMap[*dbifc.Device]
 			if !exists {
 				return validation.Errors{
-					"device": fmt.Errorf("Device %v is not present in the Instance Type's network capabilities", *dbifc.Device),
+					"device": fmt.Errorf("Device %v is not present in the Instance Type's network capabilities", *dbifc.Device), //nolint:staticcheck // Preserve the established error text and service names.
 				}
 			}
 
@@ -128,14 +128,14 @@ func ValidateMultiEthernetDeviceInterfaces(itNetworkCaps []cdbm.MachineCapabilit
 			_, exists = deviceInstanceMap[deviceInstanceId]
 			if exists {
 				return validation.Errors{
-					"device": fmt.Errorf("Duplicate Interface configuration specified for Device %v, Device Instance: %v", *dbifc.Device, *dbifc.DeviceInstance),
+					"device": fmt.Errorf("Duplicate Interface configuration specified for Device %v, Device Instance: %v", *dbifc.Device, *dbifc.DeviceInstance), //nolint:staticcheck // Preserve the established error text and service names.
 				}
 			}
 
 			// Check if the requested device instance count is greater than the number of device instances in the Instance Type's Machine Capabilities
 			if *dbifc.DeviceInstance >= itDeviceInstanceCountMap[*dbifc.Device] {
 				return validation.Errors{
-					"deviceInstance": fmt.Errorf("Device Instance: %v for Device %v exceeds Instance Type's network capability count", *dbifc.DeviceInstance, *dbifc.Device),
+					"deviceInstance": fmt.Errorf("Device Instance: %v for Device %v exceeds Instance Type's network capability count", *dbifc.DeviceInstance, *dbifc.Device), //nolint:staticcheck // Preserve the established error text and service names.
 				}
 			}
 			// Add device instance to map to check for duplicates
@@ -335,7 +335,7 @@ func ValidateInfiniBandInterfaces(itIbCaps []cdbm.MachineCapability, ibifcs []AP
 			_, exists := deviceInstanceMap[deviceInstanceId]
 			if exists {
 				return validation.Errors{
-					"device": fmt.Errorf("Duplicate InfiniBand interface configuration specified for Device %v, Device Instance: %v", ibifc.Device, ibifc.DeviceInstance),
+					"device": fmt.Errorf("Duplicate InfiniBand interface configuration specified for Device %v, Device Instance: %v", ibifc.Device, ibifc.DeviceInstance), //nolint:staticcheck // Preserve the established error text and service names.
 				}
 			}
 
@@ -343,20 +343,20 @@ func ValidateInfiniBandInterfaces(itIbCaps []cdbm.MachineCapability, ibifcs []AP
 			_, exists = deviceInstanceCountMap[ibifc.Device]
 			if !exists {
 				return validation.Errors{
-					"device": fmt.Errorf("Device %v is not present in Instance Type's InfiniBand Capabilities", ibifc.Device),
+					"device": fmt.Errorf("Device %v is not present in Instance Type's InfiniBand Capabilities", ibifc.Device), //nolint:staticcheck // Preserve the established error text and service names.
 				}
 			}
 
 			// Check if the infiniband device vendor is present in the  Instance Type's InfiniBand Capabilities
 			if ibifc.Vendor != nil && !deviceVendorMap[*ibifc.Vendor] {
 				return validation.Errors{
-					"vendor": fmt.Errorf("Vendor %v is not present in Instance Type's InfiniBand Capabilities", *ibifc.Vendor),
+					"vendor": fmt.Errorf("Vendor %v is not present in Instance Type's InfiniBand Capabilities", *ibifc.Vendor), //nolint:staticcheck // Preserve the established error text and service names.
 				}
 			}
 
 			if ibifc.DeviceInstance >= deviceInstanceCountMap[ibifc.Device] {
 				return validation.Errors{
-					"deviceInstance": fmt.Errorf("Device Instance: %v for Device %v exceeds Instance Type's InfiniBand Capabilities count", ibifc.DeviceInstance, ibifc.Device),
+					"deviceInstance": fmt.Errorf("Device Instance: %v for Device %v exceeds Instance Type's InfiniBand Capabilities count", ibifc.DeviceInstance, ibifc.Device), //nolint:staticcheck // Preserve the established error text and service names.
 				}
 			}
 
@@ -366,7 +366,7 @@ func ValidateInfiniBandInterfaces(itIbCaps []cdbm.MachineCapability, ibifcs []AP
 				_, exists = deviceInactiveInstanceMap[ibifc.Device][ibifc.DeviceInstance]
 				if exists {
 					return validation.Errors{
-						"deviceInstance": fmt.Errorf("Device Instance: %v for Device %v is inactive", ibifc.DeviceInstance, ibifc.Device),
+						"deviceInstance": fmt.Errorf("Device Instance: %v for Device %v is inactive", ibifc.DeviceInstance, ibifc.Device), //nolint:staticcheck // Preserve the established error text and service names.
 					}
 				}
 			}
@@ -804,7 +804,7 @@ func (icr *APIInstanceCreateRequest) ValidateAndSetOperatingSystemData(cfg *conf
 		// ensure OS is active
 		if !os.IsActive {
 			return validation.Errors{
-				"isActive": errors.New("Operating System specified in request has been deactivated and cannot be used to create an Instance"),
+				"isActive": errors.New("Operating System specified in request has been deactivated and cannot be used to create an Instance"), //nolint:staticcheck // Preserve the established error text and service names.
 			}
 		}
 
@@ -885,7 +885,7 @@ func (icr *APIInstanceCreateRequest) ValidateAndSetOperatingSystemData(cfg *conf
 		// Validate that the OS permits overriding user-data
 		if osUserDataOverrideRequested && !os.AllowOverride {
 			return validation.Errors{
-				"allowOverride": errors.New("Operating System specified in request does not allow overriding `userData`"),
+				"allowOverride": errors.New("Operating System specified in request does not allow overriding `userData`"), //nolint:staticcheck // Preserve the established error text and service names.
 			}
 		}
 	}
@@ -1159,7 +1159,7 @@ func (bicr *APIBatchInstanceCreateRequest) ValidateAndSetOperatingSystemData(cfg
 		// ensure OS is active
 		if !os.IsActive {
 			return validation.Errors{
-				"isActive": errors.New("Operating System specified in request has been deactivated and cannot be used to create an Instance"),
+				"isActive": errors.New("Operating System specified in request has been deactivated and cannot be used to create an Instance"), //nolint:staticcheck // Preserve the established error text and service names.
 			}
 		}
 
@@ -1211,7 +1211,7 @@ func (bicr *APIBatchInstanceCreateRequest) ValidateAndSetOperatingSystemData(cfg
 		// Validate that the OS permits overriding user-data
 		if osUserDataOverrideRequested && !os.AllowOverride {
 			return validation.Errors{
-				"allowOverride": errors.New("Operating System specified in request does not allow overriding `userData`"),
+				"allowOverride": errors.New("Operating System specified in request does not allow overriding `userData`"), //nolint:staticcheck // Preserve the established error text and service names.
 			}
 		}
 	}
@@ -1477,7 +1477,7 @@ func (iur *APIInstanceUpdateRequest) ValidateAndSetOperatingSystemData(cfg *conf
 		// Validate that the OS permits overriding user-data
 		if osUserDataOverrideRequested && !os.AllowOverride {
 			return validation.Errors{
-				"allowOverride": errors.New("Operating System specified in request does not allow overriding user data"),
+				"allowOverride": errors.New("Operating System specified in request does not allow overriding user data"), //nolint:staticcheck // Preserve the established error text and service names.
 			}
 		}
 	}

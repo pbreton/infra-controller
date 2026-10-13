@@ -103,7 +103,10 @@ func TestManageUser_GetUserDataFromNgc(t *testing.T) {
 	// Generate a test server so we can capture and inspect the request
 	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		res.WriteHeader(http.StatusOK)
-		res.Write(ngcRespBytes)
+		{
+			_, err := res.Write(ngcRespBytes)
+			assert.NoError(t, err)
+		}
 	}))
 
 	defer testServer.Close()

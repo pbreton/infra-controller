@@ -464,13 +464,22 @@ func TestMachineCapabilitySQLDAO_GetAll(t *testing.T) {
 	itCapCount := 0
 
 	ip, site, it := testMachineInstanceTypeBuildInstanceType(t, dbSession, "sm.x86")
-	mcd.Create(ctx, nil, MachineCapabilityCreateInput{InstanceTypeID: &it.ID, Type: MachineCapabilityTypeCPU, Name: "Test Capability", Frequency: cutil.GetPtr("3.2 GHz"), Count: cutil.GetPtr(2)})
-	mcd.Create(ctx, nil, MachineCapabilityCreateInput{InstanceTypeID: &it.ID, Type: MachineCapabilityTypeMemory, Name: "Test Capability", Capacity: cutil.GetPtr("32GB"), Count: cutil.GetPtr(4)})
+	{
+		_, err := mcd.Create(ctx, nil, MachineCapabilityCreateInput{InstanceTypeID: &it.ID, Type: MachineCapabilityTypeCPU, Name: "Test Capability", Frequency: cutil.GetPtr("3.2 GHz"), Count: cutil.GetPtr(2)})
+		assert.NoError(t, err)
+	}
+	{
+		_, err := mcd.Create(ctx, nil, MachineCapabilityCreateInput{InstanceTypeID: &it.ID, Type: MachineCapabilityTypeMemory, Name: "Test Capability", Capacity: cutil.GetPtr("32GB"), Count: cutil.GetPtr(4)})
+		assert.NoError(t, err)
+	}
 	itCapCount += 2
 
 	user := TestBuildUser(t, dbSession, "test-user", "test-org", []string{"test-role"})
 	it2 := TestBuildInstanceType(t, dbSession, "lg.x86", ip, site, user)
-	mcd.Create(ctx, nil, MachineCapabilityCreateInput{InstanceTypeID: &it2.ID, Type: MachineCapabilityTypeCPU, Name: "Test Capability", Frequency: cutil.GetPtr("4 GHz"), Count: cutil.GetPtr(1)})
+	{
+		_, err := mcd.Create(ctx, nil, MachineCapabilityCreateInput{InstanceTypeID: &it2.ID, Type: MachineCapabilityTypeCPU, Name: "Test Capability", Frequency: cutil.GetPtr("4 GHz"), Count: cutil.GetPtr(1)})
+		assert.NoError(t, err)
+	}
 	itCapCount++
 
 	ms := []Machine{}

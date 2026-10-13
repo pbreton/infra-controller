@@ -16,7 +16,6 @@ import (
 
 	"github.com/NVIDIA/infra-controller/rest-api/api/internal/config"
 	"github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/model/util"
-	cdmu "github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/model/util"
 	cutil "github.com/NVIDIA/infra-controller/rest-api/common/pkg/util"
 	cdb "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
@@ -85,7 +84,7 @@ func TestAPIOperatingSystemCreateRequest_Validate(t *testing.T) {
 		},
 		{
 			desc:      "error when ImageDisk is invalid",
-			obj:       APIOperatingSystemCreateRequest{Name: "abc", InfrastructureProviderID: nil, TenantID: cutil.GetPtr(uuid.New().String()), ImageURL: cutil.GetPtr("http://image.net/iso"), ImageDisk: cutil.GetPtr("tttt/"), UserData: cutil.GetPtr(cdmu.TestCommonCloudInit), AllowOverride: true},
+			obj:       APIOperatingSystemCreateRequest{Name: "abc", InfrastructureProviderID: nil, TenantID: cutil.GetPtr(uuid.New().String()), ImageURL: cutil.GetPtr("http://image.net/iso"), ImageDisk: cutil.GetPtr("tttt/"), UserData: cutil.GetPtr(util.TestCommonCloudInit), AllowOverride: true},
 			expectErr: true,
 		},
 		{
@@ -100,7 +99,7 @@ func TestAPIOperatingSystemCreateRequest_Validate(t *testing.T) {
 		},
 		{
 			desc:      "error when both RootFsID and RootFsLabel are populated",
-			obj:       APIOperatingSystemCreateRequest{Name: "abc", InfrastructureProviderID: nil, TenantID: cutil.GetPtr(uuid.New().String()), ImageURL: cutil.GetPtr("http://iso.net/iso"), ImageSHA: cutil.GetPtr("a1efca12ea51069abb123bf9c77889fcc2a31cc5483fc14d115e44fdf07c7980"), RootFsID: cutil.GetPtr("666c2eee-193d-42db-a490-4c444342bd4e"), RootFsLabel: cutil.GetPtr("test-label"), UserData: cutil.GetPtr(cdmu.TestCommonCloudInit), AllowOverride: true},
+			obj:       APIOperatingSystemCreateRequest{Name: "abc", InfrastructureProviderID: nil, TenantID: cutil.GetPtr(uuid.New().String()), ImageURL: cutil.GetPtr("http://iso.net/iso"), ImageSHA: cutil.GetPtr("a1efca12ea51069abb123bf9c77889fcc2a31cc5483fc14d115e44fdf07c7980"), RootFsID: cutil.GetPtr("666c2eee-193d-42db-a490-4c444342bd4e"), RootFsLabel: cutil.GetPtr("test-label"), UserData: cutil.GetPtr(util.TestCommonCloudInit), AllowOverride: true},
 			expectErr: true,
 		},
 		{
@@ -354,7 +353,7 @@ func TestAPIOperatingSystemUpdateRequest_Validate(t *testing.T) {
 		},
 		{
 			desc:       "ok when all valid fields for ipxe are provided",
-			obj:        APIOperatingSystemUpdateRequest{Name: cutil.GetPtr("ab"), Description: cutil.GetPtr("test"), IpxeScript: cutil.GetPtr("ipxe"), UserData: cutil.GetPtr(cdmu.TestCommonCloudInit), IsCloudInit: cutil.GetPtr(false), AllowOverride: cutil.GetPtr(true)},
+			obj:        APIOperatingSystemUpdateRequest{Name: cutil.GetPtr("ab"), Description: cutil.GetPtr("test"), IpxeScript: cutil.GetPtr("ipxe"), UserData: cutil.GetPtr(util.TestCommonCloudInit), IsCloudInit: cutil.GetPtr(false), AllowOverride: cutil.GetPtr(true)},
 			existingOS: existingIpxeBasedOS,
 			expectErr:  false,
 		},
@@ -741,7 +740,7 @@ func TestAPIOperatingSystemUpdateRequest_ValidateAndSetUserData(t *testing.T) {
 		ID:               uuid.New(),
 		Name:             "ab",
 		IpxeScript:       cutil.GetPtr("original ipxe"),
-		UserData:         cutil.GetPtr(cdmu.TestCommonPhoneHomeCloudInit),
+		UserData:         cutil.GetPtr(util.TestCommonPhoneHomeCloudInit),
 		PhoneHomeEnabled: true,
 		Status:           cdbm.OperatingSystemStatusReady,
 		Type:             cdbm.OperatingSystemTypeIPXE,
@@ -780,7 +779,7 @@ phone_home:
 		ID:               uuid.New(),
 		Name:             "ab",
 		IpxeScript:       cutil.GetPtr("original ipxe"),
-		UserData:         cutil.GetPtr(cdmu.TestCommonCloudInit),
+		UserData:         cutil.GetPtr(util.TestCommonCloudInit),
 		PhoneHomeEnabled: false,
 		Status:           cdbm.OperatingSystemStatusReady,
 		Type:             cdbm.OperatingSystemTypeIPXE,
@@ -1006,7 +1005,7 @@ phone_home:
 				Name:              "test-name",
 				Description:       cutil.GetPtr("Test description"),
 				OperatingSystemID: cutil.GetPtr(existingPhoneHomeDisabledOSNilUserData.ID.String()),
-				UserData:          &cdmu.TestCommonCloudInit,
+				UserData:          &util.TestCommonCloudInit,
 				PhoneHomeEnabled:  cutil.GetPtr(true),
 			},
 			wantErr:      false,
@@ -1099,7 +1098,7 @@ phone_home:
 			fields: fields{
 				Name:             "test-name",
 				Description:      cutil.GetPtr("test"),
-				UserData:         cutil.GetPtr(cdmu.TestCommonPhoneHomeSegment),
+				UserData:         cutil.GetPtr(util.TestCommonPhoneHomeSegment),
 				PhoneHomeEnabled: cutil.GetPtr(false),
 			},
 			phoneHomeUrl: "http://localhost",
@@ -1111,7 +1110,7 @@ phone_home:
 			fields: fields{
 				Name:             "test-name",
 				Description:      cutil.GetPtr("test"),
-				UserData:         cutil.GetPtr(cdmu.TestCommonPhoneHomeSegment + cdmu.TestCommonPhoneHomeSegment + cdmu.TestCommonPhoneHomeSegment),
+				UserData:         cutil.GetPtr(util.TestCommonPhoneHomeSegment + util.TestCommonPhoneHomeSegment + util.TestCommonPhoneHomeSegment),
 				PhoneHomeEnabled: cutil.GetPtr(false),
 			},
 			phoneHomeUrl: "http://localhost",
@@ -1123,7 +1122,7 @@ phone_home:
 			fields: fields{
 				Name:             "test-name",
 				Description:      cutil.GetPtr("test"),
-				UserData:         cutil.GetPtr(cdmu.TestCommonCloudInit + "\n" + cdmu.TestCommonPhoneHomeOnlyCloudInit),
+				UserData:         cutil.GetPtr(util.TestCommonCloudInit + "\n" + util.TestCommonPhoneHomeOnlyCloudInit),
 				PhoneHomeEnabled: cutil.GetPtr(true),
 			},
 			phoneHomeUrl:             "http://localhost",

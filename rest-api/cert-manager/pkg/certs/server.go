@@ -69,10 +69,13 @@ func NewServerWithIssuer(ctx context.Context, o Options, certIssuer CertificateI
 	s.insecService = insec
 
 	if o.sentryDSN != "" {
-		sentry.Init(sentry.ClientOptions{
+		err = sentry.Init(sentry.ClientOptions{
 			Dsn:   o.sentryDSN,
 			Debug: true,
 		})
+		if err != nil {
+			core.GetLogger(ctx).WithError(err).Error("failed to initialize Sentry")
+		}
 	}
 	return s, nil
 }

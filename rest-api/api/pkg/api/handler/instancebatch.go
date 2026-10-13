@@ -179,7 +179,8 @@ func (bcih BatchCreateInstanceHandler) buildBatchInstanceCreateRequestOsConfig(c
 	// Options below should all have been set by the
 	// earlier call to ValidateAndSetOperatingSystemData
 
-	if os.Type == cdbm.OperatingSystemTypeIPXE {
+	switch os.Type {
+	case cdbm.OperatingSystemTypeIPXE:
 		return &corev1.InstanceOperatingSystemConfig{
 			RunProvisioningInstructionsOnEveryBoot: *apiRequest.AlwaysBootWithCustomIpxe,
 			PhoneHomeEnabled:                       *apiRequest.PhoneHomeEnabled,
@@ -190,7 +191,7 @@ func (bcih BatchCreateInstanceHandler) buildBatchInstanceCreateRequestOsConfig(c
 			},
 			UserData: apiRequest.UserData,
 		}, osID, nil
-	} else if os.Type == cdbm.OperatingSystemTypeTemplatedIPXE {
+	case cdbm.OperatingSystemTypeTemplatedIPXE:
 		if apiErr := validateTemplatedIpxeOsForSite(ctx, bcih.dbSession, logger, os, site.ID); apiErr != nil {
 			return nil, nil, apiErr
 		}
@@ -204,7 +205,7 @@ func (bcih BatchCreateInstanceHandler) buildBatchInstanceCreateRequestOsConfig(c
 			},
 			UserData: apiRequest.UserData,
 		}, osID, nil
-	} else {
+	default:
 		return &corev1.InstanceOperatingSystemConfig{
 			PhoneHomeEnabled: *apiRequest.PhoneHomeEnabled,
 			Variant: &corev1.InstanceOperatingSystemConfig_OsImageId{
@@ -2088,15 +2089,12 @@ func allocateMachinesForBatch(
 
 		// Group machines by NVLink Domain ID from Metadata
 		nvlinkDomainMap := make(map[string][]*cdbm.Machine)
-		noNvlinkDomainMachines := []*cdbm.Machine{}
 
 		for idx := range machines {
 			machine := &machines[idx]
 			domainID := getNVLinkDomainID(machine)
 			if domainID != "" {
 				nvlinkDomainMap[domainID] = append(nvlinkDomainMap[domainID], machine)
-			} else {
-				noNvlinkDomainMachines = append(noNvlinkDomainMachines, machine)
 			}
 		}
 

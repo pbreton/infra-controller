@@ -19,7 +19,7 @@ import (
 )
 
 // InitElektra initializes the Elektra site agent framework
-func InitElektra() {
+func InitElektra() error {
 	// Initialize Elektra microservice
 	log.Info().Msg("Elektra: Initializing Elektra service")
 
@@ -32,16 +32,19 @@ func InitElektra() {
 	// Initialize Elektra API
 	api, initErr := components.NewElektraAPI(elektraTypes, false)
 	if initErr != nil {
-		log.Error().Err(initErr).Msg("Elektra: Failed to initialize Elektra API")
+		return initErr
 	} else {
 		log.Info().Msg("Elektra: Successfully initialized Elektra API")
 	}
 
 	// Initialize Elektra Managers
-	api.Init()
+	err := api.Init()
+	if err != nil {
+		return err
+	}
 
 	// Start Elektra Managers
-	api.Start()
+	return api.Start()
 }
 
 func main() {
@@ -58,13 +61,13 @@ func main() {
 		}()
 	}
 
-	InitElektra()
+	err = InitElektra()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Elektra: failed to start service")
+	}
 	// sleep
 	// Wait forever
 	termChan := make(chan os.Signal, 1)
 	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
-	select {
-	case <-termChan:
-		return
-	}
+	<-termChan
 }

@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
@@ -82,7 +84,7 @@ func TestFullIntegration(t *testing.T) {
 // TestOriginalBehaviorMatch verifies that the wrapper behaves exactly like the original
 // for all the original test cases
 func TestOriginalBehaviorMatch(t *testing.T) {
-	provider := trace.NewNoopTracerProvider()
+	provider := noop.NewTracerProvider()
 	setGlobalPropagator(t, propagation.TraceContext{})
 
 	tests := []struct {

@@ -379,7 +379,10 @@ func (mm *ManageMachine) UpdateMachinesInDB(ctx context.Context, siteIDStr strin
 			newMachine, serr := mDAO.Create(ctx, txn, createInput)
 			if serr != nil {
 				slogger.Error().Err(serr).Msg("failed to create DB record for new Machine")
-				txn.Rollback()
+				rollbackErr := txn.Rollback()
+				if rollbackErr != nil {
+					slogger.Error().Err(rollbackErr).Msg("failed to roll back Machine transaction")
+				}
 				continue
 			}
 
@@ -390,13 +393,20 @@ func (mm *ManageMachine) UpdateMachinesInDB(ctx context.Context, siteIDStr strin
 				})
 				if serr != nil {
 					slogger.Error().Err(serr).Msg("failed to create MachineInstanceType DB record for new Machine")
-					txn.Rollback()
+					rollbackErr := txn.Rollback()
+					if rollbackErr != nil {
+						slogger.Error().Err(rollbackErr).Msg("failed to roll back Machine transaction")
+					}
 					continue
 				}
 			}
 
 			// Commit now as the base Machine record is created, any failure below can be retried in next inventory
-			txn.Commit()
+			commitErr := txn.Commit()
+			if commitErr != nil {
+				slogger.Error().Err(commitErr).Msg("failed to commit Machine transaction")
+				continue
+			}
 
 			// Create status detail
 			_, serr = sdDAO.Create(ctx, nil, cdbm.StatusDetailCreateInput{EntityID: newMachine.ID, Status: machineStatus, Message: &statusMessage})
@@ -496,7 +506,10 @@ func (mm *ManageMachine) UpdateMachinesInDB(ctx context.Context, siteIDStr strin
 			// should consider the inventory details stale for this machine.
 			if !wasDeleted && site.IsTimeWithinStaleInventoryThreshold(existingCloudMachine.Updated) {
 				slogger.Warn().Msg("machine updated more recently than inventory received time, skipping processing")
-				txn.Rollback()
+				rollbackErr := txn.Rollback()
+				if rollbackErr != nil {
+					slogger.Error().Err(rollbackErr).Msg("failed to roll back Machine transaction")
+				}
 				continue
 			}
 
@@ -538,7 +551,10 @@ func (mm *ManageMachine) UpdateMachinesInDB(ctx context.Context, siteIDStr strin
 
 			if serr != nil {
 				slogger.Error().Err(serr).Msg("failed to update Machine in DB")
-				txn.Rollback()
+				rollbackErr := txn.Rollback()
+				if rollbackErr != nil {
+					slogger.Error().Err(rollbackErr).Msg("failed to roll back Machine transaction")
+				}
 				continue
 			}
 
@@ -549,7 +565,10 @@ func (mm *ManageMachine) UpdateMachinesInDB(ctx context.Context, siteIDStr strin
 			machineInstanceTypes, _, err := mitDAO.GetAll(ctx, txn, cdbm.MachineInstanceTypeFilterInput{MachineID: &existingCloudMachine.ID}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)}, nil)
 			if err != nil {
 				slogger.Error().Err(err).Msg("failed to get MachineInstanceTypes for reconciliation")
-				txn.Rollback()
+				rollbackErr := txn.Rollback()
+				if rollbackErr != nil {
+					slogger.Error().Err(rollbackErr).Msg("failed to roll back Machine transaction")
+				}
 				continue
 			}
 
@@ -571,7 +590,10 @@ func (mm *ManageMachine) UpdateMachinesInDB(ctx context.Context, siteIDStr strin
 					}
 				}
 				if err != nil {
-					txn.Rollback()
+					rollbackErr := txn.Rollback()
+					if rollbackErr != nil {
+						slogger.Error().Err(rollbackErr).Msg("failed to roll back Machine transaction")
+					}
 					continue
 				}
 
@@ -582,7 +604,10 @@ func (mm *ManageMachine) UpdateMachinesInDB(ctx context.Context, siteIDStr strin
 					})
 					if serr != nil {
 						slogger.Error().Err(serr).Msg("failed to create MachineInstanceType during reconciliation")
-						txn.Rollback()
+						rollbackErr := txn.Rollback()
+						if rollbackErr != nil {
+							slogger.Error().Err(rollbackErr).Msg("failed to roll back Machine transaction")
+						}
 						continue
 					}
 				}
@@ -603,13 +628,20 @@ func (mm *ManageMachine) UpdateMachinesInDB(ctx context.Context, siteIDStr strin
 				_, serr = mDAO.Clear(ctx, txn, clearInput)
 				if serr != nil {
 					slogger.Error().Err(serr).Msg("failed to clear maintenance or network health message from Machine in DB")
-					txn.Rollback()
+					rollbackErr := txn.Rollback()
+					if rollbackErr != nil {
+						slogger.Error().Err(rollbackErr).Msg("failed to roll back Machine transaction")
+					}
 					continue
 				}
 			}
 
 			// Commit the txn now that the base Machine record is updated, any failure below is not critical and can be retried in next inventory
-			txn.Commit()
+			commitErr := txn.Commit()
+			if commitErr != nil {
+				slogger.Error().Err(commitErr).Msg("failed to commit Machine transaction")
+				continue
+			}
 
 			// Check if most recent status detail is the same as the current status, otherwise create a new one
 			createStatusDetail := false
@@ -1151,11 +1183,12 @@ func getNICoMachineStatus(controllerMachine *corev1.Machine, logger zerolog.Logg
 			statusMessage = "Machine is waiting for cleanup"
 		case controllerMachineStatePrefixMeasuring:
 			machineStatus = cdbm.MachineStatusInitializing
-			if controllerMachineSubstate == controllerMachineMeasuringSubstateWaitingForMeasurements {
+			switch controllerMachineSubstate {
+			case controllerMachineMeasuringSubstateWaitingForMeasurements:
 				statusMessage = "System is waiting to receive attestation measurements from Machine"
-			} else if controllerMachineSubstate == controllerMachineMeasuringSubstatePendingBundle {
+			case controllerMachineMeasuringSubstatePendingBundle:
 				statusMessage = "Machine did not match any approved measurements. Requires automated or manual approval"
-			} else {
+			default:
 				statusMessage = "Machine is undergoing measured boot attestation"
 			}
 		case controllerMachineStatePrefixPostAssignedMeasuring:
@@ -1167,15 +1200,16 @@ func getNICoMachineStatus(controllerMachine *corev1.Machine, logger zerolog.Logg
 				statusMessage = "Machine has failed SKU verification"
 			} else {
 				machineStatus = cdbm.MachineStatusInitializing
-				if controllerMachineSubstate == controllerMachineBomValidatingSubstateMatchingSku {
+				switch controllerMachineSubstate {
+				case controllerMachineBomValidatingSubstateMatchingSku:
 					statusMessage = "Machine is undergoing SKU matching"
-				} else if controllerMachineSubstate == controllerMachineBomValidatingSubstateUpdatingInventory {
+				case controllerMachineBomValidatingSubstateUpdatingInventory:
 					statusMessage = "Machine inventory is being updated"
-				} else if controllerMachineSubstate == controllerMachineBomValidatingSubstateVerifyingSku {
+				case controllerMachineBomValidatingSubstateVerifyingSku:
 					statusMessage = "Machine SKU is being verified"
-				} else if controllerMachineSubstate == controllerMachineBomValidatingSubstateWaitingForSkuAssignment {
+				case controllerMachineBomValidatingSubstateWaitingForSkuAssignment:
 					statusMessage = "Machine is awaiting SKU assignment"
-				} else {
+				default:
 					statusMessage = "Machine is undergoing BOM validation"
 				}
 			}
@@ -1204,15 +1238,16 @@ func getNICoMachineStatus(controllerMachine *corev1.Machine, logger zerolog.Logg
 			}
 		case controllerMachineStatePrefixFailed:
 			machineStatus = cdbm.MachineStatusError
-			if controllerMachineSubstate == controllerMachineFailedMeasurementsFailedSignatureCheck {
+			switch controllerMachineSubstate {
+			case controllerMachineFailedMeasurementsFailedSignatureCheck:
 				statusMessage = "Machine measurements failed signature check"
-			} else if controllerMachineSubstate == controllerMachineFailedMeasurementsRetired {
+			case controllerMachineFailedMeasurementsRetired:
 				statusMessage = "Machine matched retired measurements"
-			} else if controllerMachineSubstate == controllerMachineFailedMeasurementsRevoked {
+			case controllerMachineFailedMeasurementsRevoked:
 				statusMessage = "Machine matched revoked measurements"
-			} else if controllerMachineSubstate == controllerMachineFailedMachineValidation {
+			case controllerMachineFailedMachineValidation:
 				statusMessage = "Machine has failed machine validation"
-			} else {
+			default:
 				statusMessage = "Machine has encountered a failure"
 				if controllerMachineSubstate != "" {
 					statusMessage = fmt.Sprintf("%s: %s", statusMessage, controllerMachineSubstate)
@@ -1229,16 +1264,12 @@ func getNICoMachineStatus(controllerMachine *corev1.Machine, logger zerolog.Logg
 	}
 
 	// Calculate isMachineUsableByTenant based on the two rules (OR relationship)
-	isUsable := false
-
 	// Rule 1: Status is Ready/InUse/Initializing AND does NOT have Prevent alerts
-	if slices.Contains([]string{
+	isUsable := slices.Contains([]string{
 		cdbm.MachineStatusReady,
 		cdbm.MachineStatusInUse,
 		cdbm.MachineStatusInitializing,
-	}, machineStatus) && !hasPreventAlerts {
-		isUsable = true
-	}
+	}, machineStatus) && !hasPreventAlerts
 
 	// Rule 2: Has tenant AND has Maintenance+Degraded alert
 	if hasTenant && hasMaintenanceDegraded {

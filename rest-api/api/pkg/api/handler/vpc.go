@@ -17,7 +17,6 @@ import (
 	cdb "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
-	cdbp "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
 	swe "github.com/NVIDIA/infra-controller/rest-api/site-workflow/pkg/error"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -160,7 +159,7 @@ func (cvh CreateVPCHandler) Handle(c echo.Context) error {
 
 	vpcDAO := cdbm.NewVpcDAO(cvh.dbSession)
 	if apiRequest.ID != nil {
-		_, total, err := vpcDAO.GetAll(ctx, nil, cdbm.VpcFilterInput{VpcIDs: []uuid.UUID{*apiRequest.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(paginator.DefaultLimit)}, nil)
+		_, total, err := vpcDAO.GetAll(ctx, nil, cdbm.VpcFilterInput{VpcIDs: []uuid.UUID{*apiRequest.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.DefaultLimit)}, nil)
 		if err != nil {
 			logger.Error().Err(err).Msg("db error checking for ID uniqueness of tenant vpc")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to create Vpc due to DB error", nil)
@@ -175,7 +174,7 @@ func (cvh CreateVPCHandler) Handle(c echo.Context) error {
 
 	// check for name uniqueness for the tenant, ie, tenant cannot have another vpc with same name at the site
 	// TODO consider doing this with an advisory lock for correctness
-	vpcs, tot, err := vpcDAO.GetAll(ctx, nil, cdbm.VpcFilterInput{Name: &apiRequest.Name, InfrastructureProviderID: cutil.GetPtr(site.InfrastructureProviderID), TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{site.ID}}, cdbp.PageInput{}, nil)
+	vpcs, tot, err := vpcDAO.GetAll(ctx, nil, cdbm.VpcFilterInput{Name: &apiRequest.Name, InfrastructureProviderID: cutil.GetPtr(site.InfrastructureProviderID), TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{site.ID}}, paginator.PageInput{}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("db error checking for name uniqueness of tenant vpc")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to create Vpc due to DB error", nil)
@@ -722,7 +721,7 @@ func (uvh UpdateVPCHandler) Handle(c echo.Context) error {
 	vpcDAO := cdbm.NewVpcDAO(uvh.dbSession)
 	// check for name uniqueness for the tenant, ie, tenant cannot have another vpc with same name at the site
 	if apiRequest.Name != nil && *apiRequest.Name != vpc.Name {
-		vpcs, tot, err := vpcDAO.GetAll(ctx, nil, cdbm.VpcFilterInput{Name: apiRequest.Name, InfrastructureProviderID: &vpc.InfrastructureProviderID, TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{vpc.SiteID}}, cdbp.PageInput{}, nil)
+		vpcs, tot, err := vpcDAO.GetAll(ctx, nil, cdbm.VpcFilterInput{Name: apiRequest.Name, InfrastructureProviderID: &vpc.InfrastructureProviderID, TenantIDs: []uuid.UUID{tenant.ID}, SiteIDs: []uuid.UUID{vpc.SiteID}}, paginator.PageInput{}, nil)
 		if err != nil {
 			logger.Error().Err(err).Msg("db error checking for name uniqueness of tenant vpc")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to create Vpc due to DB error", nil)
@@ -786,7 +785,7 @@ func (uvh UpdateVPCHandler) Handle(c echo.Context) error {
 
 		// Verify that the existing default NVLink Logical Partition is not being used by any Instance from the VPC
 		instanceDAO := cdbm.NewInstanceDAO(uvh.dbSession)
-		instances, _, err := instanceDAO.GetAll(ctx, nil, cdbm.InstanceFilterInput{VpcIDs: []uuid.UUID{vpc.ID}}, cdbp.PageInput{}, nil)
+		instances, _, err := instanceDAO.GetAll(ctx, nil, cdbm.InstanceFilterInput{VpcIDs: []uuid.UUID{vpc.ID}}, paginator.PageInput{}, nil)
 		if err != nil {
 			logger.Error().Err(err).Msg("error retrieving Instances from DB for VPC")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Instances for VPC", nil)
@@ -795,7 +794,7 @@ func (uvh UpdateVPCHandler) Handle(c echo.Context) error {
 		nvlIfcDAO := cdbm.NewNVLinkInterfaceDAO(uvh.dbSession)
 		for _, instance := range instances {
 			// Get NVLink Interfaces for the Instance
-			nvlIfcs, _, err := nvlIfcDAO.GetAll(ctx, nil, cdbm.NVLinkInterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, cdbp.PageInput{}, nil)
+			nvlIfcs, _, err := nvlIfcDAO.GetAll(ctx, nil, cdbm.NVLinkInterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, paginator.PageInput{}, nil)
 			if err != nil {
 				logger.Error().Err(err).Msg("error retrieving NVLink Interfaces from DB for Instance")
 				return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve NVLink Interfaces for Instance", nil)
@@ -878,7 +877,7 @@ func (uvh UpdateVPCHandler) Handle(c echo.Context) error {
 			}
 			dpsNewGroup = *apiRequest.PowerResourceGroup
 			if strings.TrimSpace(dpsOldGroup) != strings.TrimSpace(dpsNewGroup) {
-				instances, _, derr := cdbm.NewInstanceDAO(uvh.dbSession).GetAll(ctx, tx, cdbm.InstanceFilterInput{VpcIDs: []uuid.UUID{vpc.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+				instances, _, derr := cdbm.NewInstanceDAO(uvh.dbSession).GetAll(ctx, tx, cdbm.InstanceFilterInput{VpcIDs: []uuid.UUID{vpc.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 				if derr != nil {
 					logger.Error().Err(derr).Str("vpcID", vpc.ID.String()).Msg("failed to retrieve VPC instances for DPS migration")
 					return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve VPC instances for DPS migration", nil)
@@ -973,7 +972,7 @@ func (uvh UpdateVPCHandler) Handle(c echo.Context) error {
 		}
 
 		// Get status details
-		fetchedSsds, _, derr := sdDAO.GetAll(ctx, tx, cdbm.StatusDetailFilterInput{EntityIDs: []string{vpc.ID.String()}}, cdbp.PageInput{Limit: cutil.GetPtr(pagination.MaxPageSize)})
+		fetchedSsds, _, derr := sdDAO.GetAll(ctx, tx, cdbm.StatusDetailFilterInput{EntityIDs: []string{vpc.ID.String()}}, paginator.PageInput{Limit: cutil.GetPtr(pagination.MaxPageSize)})
 		if derr != nil {
 			logger.Error().Err(derr).Msg("error retrieving Status Details for VPC from DB")
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve Status Details for VPC", nil)
@@ -1226,7 +1225,7 @@ func (uvvh UpdateVPCVirtualizationHandler) Handle(c echo.Context) error {
 	}
 
 	subnetDAO := cdbm.NewSubnetDAO(uvvh.dbSession)
-	_, subnetCount, err := subnetDAO.GetAll(ctx, nil, cdbm.SubnetFilterInput{VpcIDs: []uuid.UUID{vpc.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(0)}, nil)
+	_, subnetCount, err := subnetDAO.GetAll(ctx, nil, cdbm.SubnetFilterInput{VpcIDs: []uuid.UUID{vpc.ID}}, paginator.PageInput{Limit: cutil.GetPtr(0)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving Subnets count from DB for VPC")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Subnets count for VPC", nil)
@@ -1268,7 +1267,7 @@ func (uvvh UpdateVPCVirtualizationHandler) Handle(c echo.Context) error {
 		uv = updatedVpc
 
 		// Get status details
-		fetchedSsds, _, derr := sdDAO.GetAll(ctx, tx, cdbm.StatusDetailFilterInput{EntityIDs: []string{uv.ID.String()}}, cdbp.PageInput{Limit: cutil.GetPtr(pagination.MaxPageSize)})
+		fetchedSsds, _, derr := sdDAO.GetAll(ctx, tx, cdbm.StatusDetailFilterInput{EntityIDs: []string{uv.ID.String()}}, paginator.PageInput{Limit: cutil.GetPtr(pagination.MaxPageSize)})
 		if derr != nil {
 			logger.Error().Err(derr).Msg("error retrieving Status Details for VPC from DB")
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve status history for VPC", nil)
@@ -1583,7 +1582,7 @@ func (gavh GetAllVPCHandler) Handle(c echo.Context) error {
 
 		// Check for Site existence
 		stDAO := cdbm.NewSiteDAO(gavh.dbSession)
-		sites, _, err := stDAO.GetAll(ctx, nil, cdbm.SiteFilterInput{SiteIDs: siteIDs}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		sites, _, err := stDAO.GetAll(ctx, nil, cdbm.SiteFilterInput{SiteIDs: siteIDs}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if err != nil {
 			logger.Warn().Err(err).Msg("error retrieving Sites from DB by IDs")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Could not retrieve Sites with IDs specified in query", nil)
@@ -1624,7 +1623,7 @@ func (gavh GetAllVPCHandler) Handle(c echo.Context) error {
 	// Get Tenant for this org
 	tnDAO := cdbm.NewTenantDAO(gavh.dbSession)
 
-	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving Tenant for this org")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenant for org", nil)
@@ -1672,7 +1671,7 @@ func (gavh GetAllVPCHandler) Handle(c echo.Context) error {
 			ctx,
 			nil,
 			cdbm.NetworkSecurityGroupFilterInput{NetworkSecurityGroupIDs: networkSecurityGroupIDs, TenantIDs: []uuid.UUID{tenant.ID}},
-			cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 			nil,
 		)
 		if err != nil {
@@ -1703,7 +1702,7 @@ func (gavh GetAllVPCHandler) Handle(c echo.Context) error {
 			}
 			nvLinkLogicalPartitionIDs = append(nvLinkLogicalPartitionIDs, nvLinkLogicalPartitionID)
 		}
-		nvLinkLogicalPartitions, _, err := nvllpDAO.GetAll(ctx, nil, cdbm.NVLinkLogicalPartitionFilterInput{NVLinkLogicalPartitionIDs: nvLinkLogicalPartitionIDs, TenantIDs: []uuid.UUID{tenant.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		nvLinkLogicalPartitions, _, err := nvllpDAO.GetAll(ctx, nil, cdbm.NVLinkLogicalPartitionFilterInput{NVLinkLogicalPartitionIDs: nvLinkLogicalPartitionIDs, TenantIDs: []uuid.UUID{tenant.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if err != nil {
 			logger.Error().Err(err).Msg("error retrieving NVLink Logical Partitions from DB")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve NVLink Logical Partitions specified in query", nil)
@@ -1720,7 +1719,7 @@ func (gavh GetAllVPCHandler) Handle(c echo.Context) error {
 		vpcFilter.NVLinkLogicalPartitionIDs = nvLinkLogicalPartitionIDs
 	}
 
-	vpcPageInput := cdbp.PageInput{
+	vpcPageInput := paginator.PageInput{
 		Limit:   pageRequest.Limit,
 		Offset:  pageRequest.Offset,
 		OrderBy: pageRequest.OrderBy,
@@ -1890,7 +1889,7 @@ func (dvh DeleteVPCHandler) Handle(c echo.Context) error {
 	// Check if VPC has any resources subnet attached
 	// Check if VPC has subnet attached
 	sbDAO := cdbm.NewSubnetDAO(dvh.dbSession)
-	subnets, _, err := sbDAO.GetAll(ctx, nil, cdbm.SubnetFilterInput{TenantIDs: []uuid.UUID{vpc.TenantID}, VpcIDs: []uuid.UUID{vpc.ID}}, cdbp.PageInput{}, []string{})
+	subnets, _, err := sbDAO.GetAll(ctx, nil, cdbm.SubnetFilterInput{TenantIDs: []uuid.UUID{vpc.TenantID}, VpcIDs: []uuid.UUID{vpc.ID}}, paginator.PageInput{}, []string{})
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving Subnet for this VPC")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Subnets for this VPC", nil)
@@ -1901,7 +1900,7 @@ func (dvh DeleteVPCHandler) Handle(c echo.Context) error {
 
 	// Check if VPC has VPC prefix attached
 	vpcPrefixDAO := cdbm.NewVpcPrefixDAO(dvh.dbSession)
-	vpcPrefixes, _, err := vpcPrefixDAO.GetAll(ctx, nil, cdbm.VpcPrefixFilterInput{TenantIDs: []uuid.UUID{vpc.TenantID}, VpcIDs: []uuid.UUID{vpc.ID}}, cdbp.PageInput{}, []string{})
+	vpcPrefixes, _, err := vpcPrefixDAO.GetAll(ctx, nil, cdbm.VpcPrefixFilterInput{TenantIDs: []uuid.UUID{vpc.TenantID}, VpcIDs: []uuid.UUID{vpc.ID}}, paginator.PageInput{}, []string{})
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving VPC prefixes for this VPC")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve VPC prefixes for this VPC", nil)
@@ -1912,7 +1911,7 @@ func (dvh DeleteVPCHandler) Handle(c echo.Context) error {
 
 	// Check if VPC has instance
 	insDAO := cdbm.NewInstanceDAO(dvh.dbSession)
-	instances, _, err := insDAO.GetAll(ctx, nil, cdbm.InstanceFilterInput{TenantIDs: []uuid.UUID{vpc.TenantID}, VpcIDs: []uuid.UUID{vpc.ID}}, cdbp.PageInput{}, []string{})
+	instances, _, err := insDAO.GetAll(ctx, nil, cdbm.InstanceFilterInput{TenantIDs: []uuid.UUID{vpc.TenantID}, VpcIDs: []uuid.UUID{vpc.ID}}, paginator.PageInput{}, []string{})
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving instances for this VPC")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve instances for this VPC", nil)
@@ -1942,7 +1941,7 @@ func (dvh DeleteVPCHandler) Handle(c echo.Context) error {
 				return cutil.NewAPIError(http.StatusInternalServerError, "Failed to reload VPC power configuration", nil)
 			}
 			vpc = lockedVPC
-			lockedInstances, _, lockErr := insDAO.GetAll(ctx, tx, cdbm.InstanceFilterInput{TenantIDs: []uuid.UUID{vpc.TenantID}, VpcIDs: []uuid.UUID{vpc.ID}}, cdbp.PageInput{}, nil)
+			lockedInstances, _, lockErr := insDAO.GetAll(ctx, tx, cdbm.InstanceFilterInput{TenantIDs: []uuid.UUID{vpc.TenantID}, VpcIDs: []uuid.UUID{vpc.ID}}, paginator.PageInput{}, nil)
 			if lockErr != nil {
 				logger.Error().Err(lockErr).Str("vpcID", vpc.ID.String()).Msg("failed to retrieve instances for VPC deletion")
 				return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve instances for this VPC", nil)

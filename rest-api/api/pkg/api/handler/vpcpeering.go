@@ -28,7 +28,6 @@ import (
 	cdb "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
-	cdbp "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
 	swe "github.com/NVIDIA/infra-controller/rest-api/site-workflow/pkg/error"
 	"github.com/NVIDIA/infra-controller/rest-api/workflow/pkg/queue"
 )
@@ -162,7 +161,7 @@ func (cvph CreateVpcPeeringHandler) Handle(c echo.Context) error {
 			_, taCount, err := taDAO.GetAll(ctx, nil, cdbm.TenantAccountFilterInput{
 				InfrastructureProviderID: &infrastructureProvider.ID,
 				TenantIDs:                []uuid.UUID{vpc1.TenantID, vpc2.TenantID},
-			}, cdbp.PageInput{}, nil)
+			}, paginator.PageInput{}, nil)
 			if err != nil {
 				logger.Error().Err(err).Msg("error retrieving Tenant Accounts for tenants of the VPC Peering")
 				return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to validate Tenant Accounts for tenants of the VPC Peering, DB error", nil)
@@ -176,7 +175,7 @@ func (cvph CreateVpcPeeringHandler) Handle(c echo.Context) error {
 						TenantIDs: []uuid.UUID{vpc1.TenantID, vpc2.TenantID},
 						SiteIDs:   []uuid.UUID{site.ID},
 					},
-					cdbp.PageInput{},
+					paginator.PageInput{},
 					nil,
 				)
 				if serr != nil {
@@ -235,7 +234,7 @@ func (cvph CreateVpcPeeringHandler) Handle(c echo.Context) error {
 	vpcPeeringDAO := cdbm.NewVpcPeeringDAO(cvph.dbSession)
 	existingPeerings, _, err := vpcPeeringDAO.GetAll(ctx, nil, cdbm.VpcPeeringFilterInput{
 		VpcIDs: []uuid.UUID{vpc1ID},
-	}, cdbp.PageInput{}, nil)
+	}, paginator.PageInput{}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("error checking for existing VPC Peering")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to check for existing VPC Peering, DB error", nil)
@@ -568,7 +567,7 @@ func (gavph GetAllVpcPeeringHandler) Handle(c echo.Context) error {
 			ctx,
 			nil,
 			cdbm.VpcFilterInput{VpcIDs: vpcIDs},
-			cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 			nil,
 		)
 		if err != nil {
@@ -606,7 +605,7 @@ func (gavph GetAllVpcPeeringHandler) Handle(c echo.Context) error {
 			ctx,
 			nil,
 			cdbm.TenantFilterInput{TenantIDs: peerTenantIDs},
-			cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)},
 			nil,
 		)
 		if err != nil {
@@ -655,7 +654,7 @@ func (gavph GetAllVpcPeeringHandler) Handle(c echo.Context) error {
 
 	// Get VPC Peerings from DB
 	vpcPeeringDAO := cdbm.NewVpcPeeringDAO(gavph.dbSession)
-	vpcPeeringPageInput := cdbp.PageInput{
+	vpcPeeringPageInput := paginator.PageInput{
 		Limit:   pageRequest.Limit,
 		Offset:  pageRequest.Offset,
 		OrderBy: pageRequest.OrderBy,
@@ -687,7 +686,7 @@ func (gavph GetAllVpcPeeringHandler) Handle(c echo.Context) error {
 	}
 	if len(vpcPeeringTenantIDs) > 0 {
 		tenantDAO := cdbm.NewTenantDAO(gavph.dbSession)
-		tenants, _, err := tenantDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{TenantIDs: vpcPeeringTenantIDs}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		tenants, _, err := tenantDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{TenantIDs: vpcPeeringTenantIDs}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if err != nil {
 			logger.Error().Err(err).Msg("error retrieving Tenants from DB")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenants, DB error", nil)
@@ -852,7 +851,7 @@ func (gvph GetVpcPeeringHandler) Handle(c echo.Context) error {
 	// Fetch Tenants from DB if VPCs have tenants
 	if len(tenantIDs) > 0 {
 		tenantDAO := cdbm.NewTenantDAO(gvph.dbSession)
-		tenants, _, err := tenantDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{TenantIDs: tenantIDs}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+		tenants, _, err := tenantDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{TenantIDs: tenantIDs}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if err != nil {
 			logger.Error().Err(err).Msg("error retrieving Tenants from DB")
 			return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenants, DB error", nil)

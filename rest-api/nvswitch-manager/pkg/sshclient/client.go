@@ -131,16 +131,26 @@ func (c *NVOSClient) CopyFile(localPath, remotePath string) error {
 		return fmt.Errorf("failed to get stdin pipe: %v", err)
 	}
 
+	copyResult := make(chan error, 1)
 	go func() {
 		defer stdin.Close()
-		fmt.Fprintf(stdin, "C0644 %d %s\n", fileInfo.Size(), remoteFileName)
-		io.Copy(stdin, localFile)
-		fmt.Fprint(stdin, "\x00")
+		_, copyErr := fmt.Fprintf(stdin, "C0644 %d %s\n", fileInfo.Size(), remoteFileName)
+		if copyErr == nil {
+			_, copyErr = io.Copy(stdin, localFile)
+		}
+		if copyErr == nil {
+			_, copyErr = fmt.Fprint(stdin, "\x00")
+		}
+		copyResult <- copyErr
 	}()
 
 	err = session.Run(fmt.Sprintf("scp -t %s", remoteDir))
 	if err != nil {
 		return fmt.Errorf("scp failed: %v", err)
+	}
+	copyErr := <-copyResult
+	if copyErr != nil {
+		return fmt.Errorf("copy file to scp: %w", copyErr)
 	}
 
 	return nil

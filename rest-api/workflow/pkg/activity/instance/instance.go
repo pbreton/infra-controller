@@ -19,7 +19,6 @@ import (
 	cdb "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
-	cdbp "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
 
 	sc "github.com/NVIDIA/infra-controller/rest-api/workflow/pkg/client/site"
 	"github.com/NVIDIA/infra-controller/rest-api/workflow/pkg/queue"
@@ -96,7 +95,7 @@ func (mi ManageInstance) UpdateInstancesInDB(ctx context.Context, siteID uuid.UU
 	instanceDAO := cdbm.NewInstanceDAO(mi.dbSession)
 
 	// Get all Instances for Site
-	existingInstances, _, err := instanceDAO.GetAll(ctx, nil, cdbm.InstanceFilterInput{SiteIDs: []uuid.UUID{site.ID}}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)}, nil)
+	existingInstances, _, err := instanceDAO.GetAll(ctx, nil, cdbm.InstanceFilterInput{SiteIDs: []uuid.UUID{site.ID}}, paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get Instances for Site from DB")
 		return nil, err
@@ -333,7 +332,7 @@ func (mi ManageInstance) UpdateInstancesInDB(ctx context.Context, siteID uuid.UU
 			} else {
 				// Check if the latest status detail message is different from the current status message
 				// Leave orderBy nil since the result is sorted by create timestamp by default
-				latestsd, _, serr := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{instance.ID.String()}}, cdbp.PageInput{Limit: cwutil.GetPtr(1)})
+				latestsd, _, serr := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{instance.ID.String()}}, paginator.PageInput{Limit: cwutil.GetPtr(1)})
 				if serr != nil {
 					slogger.Error().Err(serr).Msg("failed to retrieve latest Status Detail for Instance")
 				} else if len(latestsd) == 0 || (latestsd[0].Message != nil && *latestsd[0].Message != statusMessage) {
@@ -375,7 +374,7 @@ func (mi ManageInstance) UpdateInstancesInDB(ctx context.Context, siteID uuid.UU
 				ctx,
 				nil,
 				cdbm.InterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}},
-				cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)},
+				paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)},
 				[]string{cdbm.SubnetRelationName, cdbm.VpcRelationName, cdbm.VpcPrefixRelationName},
 			)
 			if serr != nil {
@@ -613,7 +612,7 @@ func (mi ManageInstance) UpdateInstancesInDB(ctx context.Context, siteID uuid.UU
 			cdbm.InfiniBandInterfaceFilterInput{
 				InstanceIDs: []uuid.UUID{instance.ID},
 			},
-			paginator.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)},
 			[]string{cdbm.InfiniBandPartitionRelationName},
 		)
 		if serr != nil {
@@ -737,7 +736,7 @@ func (mi ManageInstance) UpdateInstancesInDB(ctx context.Context, siteID uuid.UU
 			cdbm.SpectrumXAttachmentFilterInput{
 				InstanceIDs: []uuid.UUID{instance.ID},
 			},
-			paginator.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)},
 			nil,
 		)
 		if serr != nil {
@@ -924,7 +923,7 @@ func (mi ManageInstance) UpdateInstancesInDB(ctx context.Context, siteID uuid.UU
 		desdDAO := cdbm.NewDpuExtensionServiceDeploymentDAO(mi.dbSession)
 		desds, _, serr := desdDAO.GetAll(ctx, nil, cdbm.DpuExtensionServiceDeploymentFilterInput{
 			InstanceIDs: []uuid.UUID{instance.ID},
-		}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)}, nil)
+		}, paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)}, nil)
 		if serr != nil {
 			slogger.Error().Err(serr).Msg("failed to get DPU Extension Service Deployments for Instance from DB")
 			continue
@@ -1007,7 +1006,7 @@ func (mi ManageInstance) UpdateInstancesInDB(ctx context.Context, siteID uuid.UU
 			cdbm.NVLinkInterfaceFilterInput{
 				InstanceIDs: []uuid.UUID{instance.ID},
 			},
-			paginator.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)},
+			paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)},
 			[]string{cdbm.NVLinkLogicalPartitionRelationName},
 		)
 
@@ -1241,7 +1240,7 @@ func (mi ManageInstance) UpdateInstancesInDB(ctx context.Context, siteID uuid.UU
 
 			// Leave orderBy as nil as the result is sorted by created timestamp by default
 			if status == instance.Status {
-				latestsd, _, serr := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{instance.ID.String()}}, cdbp.PageInput{Limit: cwutil.GetPtr(1)})
+				latestsd, _, serr := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{instance.ID.String()}}, paginator.PageInput{Limit: cwutil.GetPtr(1)})
 				if serr != nil {
 					slogger.Error().Err(serr).Msg("failed to retrieve latest Status Detail for Instance")
 					continue
@@ -1333,7 +1332,7 @@ func (mi ManageInstance) deleteInstanceFromDB(ctx context.Context, tx *cdb.Tx, i
 	// Delete interface(s) corresponding to instance
 	isDAO := cdbm.NewInterfaceDAO(mi.dbSession)
 
-	iss, _, err := isDAO.GetAll(ctx, tx, cdbm.InterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, cdbp.PageInput{}, nil)
+	iss, _, err := isDAO.GetAll(ctx, tx, cdbm.InterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, paginator.PageInput{}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to retrieve interfaces from DB")
 		terr := tx.Rollback()
@@ -1356,7 +1355,7 @@ func (mi ManageInstance) deleteInstanceFromDB(ctx context.Context, tx *cdb.Tx, i
 
 	// Delete InfiniBand interface(s) corresponding to instance
 	ibiDAO := cdbm.NewInfiniBandInterfaceDAO(mi.dbSession)
-	ibis, _, err := ibiDAO.GetAll(ctx, tx, cdbm.InfiniBandInterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)}, nil)
+	ibis, _, err := ibiDAO.GetAll(ctx, tx, cdbm.InfiniBandInterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to retrieve InfiniBand interfaces from DB")
 		terr := tx.Rollback()
@@ -1379,7 +1378,7 @@ func (mi ManageInstance) deleteInstanceFromDB(ctx context.Context, tx *cdb.Tx, i
 
 	// Delete SpectrumX attachment(s) corresponding to instance
 	sxaDAO := cdbm.NewSpectrumXAttachmentDAO(mi.dbSession)
-	sxas, _, err := sxaDAO.GetAll(ctx, tx, cdbm.SpectrumXAttachmentFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)}, nil)
+	sxas, _, err := sxaDAO.GetAll(ctx, tx, cdbm.SpectrumXAttachmentFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to retrieve SpectrumX attachments from DB")
 		terr := tx.Rollback()
@@ -1402,7 +1401,7 @@ func (mi ManageInstance) deleteInstanceFromDB(ctx context.Context, tx *cdb.Tx, i
 
 	// Delete NVLink interface(s) corresponding to instance
 	nvliDAO := cdbm.NewNVLinkInterfaceDAO(mi.dbSession)
-	nvlis, _, err := nvliDAO.GetAll(ctx, tx, cdbm.NVLinkInterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)}, nil)
+	nvlis, _, err := nvliDAO.GetAll(ctx, tx, cdbm.NVLinkInterfaceFilterInput{InstanceIDs: []uuid.UUID{instance.ID}}, paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to retrieve NVLink interfaces from DB")
 		terr := tx.Rollback()
@@ -1427,7 +1426,7 @@ func (mi ManageInstance) deleteInstanceFromDB(ctx context.Context, tx *cdb.Tx, i
 	skgiaDAO := cdbm.NewSSHKeyGroupInstanceAssociationDAO(mi.dbSession)
 	skgias, _, err := skgiaDAO.GetAll(ctx, tx, cdbm.SSHKeyGroupInstanceAssociationFilterInput{
 		InstanceIDs: []uuid.UUID{instance.ID},
-	}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)}, nil)
+	}, paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to retrieve SSH Key Group Instance associations from DB")
 		terr := tx.Rollback()
@@ -1452,7 +1451,7 @@ func (mi ManageInstance) deleteInstanceFromDB(ctx context.Context, tx *cdb.Tx, i
 	desdDAO := cdbm.NewDpuExtensionServiceDeploymentDAO(mi.dbSession)
 	desds, _, err := desdDAO.GetAll(ctx, tx, cdbm.DpuExtensionServiceDeploymentFilterInput{
 		InstanceIDs: []uuid.UUID{instance.ID},
-	}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)}, nil)
+	}, paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to retrieve DPU Extension Service Deployments from DB")
 		return err
@@ -1683,7 +1682,7 @@ func (milm ManageInstanceLifecycleMetrics) RecordInstanceStatusTransitionMetrics
 	metricsRecorded := 0
 
 	for _, event := range instanceLifecycleEvents {
-		statusDetails, _, err := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{event.ObjectID.String()}}, cdbp.PageInput{Limit: cwutil.GetPtr(cdbp.TotalLimit)})
+		statusDetails, _, err := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{event.ObjectID.String()}}, paginator.PageInput{Limit: cwutil.GetPtr(paginator.TotalLimit)})
 		if err != nil {
 			logger.Error().Err(err).Str("Instance ID", event.ObjectID.String()).Msg("failed to retrieve Status Details for Instance")
 			return err

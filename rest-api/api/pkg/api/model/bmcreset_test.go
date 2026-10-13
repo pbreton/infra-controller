@@ -13,6 +13,6 @@ func TestAPIMachineBMCResetRequestToProto(t *testing.T) {
 	req := APIMachineBMCResetRequest{UseIpmiTool: true}
 
 	protoReq := req.ToProto("machine-1")
-	assert.Equal(t, "machine-1", protoReq.GetMachineId())
+	assert.Equal(t, "machine-1", protoReq.GetMachineId()) //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 	assert.True(t, protoReq.GetUseIpmitool())
 }

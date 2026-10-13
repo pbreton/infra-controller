@@ -23,7 +23,10 @@ func TestSlackClient_sendHttpRequest(t *testing.T) {
 
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		{
+			_, err := w.Write([]byte("ok"))
+			assert.NoError(t, err)
+		}
 	}))
 
 	tests := []struct {

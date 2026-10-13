@@ -1619,14 +1619,32 @@ func TestGetAllSiteHandler_Handle(t *testing.T) {
 
 	// Update Sites with feature flags
 	stDAO := cdbm.NewSiteDAO(dbSession)
-	stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(true)}, SiteID: sts[0].ID})
-	stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(true)}, SiteID: sts[1].ID})
+	{
+		_, err := stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(true)}, SiteID: sts[0].ID})
+		assert.NoError(t, err)
+	}
+	{
+		_, err := stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(true)}, SiteID: sts[1].ID})
+		assert.NoError(t, err)
+	}
 
-	stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NetworkSecurityGroup: cutil.GetPtr(true)}, SiteID: sts[2].ID})
-	stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NetworkSecurityGroup: cutil.GetPtr(true)}, SiteID: sts[3].ID})
+	{
+		_, err := stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NetworkSecurityGroup: cutil.GetPtr(true)}, SiteID: sts[2].ID})
+		assert.NoError(t, err)
+	}
+	{
+		_, err := stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NetworkSecurityGroup: cutil.GetPtr(true)}, SiteID: sts[3].ID})
+		assert.NoError(t, err)
+	}
 
-	stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(true), NetworkSecurityGroup: cutil.GetPtr(true), NVLinkPartition: cutil.GetPtr(true), Flow: cutil.GetPtr(true)}, SiteID: sts[4].ID})
-	stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(true), NetworkSecurityGroup: cutil.GetPtr(true), NVLinkPartition: cutil.GetPtr(true), Flow: cutil.GetPtr(true)}, SiteID: sts[5].ID})
+	{
+		_, err := stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(true), NetworkSecurityGroup: cutil.GetPtr(true), NVLinkPartition: cutil.GetPtr(true), Flow: cutil.GetPtr(true)}, SiteID: sts[4].ID})
+		assert.NoError(t, err)
+	}
+	{
+		_, err := stDAO.Update(ctx, nil, cdbm.SiteUpdateInput{Config: &cdbm.SiteConfigUpdateInput{NativeNetworking: cutil.GetPtr(true), NetworkSecurityGroup: cutil.GetPtr(true), NVLinkPartition: cutil.GetPtr(true), Flow: cutil.GetPtr(true)}, SiteID: sts[5].ID})
+		assert.NoError(t, err)
+	}
 
 	// Setup echo server/context
 	e := echo.New()

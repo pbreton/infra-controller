@@ -168,7 +168,10 @@ func (h *MockServerHelper) CreateJWKSServer(keys []TestKeyInfo) *httptest.Server
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(jsonData)
+		{
+			_, err := w.Write(jsonData)
+			assert.NoError(h.t, err)
+		}
 	}))
 }
 
@@ -203,8 +206,11 @@ func (h *MockServerHelper) createJWKMap(key interface{}, keyID, algorithm, use s
 	case *ecdsa.PublicKey:
 		jwkMap["kty"] = "EC"
 		jwkMap["crv"] = getCurveName(k.Curve)
-		jwkMap["x"] = EncodeBase64URLBigInt(k.X)
-		jwkMap["y"] = EncodeBase64URLBigInt(k.Y)
+		encoded, err := k.Bytes()
+		require.NoError(h.t, err)
+		size := (len(encoded) - 1) / 2
+		jwkMap["x"] = EncodeBase64URLBigInt(new(big.Int).SetBytes(encoded[1 : 1+size]))
+		jwkMap["y"] = EncodeBase64URLBigInt(new(big.Int).SetBytes(encoded[1+size:]))
 	}
 
 	return jwkMap

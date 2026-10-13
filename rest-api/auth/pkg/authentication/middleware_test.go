@@ -99,10 +99,16 @@ func TestAuthProcessor(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		if strings.Contains(req.URL.Path, "/kas") {
 			res.WriteHeader(http.StatusOK)
-			res.Write([]byte(legacyKasJwks))
+			{
+				_, err := res.Write([]byte(legacyKasJwks))
+				assert.NoError(t, err)
+			}
 		} else if strings.Contains(req.URL.Path, "/ssa") {
 			res.WriteHeader(http.StatusOK)
-			res.Write([]byte(ssaJwks))
+			{
+				_, err := res.Write([]byte(ssaJwks))
+				assert.NoError(t, err)
+			}
 		} else {
 			res.WriteHeader(http.StatusNotFound)
 		}
@@ -518,10 +524,16 @@ func TestValidateJWTTokens_WithoutExpiration(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		if strings.Contains(req.URL.Path, "/kas") {
 			res.WriteHeader(http.StatusOK)
-			res.Write([]byte(legacyKasJwks))
+			{
+				_, err := res.Write([]byte(legacyKasJwks))
+				assert.NoError(t, err)
+			}
 		} else if strings.Contains(req.URL.Path, "/ssa") {
 			res.WriteHeader(http.StatusOK)
-			res.Write([]byte(ssaJwks))
+			{
+				_, err := res.Write([]byte(ssaJwks))
+				assert.NoError(t, err)
+			}
 		} else {
 			res.WriteHeader(http.StatusNotFound)
 		}
@@ -705,11 +717,17 @@ func TestHandlerInterface_TokenOriginRouting(t *testing.T) {
 		case strings.Contains(req.URL.Path, "/ssa"):
 			res.Header().Set("Content-Type", "application/json")
 			res.WriteHeader(http.StatusOK)
-			res.Write([]byte(ssaJwks))
+			{
+				_, err := res.Write([]byte(ssaJwks))
+				assert.NoError(t, err)
+			}
 		case strings.Contains(req.URL.Path, "/kas"):
 			res.Header().Set("Content-Type", "application/json")
 			res.WriteHeader(http.StatusOK)
-			res.Write([]byte(legacyKasJwks))
+			{
+				_, err := res.Write([]byte(legacyKasJwks))
+				assert.NoError(t, err)
+			}
 		default:
 			res.WriteHeader(http.StatusNotFound)
 		}
@@ -861,7 +879,10 @@ func TestProcessorInterface_ErrorScenarios(t *testing.T) {
 				return httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 					res.Header().Set("Content-Type", "application/json")
 					res.WriteHeader(http.StatusOK)
-					res.Write([]byte(ssaJwks))
+					{
+						_, err := res.Write([]byte(ssaJwks))
+						assert.NoError(t, err)
+					}
 				}))
 			},
 			issuer:        ssaIssuer,
@@ -878,7 +899,10 @@ func TestProcessorInterface_ErrorScenarios(t *testing.T) {
 				return httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 					res.Header().Set("Content-Type", "application/json")
 					res.WriteHeader(http.StatusOK)
-					res.Write([]byte(legacyKasJwks))
+					{
+						_, err := res.Write([]byte(legacyKasJwks))
+						assert.NoError(t, err)
+					}
 				}))
 			},
 			issuer:        kasIssuer,
@@ -892,7 +916,10 @@ func TestProcessorInterface_ErrorScenarios(t *testing.T) {
 				return httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 					res.Header().Set("Content-Type", "application/json")
 					res.WriteHeader(http.StatusOK)
-					res.Write([]byte(ssaJwks))
+					{
+						_, err := res.Write([]byte(ssaJwks))
+						assert.NoError(t, err)
+					}
 				}))
 			},
 			issuer:        ssaIssuer,
@@ -977,7 +1004,10 @@ func TestProcessorInterface_Mapping(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
 		res.WriteHeader(http.StatusOK)
-		res.Write([]byte(ssaJwks)) // Use valid JWKS
+		{
+			_, err := res.Write([]byte(ssaJwks))
+			assert.NoError(t, err)
+		} // Use valid JWKS
 	}))
 	defer testServer.Close()
 

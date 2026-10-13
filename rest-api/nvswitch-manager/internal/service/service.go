@@ -168,7 +168,10 @@ func (s *Service) Stop(ctx context.Context) {
 		s.fwm.Stop()
 	}
 
-	s.nsm.Stop(ctx)
+	err := s.nsm.Stop(ctx)
+	if err != nil {
+		log.WithError(err).Error("failed to stop manager")
+	}
 }
 
 // certOption returns the gRPC server option for TLS/mTLS if certificates are

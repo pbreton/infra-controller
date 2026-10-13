@@ -228,7 +228,7 @@ func TestExpectedMachine_ToProto(t *testing.T) {
 		}
 		proto := em.ToProto(ExpectedMachineCredentials{})
 		assert.Nil(t, proto.IsDpfEnabled)
-		assert.False(t, proto.DpfEnabled)
+		assert.False(t, proto.DpfEnabled) //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 	})
 
 	t.Run("forwards false value", func(t *testing.T) {
@@ -242,7 +242,7 @@ func TestExpectedMachine_ToProto(t *testing.T) {
 		if assert.NotNil(t, proto.IsDpfEnabled) {
 			assert.False(t, *proto.IsDpfEnabled)
 		}
-		assert.False(t, proto.DpfEnabled)
+		assert.False(t, proto.DpfEnabled) //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 	})
 
 	t.Run("forwards interfaces in order", func(t *testing.T) {

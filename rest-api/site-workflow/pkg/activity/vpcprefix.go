@@ -11,7 +11,6 @@ import (
 	corev1 "github.com/NVIDIA/infra-controller/rest-api/proto/core/gen/v1"
 	swe "github.com/NVIDIA/infra-controller/rest-api/site-workflow/pkg/error"
 	"github.com/NVIDIA/infra-controller/rest-api/site-workflow/pkg/grpc/client"
-	cClient "github.com/NVIDIA/infra-controller/rest-api/site-workflow/pkg/grpc/client"
 	"github.com/rs/zerolog/log"
 	"go.temporal.io/sdk/temporal"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -173,7 +172,7 @@ func (mvpi *ManageVpcPrefixInventory) DiscoverVpcPrefixInventory(ctx context.Con
 	return inventoryImpl.CollectAndPublishInventory(ctx, &logger)
 }
 
-func vpcPrefixFindIDs(ctx context.Context, grpcClient *cClient.CoreGrpcClient) ([]*corev1.VpcPrefixId, error) {
+func vpcPrefixFindIDs(ctx context.Context, grpcClient *client.CoreGrpcClient) ([]*corev1.VpcPrefixId, error) {
 	grpcServiceClient := grpcClient.GrpcServiceClient()
 	idList, err := grpcServiceClient.SearchVpcPrefixes(ctx, &corev1.VpcPrefixSearchQuery{
 		Deleted: corev1.DeletedFilter_DELETED_FILTER_INCLUDE,
@@ -184,7 +183,7 @@ func vpcPrefixFindIDs(ctx context.Context, grpcClient *cClient.CoreGrpcClient) (
 	return idList.VpcPrefixIds, nil
 }
 
-func vpcPrefixFindByIDs(ctx context.Context, grpcClient *cClient.CoreGrpcClient, ids []*corev1.VpcPrefixId) ([]*corev1.VpcPrefix, error) {
+func vpcPrefixFindByIDs(ctx context.Context, grpcClient *client.CoreGrpcClient, ids []*corev1.VpcPrefixId) ([]*corev1.VpcPrefix, error) {
 	grpcServiceClient := grpcClient.GrpcServiceClient()
 	list, err := grpcServiceClient.GetVpcPrefixes(ctx, &corev1.VpcPrefixGetRequest{
 		VpcPrefixIds: ids,
@@ -219,7 +218,7 @@ func vpcPrefixPagedInventory(allItemIDs []*corev1.VpcPrefixId, pagedItems []*cor
 	return inventory
 }
 
-func vpcPrefixFindFallback(ctx context.Context, coreGrpcClient *cClient.CoreGrpcClient) ([]*corev1.VpcPrefixId, []*corev1.VpcPrefix, error) {
+func vpcPrefixFindFallback(ctx context.Context, coreGrpcClient *client.CoreGrpcClient) ([]*corev1.VpcPrefixId, []*corev1.VpcPrefix, error) {
 	grpcServiceClient := coreGrpcClient.GrpcServiceClient()
 	request := &corev1.VpcPrefixGetRequest{
 		Deleted: corev1.DeletedFilter_DELETED_FILTER_INCLUDE,

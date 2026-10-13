@@ -1099,12 +1099,13 @@ func TestManageMachine_UpdateMachinesInDB(t *testing.T) {
 
 				expectedCaps := machineInfo1.Machine.GetStatus().GetCapabilities()
 				for _, mc := range mc1s {
-					if mc.Type == cdbm.MachineCapabilityTypeCPU {
+					switch mc.Type {
+					case cdbm.MachineCapabilityTypeCPU:
 						// 9 Core CPU
 						assert.Equal(t, 2, *mc.Count)
 						assert.Equal(t, 3, *mc.Cores)
 						assert.Equal(t, 6, *mc.Threads)
-					} else if mc.Type == cdbm.MachineCapabilityTypeNetwork {
+					case cdbm.MachineCapabilityTypeNetwork:
 						if mc.DeviceType != nil && *mc.DeviceType == cdbm.MachineCapabilityDeviceTypeSpectrumX {
 							assert.Equal(t, 4, *mc.Count)
 						} else {
@@ -1113,7 +1114,7 @@ func TestManageMachine_UpdateMachinesInDB(t *testing.T) {
 						if strings.Contains(mc.Name, "BlueField") {
 							assert.Equal(t, *mc.DeviceType, cdbm.MachineCapabilityDeviceTypeDPU)
 						}
-					} else if mc.Type == cdbm.MachineCapabilityTypeStorage {
+					case cdbm.MachineCapabilityTypeStorage:
 						// 6 Storage Devices
 						if mc.Name == "Dell Ent NVMe CM6 RI 1.92TB" {
 							assert.Equal(t, 4, *mc.Count)
@@ -1124,7 +1125,7 @@ func TestManageMachine_UpdateMachinesInDB(t *testing.T) {
 						if mc.Name == "SSDPF2KE016T9L" {
 							assert.Equal(t, 1, *mc.Count)
 						}
-					} else if mc.Type == cdbm.MachineCapabilityTypeGPU {
+					case cdbm.MachineCapabilityTypeGPU:
 
 						if strings.Contains(mc.Name, "NVIDIA GB200") {
 							assert.Equal(t, cdbm.MachineCapabilityDeviceTypeNVLink, *mc.DeviceType)
@@ -1144,7 +1145,7 @@ func TestManageMachine_UpdateMachinesInDB(t *testing.T) {
 							assert.Equal(t, *expectedCaps.Gpu[0].Frequency, *mc.Frequency)
 							assert.Equal(t, *expectedCaps.Gpu[0].Capacity, *mc.Capacity)
 						}
-					} else if mc.Type == cdbm.MachineCapabilityTypeMemory {
+					case cdbm.MachineCapabilityTypeMemory:
 						// 1 Memory
 
 						if mc.Name != "UNKNOWN" {
@@ -1164,7 +1165,7 @@ func TestManageMachine_UpdateMachinesInDB(t *testing.T) {
 							assert.Nil(t, mc.Capacity)
 						}
 
-					} else if mc.Type == cdbm.MachineCapabilityTypeInfiniBand {
+					case cdbm.MachineCapabilityTypeInfiniBand:
 						// 2 InfiniBand interfaces
 						assert.Equal(t, 2, *mc.Count)
 
@@ -1399,6 +1400,35 @@ func TestManageMachine_UpdateMachinesInDB(t *testing.T) {
 			assert.Greater(t, *updatedSite.InventoryReceived, refTime)
 		})
 	}
+
+	t.Run("commit failure skips post-commit status updates", func(t *testing.T) {
+		ctx := context.Background()
+		commitSite := testMachineBuildSite(t, dbSession, ip, "test-commit-site", cdbm.SiteStatusRegistered)
+		machine := testMachineBuildMachine(t, dbSession, ip.ID, commitSite.ID, nil, nil, false, nil, false, nil, cutil.GetPtr(cdbm.MachineStatusInitializing))
+		_, err := dbSession.DB.NewUpdate().Model((*cdbm.Machine)(nil)).Set("updated = ?", time.Now().Add(-2*cutil.DefaultInventoryReceiptInterval)).Where("id = ?", machine.ID).Exec(ctx)
+		require.NoError(t, err)
+		_, err = dbSession.DB.Exec(`CREATE FUNCTION fail_machine_lint_test_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected Machine commit failure'; END $$`)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := dbSession.DB.Exec("DROP TRIGGER fail_machine_lint_test_commit ON machine")
+			assert.NoError(t, err)
+			_, err = dbSession.DB.Exec("DROP FUNCTION fail_machine_lint_test_commit()")
+			assert.NoError(t, err)
+		})
+		_, err = dbSession.DB.Exec(`CREATE CONSTRAINT TRIGGER fail_machine_lint_test_commit AFTER UPDATE ON machine DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_machine_lint_test_commit()`)
+		require.NoError(t, err)
+		inventory := &corev1.MachineInventory{Machines: []*corev1.MachineInfo{{Machine: &corev1.Machine{
+			Id: &corev1.MachineId{Id: machine.ControllerMachineID}, State: cdbm.ControllerMachineStateReady, Status: &corev1.MachineStatus{},
+		}}}, Timestamp: timestamppb.Now()}
+		manager := NewManageMachine(dbSession, nil)
+		require.NoError(t, manager.UpdateMachinesInDB(ctx, commitSite.ID.String(), inventory))
+		persisted, err := cdbm.NewMachineDAO(dbSession).GetByID(ctx, nil, machine.ID, nil, false)
+		require.NoError(t, err)
+		assert.Equal(t, cdbm.MachineStatusInitializing, persisted.Status)
+		details, _, err := cdbm.NewStatusDetailDAO(dbSession).GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{machine.ID}}, cdbp.PageInput{})
+		require.NoError(t, err)
+		assert.Empty(t, details, "an uncommitted status must not produce a status detail")
+	})
 
 	t.Run("defers stale inventory then restores a soft-deleted Machine", func(t *testing.T) {
 		ctx := context.Background()

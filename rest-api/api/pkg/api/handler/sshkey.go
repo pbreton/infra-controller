@@ -21,7 +21,6 @@ import (
 	cdb "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
-	cdbp "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
 
 	"github.com/NVIDIA/infra-controller/rest-api/api/internal/config"
 	common "github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/handler/util/common"
@@ -128,7 +127,7 @@ func (cskh CreateSSHKeyHandler) Handle(c echo.Context) error {
 			Names:     []string{apiRequest.Name},
 			TenantIDs: []uuid.UUID{tenant.ID},
 		},
-		cdbp.PageInput{},
+		paginator.PageInput{},
 		nil,
 	)
 	if err != nil {
@@ -191,7 +190,7 @@ func (cskh CreateSSHKeyHandler) Handle(c echo.Context) error {
 			TenantIDs:    []uuid.UUID{tenant.ID},
 			Fingerprints: []string{fingerprint},
 		},
-		cdbp.PageInput{},
+		paginator.PageInput{},
 		nil,
 	)
 	if err != nil {
@@ -260,7 +259,7 @@ func (cskh CreateSSHKeyHandler) Handle(c echo.Context) error {
 			}
 
 			skgsaDAO := cdbm.NewSSHKeyGroupSiteAssociationDAO(cskh.dbSession)
-			skgsas, _, derr = skgsaDAO.GetAll(ctx, tx, cdbm.SSHKeyGroupSiteAssociationFilterInput{SSHKeyGroupIDs: []uuid.UUID{dbskg.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+			skgsas, _, derr = skgsaDAO.GetAll(ctx, tx, cdbm.SSHKeyGroupSiteAssociationFilterInput{SSHKeyGroupIDs: []uuid.UUID{dbskg.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 			if derr != nil {
 				logger.Error().Err(derr).Msg("error retrieving SSH Key Group Association from DB")
 				return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve SSH Key Group Association from DB", nil)
@@ -420,7 +419,7 @@ func (uskh UpdateSSHKeyHandler) Handle(c echo.Context) error {
 	// Get Tenant for this org
 	tnDAO := cdbm.NewTenantDAO(uskh.dbSession)
 
-	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving Tenant for this org")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenant for org", nil)
@@ -445,7 +444,7 @@ func (uskh UpdateSSHKeyHandler) Handle(c echo.Context) error {
 				Names:     []string{*apiRequest.Name},
 				TenantIDs: []uuid.UUID{tenant.ID},
 			},
-			cdbp.PageInput{},
+			paginator.PageInput{},
 			nil,
 		)
 		if serr != nil {
@@ -478,7 +477,7 @@ func (uskh UpdateSSHKeyHandler) Handle(c echo.Context) error {
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to update SSH Key due to data store error", nil)
 		}
 
-		skas, _, derr = skaDAO.GetAll(ctx, tx, cdbm.SSHKeyAssociationFilterInput{SSHKeyIDs: []uuid.UUID{sk.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
+		skas, _, derr = skaDAO.GetAll(ctx, tx, cdbm.SSHKeyAssociationFilterInput{SSHKeyIDs: []uuid.UUID{sk.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if derr != nil {
 			logger.Error().Err(derr).Msg("error retrieving SSH Key association from DB")
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve SSH Key Association from DB", nil)
@@ -586,7 +585,7 @@ func (gskh GetSSHKeyHandler) Handle(c echo.Context) error {
 	// Get Tenant for this org
 	tnDAO := cdbm.NewTenantDAO(gskh.dbSession)
 
-	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving Tenant for this org")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenant for org", nil)
@@ -603,7 +602,7 @@ func (gskh GetSSHKeyHandler) Handle(c echo.Context) error {
 	}
 
 	skaDAO := cdbm.NewSSHKeyAssociationDAO(gskh.dbSession)
-	skas, _, err := skaDAO.GetAll(ctx, nil, cdbm.SSHKeyAssociationFilterInput{SSHKeyIDs: []uuid.UUID{sk.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
+	skas, _, err := skaDAO.GetAll(ctx, nil, cdbm.SSHKeyAssociationFilterInput{SSHKeyIDs: []uuid.UUID{sk.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving SSH Key association from DB")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve SSH Key Association from DB", nil)
@@ -704,7 +703,7 @@ func (gaskh GetAllSSHKeyHandler) Handle(c echo.Context) error {
 	// Get Tenant for this org
 	tnDAO := cdbm.NewTenantDAO(gaskh.dbSession)
 
-	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving Tenant for this org")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenant for org", nil)
@@ -747,7 +746,7 @@ func (gaskh GetAllSSHKeyHandler) Handle(c echo.Context) error {
 			SSHKeyGroupIDs: sshKeyGroupIDs,
 			SearchQuery:    searchQuery,
 		},
-		cdbp.PageInput{
+		paginator.PageInput{
 			Offset:  pageRequest.Offset,
 			Limit:   pageRequest.Limit,
 			OrderBy: pageRequest.OrderBy,
@@ -764,7 +763,7 @@ func (gaskh GetAllSSHKeyHandler) Handle(c echo.Context) error {
 	apiSSHKeys := []model.APISSHKey{}
 
 	for _, sk := range dbSSHKeys {
-		skas, _, err := skaDAO.GetAll(ctx, nil, cdbm.SSHKeyAssociationFilterInput{SSHKeyIDs: []uuid.UUID{sk.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
+		skas, _, err := skaDAO.GetAll(ctx, nil, cdbm.SSHKeyAssociationFilterInput{SSHKeyIDs: []uuid.UUID{sk.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 		if err != nil {
 			logger.Error().Err(err).Msg("error getting SSH Key association records")
 		}
@@ -848,7 +847,7 @@ func (dskh DeleteSSHKeyHandler) Handle(c echo.Context) error {
 	// Get Tenant for this org
 	tnDAO := cdbm.NewTenantDAO(dskh.dbSession)
 
-	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, nil)
+	tenants, _, err := tnDAO.GetAll(ctx, nil, cdbm.TenantFilterInput{Orgs: []string{org}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, nil)
 	if err != nil {
 		logger.Error().Err(err).Msg("error retrieving Tenant for this org")
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Tenant for org", nil)
@@ -894,7 +893,7 @@ func (dskh DeleteSSHKeyHandler) Handle(c echo.Context) error {
 	var skgsasToSync []cdbm.SSHKeyGroupSiteAssociation
 
 	err = cdb.WithTx(ctx, dskh.dbSession, func(tx *cdb.Tx) error {
-		skas, _, derr := skaDAO.GetAll(ctx, tx, cdbm.SSHKeyAssociationFilterInput{SSHKeyIDs: []uuid.UUID{sk.ID}}, cdbp.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, []string{cdbm.SSHKeyGroupRelationName})
+		skas, _, derr := skaDAO.GetAll(ctx, tx, cdbm.SSHKeyAssociationFilterInput{SSHKeyIDs: []uuid.UUID{sk.ID}}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, []string{cdbm.SSHKeyGroupRelationName})
 		if derr != nil {
 			logger.Error().Err(derr).Msg("error retrieving SSH Key association from DB")
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve SSH Key Association from DB", nil)
@@ -940,7 +939,7 @@ func (dskh DeleteSSHKeyHandler) Handle(c echo.Context) error {
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to delete SSH Key due to data store error", nil)
 		}
 
-		skgsasToSync, _, derr = skgsaDAO.GetAll(ctx, tx, cdbm.SSHKeyGroupSiteAssociationFilterInput{SSHKeyGroupIDs: skgIDs}, cdbp.PageInput{Limit: cutil.GetPtr(cdbp.TotalLimit)}, []string{cdbm.SSHKeyGroupRelationName})
+		skgsasToSync, _, derr = skgsaDAO.GetAll(ctx, tx, cdbm.SSHKeyGroupSiteAssociationFilterInput{SSHKeyGroupIDs: skgIDs}, paginator.PageInput{Limit: cutil.GetPtr(paginator.TotalLimit)}, []string{cdbm.SSHKeyGroupRelationName})
 		if derr != nil {
 			logger.Error().Err(derr).Msg("error retrieving SSH Key Group Associations related to SSH Key from DB")
 			return cutil.NewAPIError(http.StatusInternalServerError, "Failed to retrieve SSH Key Group Associations from DB", nil)

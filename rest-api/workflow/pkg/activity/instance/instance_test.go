@@ -14,7 +14,6 @@ import (
 	cdb "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
-	cdbp "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
 	sc "github.com/NVIDIA/infra-controller/rest-api/workflow/pkg/client/site"
 	"github.com/NVIDIA/infra-controller/rest-api/workflow/pkg/queue"
 	"github.com/prometheus/client_golang/prometheus"
@@ -735,16 +734,16 @@ func TestManageInstance_deleteInstanceFromDB(t *testing.T) {
 	assert.Equal(t, cdbm.MachineStatusInUse, beforeCommit.Status)
 	statusDAO := cdbm.NewStatusDetailDAO(dbSession)
 	historyFilter := cdbm.StatusDetailFilterInput{EntityIDs: []string{machine.ID}}
-	pendingHistory, _, readErr := statusDAO.GetAll(ctx, tx, historyFilter, cdbp.PageInput{})
+	pendingHistory, _, readErr := statusDAO.GetAll(ctx, tx, historyFilter, paginator.PageInput{})
 	require.NoError(t, readErr)
 	require.Len(t, pendingHistory, 1)
 	assert.Equal(t, cdbm.MachineStatusReady, pendingHistory[0].Status)
 	assert.Equal(t, cutil.GetPtr(cdbm.MachineStatusReadyMessage), pendingHistory[0].Message)
-	visibleHistory, _, readErr := statusDAO.GetAll(ctx, nil, historyFilter, cdbp.PageInput{})
+	visibleHistory, _, readErr := statusDAO.GetAll(ctx, nil, historyFilter, paginator.PageInput{})
 	require.NoError(t, readErr)
 	assert.Empty(t, visibleHistory, "release history must not be visible before commit")
 	require.NoError(t, tx.Commit())
-	visibleHistory, _, readErr = statusDAO.GetAll(ctx, nil, historyFilter, cdbp.PageInput{})
+	visibleHistory, _, readErr = statusDAO.GetAll(ctx, nil, historyFilter, paginator.PageInput{})
 	require.NoError(t, readErr)
 	assert.Equal(t, pendingHistory, visibleHistory)
 	afterCommit, readErr := cdbm.NewMachineDAO(dbSession).GetByID(ctx, nil, machine.ID, nil, false)
@@ -816,7 +815,7 @@ func TestManageInstance_clearMachineIsAssigned(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.rollback, persisted.IsAssigned)
 			assert.Equal(t, tc.status, persisted.Status)
-			details, _, err := cdbm.NewStatusDetailDAO(dbSession).GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{machine.ID}}, cdbp.PageInput{})
+			details, _, err := cdbm.NewStatusDetailDAO(dbSession).GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{machine.ID}}, paginator.PageInput{})
 			require.NoError(t, err)
 			assert.Empty(t, details, "unchanged or rolled-back status must not add history")
 		})
@@ -2863,7 +2862,7 @@ func TestManageInstance_UpdateInstancesInDB(t *testing.T) {
 					assert.True(t, ui.IsMissingOnSite)
 					assert.Equal(t, cdbm.InstanceStatusError, ui.Status)
 
-					sds, _, err := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{instance.ID.String()}}, cdbp.PageInput{})
+					sds, _, err := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{instance.ID.String()}}, paginator.PageInput{})
 					assert.Nil(t, err)
 					assert.Equal(t, 1, len(sds), instance.Name)
 				} else {
@@ -2904,7 +2903,7 @@ func TestManageInstance_UpdateInstancesInDB(t *testing.T) {
 
 			for _, instance := range tc.unchangedInstances {
 				// Check that no new status detail has been created for Instance
-				sds, _, err := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{instance.ID.String()}}, cdbp.PageInput{})
+				sds, _, err := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{instance.ID.String()}}, paginator.PageInput{})
 				assert.Nil(t, err)
 				assert.Equal(t, 1, len(sds))
 			}

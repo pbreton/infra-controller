@@ -104,7 +104,10 @@ func (r *redis) CreatePrefix(ctx context.Context, prefix Prefix, namespace strin
 		namespace = defaultNamespace
 	}
 
-	r.CreateNamespace(ctx, namespace)
+	err := r.CreateNamespace(ctx, namespace)
+	if err != nil {
+		return Prefix{}, fmt.Errorf("create namespace: %w", err)
+	}
 
 	r.lock.Lock()
 	defer r.lock.Unlock()

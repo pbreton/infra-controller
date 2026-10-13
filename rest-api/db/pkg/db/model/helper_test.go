@@ -5,12 +5,15 @@ package model
 
 import (
 	"context"
+	crand "crypto/rand"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/trace/noop"
 
 	cutil "github.com/NVIDIA/infra-controller/rest-api/common/pkg/util"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db"
@@ -82,8 +85,6 @@ func testInitDB(t *testing.T) *db.Session {
 		bundebug.WithEnabled(false),
 		bundebug.FromEnv(""),
 	))
-
-	rand.Seed(time.Now().UnixNano())
 
 	return dbSession
 }
@@ -443,7 +444,7 @@ func testGenerateStarfleetID() string {
 
 func testGenerateMacAddress(t *testing.T) string {
 	buf := make([]byte, 6)
-	_, err := rand.Read(buf)
+	_, err := crand.Read(buf)
 	assert.NoError(t, err)
 	// Set the local bit
 	buf[0] = (buf[0] | 2) & 0xfe // Set local bit, ensure unicast address
@@ -453,7 +454,7 @@ func testGenerateMacAddress(t *testing.T) string {
 // testCommonTraceProviderSetup creates a test provider and spanner
 func testCommonTraceProviderSetup(t *testing.T, ctx context.Context) (trace.Tracer, trace.SpanContext, context.Context) {
 	// OTEL spanner configuration
-	provider := trace.NewNoopTracerProvider()
+	provider := noop.NewTracerProvider()
 	sc := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: trace.TraceID{0x01},
 		SpanID:  trace.SpanID{0x01},

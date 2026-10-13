@@ -24,7 +24,6 @@ import (
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/ipam"
 	cdbm "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/model"
 	"github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
-	cdbp "github.com/NVIDIA/infra-controller/rest-api/db/pkg/db/paginator"
 	cipam "github.com/NVIDIA/infra-controller/rest-api/ipam"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -346,7 +345,7 @@ func TestAllocationHandler_Create(t *testing.T) {
 				count, err := cdbm.NewAllocationDAO(dbSession).GetCount(ctx, nil, cdbm.AllocationFilterInput{Name: cutil.GetPtr("invalid-ipv6-prefix-length")})
 				require.NoError(t, err)
 				assert.Zero(t, count)
-				constraints, _, err := cdbm.NewAllocationConstraintDAO(dbSession).GetAll(ctx, nil, cdbm.AllocationConstraintFilterInput{ResourceTypeIDs: []uuid.UUID{ipbV6.ID}}, cdbp.PageInput{}, nil)
+				constraints, _, err := cdbm.NewAllocationConstraintDAO(dbSession).GetAll(ctx, nil, cdbm.AllocationConstraintFilterInput{ResourceTypeIDs: []uuid.UUID{ipbV6.ID}}, paginator.PageInput{}, nil)
 				require.NoError(t, err)
 				assert.Empty(t, constraints)
 				usage, err := ipam.GetIpamUsageForIPBlock(ctx, ipamStorage, ipbV6)
@@ -628,7 +627,7 @@ func TestAllocationHandler_Create(t *testing.T) {
 					assert.Nil(t, err)
 
 					sdDAO := cdbm.NewStatusDetailDAO(dbSession)
-					_, sdcount, err := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{childIPBUUID.String()}}, cdbp.PageInput{})
+					_, sdcount, err := sdDAO.GetAll(ctx, nil, cdbm.StatusDetailFilterInput{EntityIDs: []string{childIPBUUID.String()}}, paginator.PageInput{})
 					assert.NoError(t, err)
 					assert.Equal(t, sdcount, 1)
 
@@ -664,7 +663,7 @@ func TestAllocationHandler_Create(t *testing.T) {
 						TenantIDs: []uuid.UUID{tenantID},
 						SiteIDs:   []uuid.UUID{siteID},
 					},
-					cdbp.PageInput{},
+					paginator.PageInput{},
 					nil,
 				)
 				assert.Nil(t, err)
@@ -2098,6 +2097,7 @@ func TestAllocationHandler_Update(t *testing.T) {
 	ipb := common.TestBuildIPBlock(t, dbSession, "test-ip-block", site, &tenant1.ID, cdbm.IPBlockRoutingTypePublic, "192.168.1.0", 24, cdbm.IPBlockProtocolVersionV4, ipu)
 
 	parentPref, err := ipam.CreateIpamEntryForIPBlock(ctx, ipamStorage, ipb.Prefix, ipb.PrefixLength, ipb.RoutingType, ipb.InfrastructureProviderID.String(), ipb.SiteID.String())
+	assert.NoError(t, err)
 	assert.NotNil(t, parentPref)
 
 	acGoodIT := model.APIAllocationConstraintCreateRequest{ResourceType: cdbm.AllocationResourceTypeInstanceType, ResourceTypeID: it1.ID.String(), ConstraintType: cdbm.AllocationConstraintTypeReserved, ConstraintValue: 2}
@@ -2828,7 +2828,7 @@ func TestAllocationHandler_Delete(t *testing.T) {
 						TenantIDs: []uuid.UUID{tenantID},
 						SiteIDs:   []uuid.UUID{siteID},
 					},
-					cdbp.PageInput{},
+					paginator.PageInput{},
 					nil,
 				)
 				assert.Nil(t, err)

@@ -269,7 +269,10 @@ func (s *Service) Start(ctx context.Context) (retErr error) {
 			s.taskManager.Stop(ctx)
 		}
 		if invStarted {
-			s.inventoryManager.Stop(ctx)
+			stopErr := s.inventoryManager.Stop(ctx)
+			if stopErr != nil {
+				log.Error().Err(stopErr).Msg("failed to stop inventory manager")
+			}
 		}
 		s.session.Close()
 	}()
@@ -485,7 +488,10 @@ func (s *Service) Stop(ctx context.Context) {
 	}
 
 	if s.inventoryManager != nil {
-		s.inventoryManager.Stop(ctx)
+		stopErr := s.inventoryManager.Stop(ctx)
+		if stopErr != nil {
+			log.Error().Err(stopErr).Msg("failed to stop inventory manager")
+		}
 		log.Info().Msg("Inventory manager stopped")
 	}
 

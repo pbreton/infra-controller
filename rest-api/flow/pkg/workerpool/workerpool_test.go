@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // mockTask is a test implementation of Task
@@ -115,7 +117,7 @@ func TestWorkerPool_MultipleWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Stop()
+	defer func() { assert.NoError(t, pool.Stop()) }()
 
 	// Submit multiple tasks
 	numTasks := 10
@@ -165,7 +167,7 @@ func TestWorkerPool_TaskErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Stop()
+	defer func() { assert.NoError(t, pool.Stop()) }()
 
 	// Submit tasks that will fail
 	numFailingTasks := 3
@@ -213,7 +215,7 @@ func TestWorkerPool_SubmitWithResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Stop()
+	defer func() { assert.NoError(t, pool.Stop()) }()
 
 	resultCh := make(chan JobResult, 1)
 	task := newMockTask("result-test", 10*time.Millisecond, false)
@@ -249,7 +251,7 @@ func TestWorkerPool_QueueFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Stop()
+	defer func() { assert.NoError(t, pool.Stop()) }()
 
 	// Submit tasks that will block worker
 	blockingTask1 := newMockTask("block-1", 200*time.Millisecond, false)
@@ -295,7 +297,7 @@ func TestWorkerPool_TaskTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Stop()
+	defer func() { assert.NoError(t, pool.Stop()) }()
 
 	resultCh := make(chan JobResult, 1)
 
@@ -350,7 +352,7 @@ func TestWorkerPool_ConcurrentSubmissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start pool: %v", err)
 	}
-	defer pool.Stop()
+	defer func() { assert.NoError(t, pool.Stop()) }()
 
 	// Submit tasks concurrently
 	numGoroutines := 10

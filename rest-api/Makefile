@@ -142,7 +142,7 @@ fmt-go:
 
 lint-go:
 	go vet ./...
-	$(GOLANGCI_LINT) run --issues-exit-code 0 --output.code-climate.path=stdout | jq .
+	$(GOLANGCI_LINT) run --max-issues-per-linter 0 --max-same-issues 0 ./...
 	go list ./... | xargs -L1 $(REVIVE) -config .revive.toml -set_exit_status
 
 test-ipam:

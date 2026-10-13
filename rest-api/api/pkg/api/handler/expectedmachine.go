@@ -970,14 +970,14 @@ func (cemh CreateExpectedMachinesHandler) Handle(c echo.Context) error {
 
 		// SiteID is mandatory for batch create and must be the same for all items
 		if req.SiteID == "" {
-			common.AddToValidationErrors(itemErrors, "siteID", fmt.Errorf("Site ID is required"))
+			common.AddToValidationErrors(itemErrors, "siteID", fmt.Errorf("Site ID is required")) //nolint:staticcheck // Preserve the established error text and service names.
 		}
 		siteID, _ := uuid.Parse(req.SiteID) // already validated
 		if foundSiteID == nil {
 			foundSiteID = &siteID
 		} else {
 			if siteID != *foundSiteID {
-				common.AddToValidationErrors(itemErrors, "siteID", fmt.Errorf(
+				common.AddToValidationErrors(itemErrors, "siteID", fmt.Errorf( //nolint:staticcheck // Preserve the established error text and service names.
 					"Expected Machine does not belong to the same Site (%s) as other Expected Machines in request", req.SiteID))
 			}
 		}
@@ -1078,12 +1078,12 @@ func (cemh CreateExpectedMachinesHandler) Handle(c echo.Context) error {
 
 		// Check MAC unicity
 		if existingMacAddressMap[req.BmcMacAddress] {
-			common.AddToValidationErrors(itemErrors, "bmcMacAddress", fmt.Errorf(
+			common.AddToValidationErrors(itemErrors, "bmcMacAddress", fmt.Errorf( //nolint:staticcheck // Preserve the established error text and service names.
 				"Expected Machine with BMC MAC Address: %s already exist", req.BmcMacAddress))
 		}
 		// Check Serial unicity
 		if existingSerialMap[req.ChassisSerialNumber] {
-			common.AddToValidationErrors(itemErrors, "chassisSerialNumber", fmt.Errorf(
+			common.AddToValidationErrors(itemErrors, "chassisSerialNumber", fmt.Errorf( //nolint:staticcheck // Preserve the established error text and service names.
 				"Expected Machine with Chassis Serial Number: %s already exists", req.ChassisSerialNumber))
 		}
 		// Check SKU existence
@@ -1358,7 +1358,7 @@ func (uemh UpdateExpectedMachinesHandler) Handle(c echo.Context) error {
 
 		// validation must accept nil ID for single update use case so we need to check for nil ID here
 		if req.ID == nil {
-			common.AddToValidationErrors(itemErrors, "id", fmt.Errorf("Missing required Expected Machine ID"))
+			common.AddToValidationErrors(itemErrors, "id", fmt.Errorf("Missing required Expected Machine ID")) //nolint:staticcheck // Preserve the established error text and service names.
 		} else {
 			// extract already validated UUID
 			mid, _ := uuid.Parse(*req.ID)
@@ -1442,7 +1442,7 @@ func (uemh UpdateExpectedMachinesHandler) Handle(c echo.Context) error {
 		mid, _ := uuid.Parse(*req.ID) // we know the ID in request is valid from previous validation
 		em, ok := requestedEmMap[mid]
 		if !ok {
-			common.AddToValidationErrors(itemErrors, "id", fmt.Errorf(
+			common.AddToValidationErrors(itemErrors, "id", fmt.Errorf( //nolint:staticcheck // Preserve the established error text and service names.
 				"Expected Machine with ID %s not found in DB", *req.ID))
 			validationErrors[strIndex] = itemErrors
 			continue
@@ -1453,7 +1453,7 @@ func (uemh UpdateExpectedMachinesHandler) Handle(c echo.Context) error {
 			foundSiteID = &em.SiteID
 		} else {
 			if em.SiteID != *foundSiteID {
-				common.AddToValidationErrors(itemErrors, "siteID", fmt.Errorf(
+				common.AddToValidationErrors(itemErrors, "siteID", fmt.Errorf( //nolint:staticcheck // Preserve the established error text and service names.
 					"Expected Machine with ID %s does not belong to the same Site (%s) as other Expected Machines in request", *req.ID, *foundSiteID))
 			}
 		}
@@ -1566,7 +1566,7 @@ func (uemh UpdateExpectedMachinesHandler) Handle(c echo.Context) error {
 
 		// Check Serial unicity
 		if req.ChassisSerialNumber != nil && expectedMachineSerialNumberChecker.DoesIDHaveConflict(mid) {
-			common.AddToValidationErrors(itemErrors, "chassisSerialNumber", fmt.Errorf(
+			common.AddToValidationErrors(itemErrors, "chassisSerialNumber", fmt.Errorf( //nolint:staticcheck // Preserve the established error text and service names.
 				"Expected Machine with Chassis Serial Number: %s already exists", *req.ChassisSerialNumber))
 		}
 		// Check SKU existence

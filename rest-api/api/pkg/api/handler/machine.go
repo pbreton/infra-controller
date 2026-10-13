@@ -480,10 +480,7 @@ func (gamh GetAllMachineHandler) Handle(c echo.Context) error {
 	hwSkuDeviceTypeQuery := qParams["hwSkuDeviceType"]
 	if len(hwSkuDeviceTypeQuery) > 0 {
 		cotel.SetAttribute(handlerSpan, attribute.StringSlice("hwSkuDeviceType", hwSkuDeviceTypeQuery))
-		for _, hwSkuDeviceType := range hwSkuDeviceTypeQuery {
-			// HwSkuDeviceType is a free-form string field, no validation needed
-			filterInput.HwSkuDeviceTypes = append(filterInput.HwSkuDeviceTypes, hwSkuDeviceType)
-		}
+		filterInput.HwSkuDeviceTypes = append(filterInput.HwSkuDeviceTypes, hwSkuDeviceTypeQuery...)
 	}
 
 	// Create response

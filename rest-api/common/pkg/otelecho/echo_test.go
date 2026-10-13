@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	b3prop "go.opentelemetry.io/contrib/propagators/b3"
@@ -52,7 +54,7 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 }
 
 func TestPropagationWithGlobalPropagators(t *testing.T) {
-	provider := trace.NewNoopTracerProvider()
+	provider := noop.NewTracerProvider()
 	setGlobalPropagator(t, propagation.TraceContext{})
 
 	r := httptest.NewRequest("GET", "/user/123", nil)
@@ -81,7 +83,7 @@ func TestPropagationWithGlobalPropagators(t *testing.T) {
 }
 
 func TestPropagationWithCustomPropagators(t *testing.T) {
-	provider := trace.NewNoopTracerProvider()
+	provider := noop.NewTracerProvider()
 
 	b3 := b3prop.New()
 
@@ -133,7 +135,7 @@ func TestSkipper(t *testing.T) {
 
 // TestTraceIDInheritance verifies that trace IDs are properly inherited from parent spans
 func TestTraceIDInheritance(t *testing.T) {
-	provider := trace.NewNoopTracerProvider()
+	provider := noop.NewTracerProvider()
 	setGlobalPropagator(t, propagation.TraceContext{})
 
 	r := httptest.NewRequest("GET", "/test", nil)
@@ -170,7 +172,7 @@ func TestTraceIDInheritance(t *testing.T) {
 
 // TestWrapperPreservesUpstreamBehavior verifies that all upstream behavior is preserved
 func TestWrapperPreservesUpstreamBehavior(t *testing.T) {
-	provider := trace.NewNoopTracerProvider()
+	provider := noop.NewTracerProvider()
 	setGlobalPropagator(t, propagation.TraceContext{})
 
 	r := httptest.NewRequest("GET", "/test", nil)

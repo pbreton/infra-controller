@@ -154,7 +154,7 @@ func TestDomainSQLDAO_Create(t *testing.T) {
 				}
 			}
 			if tc.tx != nil {
-				tc.tx.Commit()
+				assert.NoError(t, tc.tx.Commit())
 			}
 
 			if tc.verifyChildSpanner {

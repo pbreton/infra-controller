@@ -37,7 +37,7 @@ func init() {
 
 	ruleSetDefaultCmd.Flags().StringVar(&setDefaultRuleID, "id", "", "Rule ID (required)")
 
-	ruleSetDefaultCmd.MarkFlagRequired("id")
+	_ = ruleSetDefaultCmd.MarkFlagRequired("id") // The flag is defined immediately above.
 }
 
 // runRuleSetDefault is the RunE handler for ruleSetDefaultCmd. It parses the

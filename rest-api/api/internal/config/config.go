@@ -1176,7 +1176,7 @@ func (c *Config) GetOrInitKeycloakConfig() (*cauth.KeycloakConfig, error) {
 	if c.KeycloakConfig == nil {
 		if !c.GetKeycloakEnabled() {
 			log.Info().Msg("Keycloak is disabled in configuration")
-			return nil, errors.New("Keycloak is not enabled")
+			return nil, errors.New("Keycloak is not enabled") //nolint:staticcheck // Preserve the established error text and service names.
 		}
 
 		log.Info().Str("baseURL", c.GetKeycloakBaseURL()).
@@ -1262,7 +1262,7 @@ func (c *Config) WatchSecretFilePaths() {
 						eventsWG.Done()
 						return
 					}
-					if !(event.Has(fsnotify.Write) || event.Has(fsnotify.Create)) {
+					if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) {
 						continue
 					}
 					eventFilePath := filepath.Clean(event.Name)
@@ -1288,11 +1288,21 @@ func (c *Config) WatchSecretFilePaths() {
 
 		// Add secret file paths to watcher
 		log.Info().Str("WatchSecretFilePaths", dbPassFileDir).Msg("adding db path for watcher")
-		watcher.Add(dbPassFileDir)
+		{
+			watchErr := watcher.Add(dbPassFileDir)
+			if watchErr != nil {
+				log.Error().Err(watchErr).Msg("failed to watch secret directory")
+			}
+		}
 
 		if c.GetKeycloakEnabled() {
 			log.Info().Str("WatchSecretFilePaths", keycloakClientSecretFileDir).Msg("adding keycloak client secret path for watcher")
-			watcher.Add(keycloakClientSecretFileDir)
+			{
+				watchErr := watcher.Add(keycloakClientSecretFileDir)
+				if watchErr != nil {
+					log.Error().Err(watchErr).Msg("failed to watch secret directory")
+				}
+			}
 		}
 
 		initWG.Done()   // done initializing the watch in this go routine, so the parent routine can move on...

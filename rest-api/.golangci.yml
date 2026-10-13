@@ -47,6 +47,14 @@ linters:
       - legacy
     # Excluding configuration per-path, per-linter, per-text and per-source.
     rules:
+      # Applied migrations are immutable. Keep these two existing diagnostics
+      # scoped to their original files instead of rewriting migration history.
+      - path: ^db/pkg/migrations/20230418133000_site_ssh_hostname\.go$
+        linters: [ineffassign, staticcheck]
+        text: "ineffectual assignment to err|SA4006: this value of err is never used"
+      - path: ^db/pkg/migrations/20251214155501_add_is_usable_by_tenant_column\.go$
+        linters: [errcheck]
+        text: "Error return value of `tx.Rollback` is not checked"
       # Exclude some linters from running on tests files.
       - path: _test\.go
         linters:

@@ -4,6 +4,7 @@
 package sitemgr
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -103,4 +104,22 @@ func TestNewCertManagerClient(t *testing.T) {
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 		})
 	}
+}
+
+func TestSiteMgr_getCertificate(t *testing.T) {
+	manager := &SiteMgr{Options: Options{credsMgrURL: "https://%"}}
+	require.NotPanics(t, func() {
+		certificate, err := manager.getCertificate(context.Background(), "site", "app", 24)
+		require.ErrorContains(t, err, "create certificate request")
+		assert.Nil(t, certificate)
+	})
+}
+
+func TestSiteMgr_getCA(t *testing.T) {
+	manager := &SiteMgr{Options: Options{credsMgrURL: "https://%"}}
+	require.NotPanics(t, func() {
+		ca, err := manager.getCA(context.Background())
+		require.ErrorContains(t, err, "create CA request")
+		assert.Empty(t, ca)
+	})
 }

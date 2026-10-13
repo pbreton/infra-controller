@@ -437,7 +437,7 @@ func (ssd SiteSQLDAO) Create(ctx context.Context, tx *db.Tx, input SiteCreateInp
 }
 
 // Update updates a Site from the given parameters
-func (ssd SiteSQLDAO) Update(ctx context.Context, tx *db.Tx, input SiteUpdateInput) (_ *Site, retErr error) {
+func (ssd SiteSQLDAO) Update(ctx context.Context, tx *db.Tx, input SiteUpdateInput) (updatedSite *Site, retErr error) {
 	// Create a child span and set the attributes for current request
 	ctx, stDAOSpan := cotel.StartSpan(ctx, "SiteDAO.Update")
 	defer func() { cotel.EndSpan(stDAOSpan, retErr) }()
@@ -469,9 +469,12 @@ func (ssd SiteSQLDAO) Update(ctx context.Context, tx *db.Tx, input SiteUpdateInp
 
 		defer func() {
 			if commitInternalTx {
-				tx.Commit()
+				retErr = tx.Commit()
+				if retErr != nil {
+					updatedSite = nil
+				}
 			} else {
-				tx.Rollback()
+				_ = tx.Rollback() // Preserve the update error.
 			}
 		}()
 	}

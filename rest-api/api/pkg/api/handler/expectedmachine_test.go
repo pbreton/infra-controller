@@ -2835,7 +2835,7 @@ func TestCreateExpectedMachineHandler_DpfEnabledForwardedToWorkflow(t *testing.T
 		if assert.NotNil(t, capturedRequest.IsDpfEnabled) {
 			assert.False(t, *capturedRequest.IsDpfEnabled)
 		}
-		assert.False(t, capturedRequest.DpfEnabled)
+		assert.False(t, capturedRequest.DpfEnabled) //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 		require.Len(t, capturedRequest.HostNics, 1)
 		assert.Equal(t, "02:AA:BB:CC:DD:EE", capturedRequest.HostNics[0].GetMacAddress())
 		assert.Equal(t, "CX9", capturedRequest.HostNics[0].GetNicType())

@@ -193,6 +193,7 @@ func TestSSHKeyGroupInstanceAssociationSQLDAO_GetByID(t *testing.T) {
 			CreatedBy:                user.ID,
 		},
 	)
+	assert.NoError(t, err)
 
 	skaisd := NewSSHKeyGroupInstanceAssociationDAO(dbSession)
 	skgis1, err := skaisd.Create(ctx, nil, SSHKeyGroupInstanceAssociationCreateInput{
@@ -522,6 +523,7 @@ func TestSSHKeyGroupInstanceAssociationSQLDAO_Update(t *testing.T) {
 			CreatedBy:                user.ID,
 		},
 	)
+	assert.NoError(t, err)
 
 	i2, err := isd.Create(
 		ctx, nil,
@@ -544,6 +546,7 @@ func TestSSHKeyGroupInstanceAssociationSQLDAO_Update(t *testing.T) {
 			CreatedBy:                user.ID,
 		},
 	)
+	assert.NoError(t, err)
 
 	skgisa1, err := skgiasd.Create(ctx, nil, SSHKeyGroupInstanceAssociationCreateInput{
 		SSHKeyGroupID: sshKeyGroup1.ID,
@@ -559,6 +562,7 @@ func TestSSHKeyGroupInstanceAssociationSQLDAO_Update(t *testing.T) {
 		InstanceID:    i2.ID,
 		CreatedBy:     user.ID,
 	})
+	assert.NoError(t, err)
 	assert.NotNil(t, skgisa2)
 
 	// OTEL Spanner configuration
@@ -655,6 +659,7 @@ func TestSSHKeyGroupInstanceAssociationSQLDAO_Delete(t *testing.T) {
 			CreatedBy:                user.ID,
 		},
 	)
+	assert.NoError(t, err)
 
 	skgias1, err := skgiasd.Create(ctx, nil, SSHKeyGroupInstanceAssociationCreateInput{
 		SSHKeyGroupID: sshKeyGroup1.ID,

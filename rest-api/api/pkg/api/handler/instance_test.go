@@ -36,7 +36,6 @@ import (
 	"github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/handler/util/common"
 	"github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/model"
 	"github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/model/util"
-	cdmu "github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/model/util"
 	"github.com/NVIDIA/infra-controller/rest-api/api/pkg/api/pagination"
 	sc "github.com/NVIDIA/infra-controller/rest-api/api/pkg/client/site"
 	authz "github.com/NVIDIA/infra-controller/rest-api/auth/pkg/authorization"
@@ -738,12 +737,12 @@ func TestBuildInstanceNetworkConfig(t *testing.T) {
 	}
 
 	explicitNetwork := buildInstanceNetworkConfig(false, interfaceConfigs, nil)
-	require.False(t, explicitNetwork.Auto)
+	require.False(t, explicitNetwork.Auto) //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 	assert.Equal(t, interfaceConfigs, explicitNetwork.Interfaces)
 	assert.Nil(t, explicitNetwork.AutoConfig)
 
 	autoNetwork := buildInstanceNetworkConfig(true, interfaceConfigs, &controllerVpcID)
-	require.True(t, autoNetwork.Auto)
+	require.True(t, autoNetwork.Auto) //nolint:staticcheck // Exercise or preserve the legacy protobuf compatibility field.
 	assert.Empty(t, autoNetwork.Interfaces)
 	require.NotNil(t, autoNetwork.AutoConfig)
 	require.NotNil(t, autoNetwork.AutoConfig.VpcId)
@@ -1131,11 +1130,11 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 	}
 
 	// Create 25 test Instances
-	insts2 := []*cdbm.Instance{}
+
 	for i := 0; i < 25; i++ {
 		inst := testInstanceBuildInstance(t, dbSession, fmt.Sprintf("test-instance-%d", i), tn2.ID, ip.ID, st2.ID, &ist2.ID, vpc3.ID, cutil.GetPtr(ms2[i].ID), &os3.ID, nil, cdbm.InstanceStatusReady)
 		assert.NotNil(t, inst)
-		insts2 = append(insts2, inst)
+
 	}
 
 	// Tenant 3
@@ -1998,7 +1997,7 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 					TenantID:       tn1.ID.String(),
 					InstanceTypeID: cutil.GetPtr(ist1.ID.String()),
 					VpcID:          vpc1.ID.String(),
-					UserData:       cutil.GetPtr(cdmu.TestCommonCloudInit + "\n#comment-58b81c96-5e6a-11ef-82bb-233657c23006"),
+					UserData:       cutil.GetPtr(util.TestCommonCloudInit + "\n#comment-58b81c96-5e6a-11ef-82bb-233657c23006"),
 					IpxeScript:     cutil.GetPtr(common.DefaultIpxeScript),
 					Interfaces: []model.APIInterfaceCreateOrUpdateRequest{
 						{
@@ -2029,7 +2028,7 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 					TenantID:       tn1.ID.String(),
 					InstanceTypeID: cutil.GetPtr(ist1.ID.String()),
 					VpcID:          vpc1.ID.String(),
-					UserData:       cutil.GetPtr(cdmu.TestCommonCloudInit + cdmu.TestCommonPhoneHomeSegment + "\nsome_key: some_value\n"),
+					UserData:       cutil.GetPtr(util.TestCommonCloudInit + util.TestCommonPhoneHomeSegment + "\nsome_key: some_value\n"),
 					IpxeScript:     cutil.GetPtr(common.DefaultIpxeScript),
 					Interfaces: []model.APIInterfaceCreateOrUpdateRequest{
 						{
@@ -2043,7 +2042,7 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 				reqUser:      tnu1,
 				respCode:     http.StatusCreated,
 				respMessage:  "",
-				respUserData: cutil.GetPtr(cdmu.TestCommonCloudInit + "some_key: some_value\n"),
+				respUserData: cutil.GetPtr(util.TestCommonCloudInit + "some_key: some_value\n"),
 			},
 			wantErr: false,
 		},
@@ -2606,7 +2605,7 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 					TenantID:          tn1.ID.String(),
 					InstanceTypeID:    cutil.GetPtr(ist1.ID.String()),
 					VpcID:             vpc1.ID.String(),
-					UserData:          cutil.GetPtr(cdmu.TestCommonCloudInit),
+					UserData:          cutil.GetPtr(util.TestCommonCloudInit),
 					IpxeScript:        cutil.GetPtr(common.DefaultIpxeScript),
 					OperatingSystemID: cutil.GetPtr(uuid.NewString()),
 					Interfaces: []model.APIInterfaceCreateOrUpdateRequest{
@@ -2637,7 +2636,7 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 					TenantID:          tn1.ID.String(),
 					InstanceTypeID:    cutil.GetPtr(ist1.ID.String()),
 					VpcID:             vpc1.ID.String(),
-					UserData:          cutil.GetPtr(cdmu.TestCommonCloudInit),
+					UserData:          cutil.GetPtr(util.TestCommonCloudInit),
 					IpxeScript:        cutil.GetPtr(common.DefaultIpxeScript),
 					OperatingSystemID: cutil.GetPtr("not a real UUID"),
 					Interfaces: []model.APIInterfaceCreateOrUpdateRequest{
@@ -2821,7 +2820,7 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 					InstanceTypeID:    cutil.GetPtr(ist8.ID.String()),
 					VpcID:             vpc11.ID.String(),
 					OperatingSystemID: cutil.GetPtr(os11.ID.String()),
-					UserData:          cutil.GetPtr(cdmu.TestCommonCloudInit),
+					UserData:          cutil.GetPtr(util.TestCommonCloudInit),
 					IpxeScript:        nil,
 					Interfaces: []model.APIInterfaceCreateOrUpdateRequest{
 						{
@@ -2851,7 +2850,7 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 					InstanceTypeID:    cutil.GetPtr(ist9.ID.String()),
 					VpcID:             vpc11.ID.String(),
 					OperatingSystemID: cutil.GetPtr(os12.ID.String()),
-					UserData:          cutil.GetPtr(cdmu.TestCommonCloudInit),
+					UserData:          cutil.GetPtr(util.TestCommonCloudInit),
 					IpxeScript:        nil,
 					Interfaces: []model.APIInterfaceCreateOrUpdateRequest{
 						{
@@ -3214,7 +3213,7 @@ func TestCreateInstanceHandler_Handle(t *testing.T) {
 					InstanceTypeID:    cutil.GetPtr(ist1.ID.String()),
 					VpcID:             vpc1.ID.String(),
 					OperatingSystemID: cutil.GetPtr(os1.ID.String()),
-					UserData:          cutil.GetPtr(cdmu.TestCommonCloudInit),
+					UserData:          cutil.GetPtr(util.TestCommonCloudInit),
 					Interfaces: []model.APIInterfaceCreateOrUpdateRequest{
 						{
 							SubnetID: cutil.GetPtr(subnet1.ID.String()),
@@ -4625,15 +4624,15 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 	skgsa3 := testBuildSSHKeyGroupSiteAssociation(t, dbSession, skg3.ID, st2.ID, cutil.GetPtr("5566"), cdbm.SSHKeyGroupSiteAssociationStatusSynced, tnu1.ID)
 	assert.NotNil(t, skgsa3)
 
-	os1 := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-1", tn1, cdbm.OperatingSystemTypeImage, false, cutil.GetPtr(cdmu.TestCommonCloudInit), false, cdbm.OperatingSystemStatusReady, tnu1)
+	os1 := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-1", tn1, cdbm.OperatingSystemTypeImage, false, cutil.GetPtr(util.TestCommonCloudInit), false, cdbm.OperatingSystemStatusReady, tnu1)
 	assert.NotNil(t, os1)
 
 	// IPXE type with user-data override allowed.
-	os2 := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-2", tn1, cdbm.OperatingSystemTypeIPXE, true, cutil.GetPtr(cdmu.TestCommonCloudInit), true, cdbm.OperatingSystemStatusReady, tnu1)
+	os2 := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-2", tn1, cdbm.OperatingSystemTypeIPXE, true, cutil.GetPtr(util.TestCommonCloudInit), true, cdbm.OperatingSystemStatusReady, tnu1)
 	assert.NotNil(t, os2)
 
 	// IPXE type with user-data override NOT allowed.
-	os3 := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-3", tn1, cdbm.OperatingSystemTypeIPXE, false, cutil.GetPtr(cdmu.TestCommonCloudInit), false, cdbm.OperatingSystemStatusReady, tnu1)
+	os3 := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-3", tn1, cdbm.OperatingSystemTypeIPXE, false, cutil.GetPtr(util.TestCommonCloudInit), false, cdbm.OperatingSystemStatusReady, tnu1)
 	assert.NotNil(t, os3)
 
 	// IPXE type with user-data override allowed and empty user-data
@@ -4641,13 +4640,13 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 	assert.NotNil(t, osPhoneHome)
 
 	// Same as os3 but deactivated:
-	os3off := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-3-deactivated", tn1, cdbm.OperatingSystemTypeIPXE, false, cutil.GetPtr(cdmu.TestCommonCloudInit), false, cdbm.OperatingSystemStatusReady, tnu1)
+	os3off := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-3-deactivated", tn1, cdbm.OperatingSystemTypeIPXE, false, cutil.GetPtr(util.TestCommonCloudInit), false, cdbm.OperatingSystemStatusReady, tnu1)
 	assert.NotNil(t, os3off)
 	os3off.IsActive = false
 	testUpdateOSIsActive(t, dbSession, os3off)
 
 	// IPXE type with user-data override allowed.
-	os4 := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-4", tn2, cdbm.OperatingSystemTypeIPXE, true, cutil.GetPtr(cdmu.TestCommonCloudInit), true, cdbm.OperatingSystemStatusReady, tnu2)
+	os4 := testInstanceBuildOperatingSystem(t, dbSession, "test-operating-system-4", tn2, cdbm.OperatingSystemTypeIPXE, true, cutil.GetPtr(util.TestCommonCloudInit), true, cdbm.OperatingSystemStatusReady, tnu2)
 	assert.NotNil(t, os4)
 
 	// OS Image type with user-data override allowed.
@@ -6454,7 +6453,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 			args: args{
 				reqData: &model.APIInstanceUpdateRequest{
 					IpxeScript: cutil.GetPtr(common.DefaultIpxeScript),
-					UserData:   cutil.GetPtr(cdmu.TestCommonCloudInit + "\n#comment-2a69bc94-5e76-11ef-90ac-3f5706c2f872"),
+					UserData:   cutil.GetPtr(util.TestCommonCloudInit + "\n#comment-2a69bc94-5e76-11ef-90ac-3f5706c2f872"),
 				},
 				reqInstance:           inst4.ID.String(),
 				cleanInstanceToStatus: inst4.Status,
@@ -6476,7 +6475,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 			args: args{
 				reqData: &model.APIInstanceUpdateRequest{
 					IpxeScript:       cutil.GetPtr(common.DefaultIpxeScript),
-					UserData:         cutil.GetPtr(cdmu.TestCommonCloudInit + cdmu.TestCommonPhoneHomeSegment + "\nsome_key: some_value\n"),
+					UserData:         cutil.GetPtr(util.TestCommonCloudInit + util.TestCommonPhoneHomeSegment + "\nsome_key: some_value\n"),
 					PhoneHomeEnabled: cutil.GetPtr(false),
 				},
 				reqInstance:           inst4.ID.String(),
@@ -6484,7 +6483,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 				reqOrg:                tnOrg1,
 				reqUser:               tnu1,
 				respCode:              http.StatusOK,
-				respUserData:          cutil.GetPtr(cdmu.TestCommonCloudInit + "some_key: some_value\n"),
+				respUserData:          cutil.GetPtr(util.TestCommonCloudInit + "some_key: some_value\n"),
 			},
 			wantErr: false,
 		},
@@ -6539,7 +6538,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 			args: args{
 				reqData: &model.APIInstanceUpdateRequest{
 					IpxeScript: cutil.GetPtr(common.DefaultIpxeScript),
-					UserData:   cutil.GetPtr(cdmu.TestCommonCloudInit),
+					UserData:   cutil.GetPtr(util.TestCommonCloudInit),
 				},
 				reqInstance:           inst5.ID.String(),
 				cleanInstanceToStatus: inst5.Status,
@@ -6560,7 +6559,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 			args: args{
 				reqData: &model.APIInstanceUpdateRequest{
 					IpxeScript:        cutil.GetPtr(common.DefaultIpxeScript),
-					UserData:          cutil.GetPtr(cdmu.TestCommonCloudInit),
+					UserData:          cutil.GetPtr(util.TestCommonCloudInit),
 					OperatingSystemID: cutil.GetPtr(uuid.NewString()),
 				},
 				reqInstance:           inst5.ID.String(),
@@ -6666,7 +6665,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 			args: args{
 				reqData: &model.APIInstanceUpdateRequest{
 					IpxeScript: cutil.GetPtr(common.DefaultIpxeScript),
-					UserData:   cutil.GetPtr(cdmu.TestCommonCloudInit),
+					UserData:   cutil.GetPtr(util.TestCommonCloudInit),
 				},
 				reqInstance:           inst3.ID.String(),
 				cleanInstanceToStatus: inst3.Status,
@@ -6865,7 +6864,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 			args: args{
 				reqData: &model.APIInstanceUpdateRequest{
 					OperatingSystemID: cutil.GetPtr(os5.ID.String()),
-					UserData:          cutil.GetPtr(cdmu.TestCommonCloudInit + cdmu.TestCommonPhoneHomeSegment + "\nsome_key: some_value\n"),
+					UserData:          cutil.GetPtr(util.TestCommonCloudInit + util.TestCommonPhoneHomeSegment + "\nsome_key: some_value\n"),
 					PhoneHomeEnabled:  cutil.GetPtr(true),
 				},
 				reqInstance:           inst7.ID.String(),
@@ -8292,7 +8291,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 					cdbp.PageInput{OrderBy: &cdbp.OrderBy{Field: cdbm.InterfaceOrderByCreated, Order: cdbp.OrderAscending}},
 					[]string{cdbm.SubnetRelationName})
 				assert.Equal(t, len(ifcs), len(tt.args.reqData.Interfaces))
-				for i, _ := range ifcs {
+				for i := range ifcs {
 					if ifcs[i].SubnetID != nil && tt.args.reqData.Interfaces[i].SubnetID != nil {
 						assert.Equal(t, ifcs[i].SubnetID.String(), *tt.args.reqData.Interfaces[i].SubnetID)
 					}
@@ -8455,7 +8454,7 @@ func TestUpdateInstanceHandler_Handle(t *testing.T) {
 					cdbp.PageInput{OrderBy: &cdbp.OrderBy{Field: cdbm.InfiniBandInterfaceOrderByCreated, Order: cdbp.OrderAscending}},
 					[]string{cdbm.InfiniBandPartitionRelationName})
 				assert.Equal(t, len(ibifcs), len(tt.args.reqData.InfiniBandInterfaces))
-				for i, _ := range ibifcs {
+				for i := range ibifcs {
 					assert.Equal(t, tt.args.reqData.InfiniBandInterfaces[i].InfiniBandPartitionID, ibifcs[i].InfiniBandPartitionID.String())
 					assert.Equal(t, cdbm.InfiniBandInterfaceStatusPending, ibifcs[i].Status)
 				}
