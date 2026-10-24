@@ -538,13 +538,14 @@ for target selection, image names, prerequisites and the isolated DHCP image
 runtime check. It builds into the selected Docker daemon without publishing
 images or deploying Kubernetes resources.
 
-All Tilt runtime images derive from one digest-pinned Debian Bookworm slim base
+The main stack runtime images derive from one digest-pinned Debian Bookworm slim base
 with CA certificates. Service images install their additional runtime packages;
 the compiler toolchains remain in build stages. DHCP includes both Kea DHCPv4
 and DHCPv6 servers, using the version in `dev/docker/kea.version` to match the
 compiler container. Its hook library is installed at
 `/usr/lib/kea/hooks/libdhcp.so` on both architectures. Tilt values select that
-path for DHCPv4; the DHCPv6 chart already uses it directly.
+path for DHCPv4; the DHCPv6 chart already uses it directly. The separate native
+BMC target entrypoint uses a pinned Ubuntu base for its QEMU/UEFI runtime.
 
 `Dockerfile.dev-services` has separate targets for API, BMC proxy, DHCP,
 machine-a-tron, SSH console, the MAT protocol gateway and PostgreSQL exporter.
@@ -631,6 +632,6 @@ tilt down -f dev/deployment/tilt/Tiltfile
 BMC-backed guests need a Linux runtime that exposes native KVM. Before preparing
 that runtime, use the shared [lab preflight](../lab/README.md) to verify KVM
 access and an explicit host budget. Then use the standalone
-[native BMC target workflow](../../../helm/charts/nico-bmc-target/README.md)
+[native BMC target workflow](../../../helm/nico-bmc-target/README.md)
 to build and exercise one guest through its dedicated Tilt entrypoint.
 The default machine-a-tron workflow does not require this check.

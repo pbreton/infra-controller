@@ -2294,7 +2294,7 @@ jobs:
             helm/nico-dev-keycloak
             helm/charts/nico-hardware-health
             helm/charts/nico-machine-a-tron
-            helm/charts/nico-bmc-target
+            helm/nico-bmc-target
             helm/charts/nico-machine-a-tron/charts/mat-k8s-controller
             helm/charts/nico-machine-a-tron/charts/nico-site-health-probe
             helm/charts/nico-ntp

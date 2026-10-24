@@ -150,7 +150,7 @@ def prepare_storage(config):
         shutil.copyfile(template, nvram)
 
 
-def bridge(config):
+def check_network(config):
     links = json.loads(run('ip', '-json', 'link', 'show'))
     existing = next((link for link in links if link['ifname'] == config['bridge']), None)
     if existing and existing.get('ifalias') != config['uuid']:
@@ -161,6 +161,18 @@ def bridge(config):
             continue
         if subnet.overlaps(ipaddress.ip_network(route['dst'], strict=False)):
             raise ValueError('target subnet overlaps an existing route: ' + route['dst'])
+    return existing
+
+
+def check_bmc_port(config):
+    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        listener.bind(("::", config["bmcPort"]))
+
+
+def bridge(config):
+    existing = check_network(config)
     if not existing:
         run('ip', 'link', 'add', config['bridge'], 'type', 'bridge')
         try:
@@ -273,6 +285,9 @@ def main():
     if os.environ.get('NODE_NAME') != config['nodeName']:
         raise ValueError('target must run on its configured Kubernetes node')
     preflight.check_kvm(config['architecture'])
+    # Reject fixable host preconditions before binding fresh storage to these values.
+    check_network(config)
+    check_bmc_port(config)
     os.umask(0o077)
     with bound_storage(ROOT, config):
         serve(config)

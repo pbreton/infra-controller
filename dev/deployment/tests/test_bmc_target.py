@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import subprocess
+import socket
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -118,6 +119,28 @@ class TargetTest(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 TARGET.bridge(config)
         self.assertEqual(run.call_args_list[-1].args, ('ip', 'link', 'delete', config['bridge']))
+
+    def test_bad_network_or_busy_port_does_not_claim_fresh_storage(self):
+        for failure in ('overlap', 'busy-port'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory, \
+                    socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as listener:
+                listener.bind(('::', 0))
+                listener.listen()
+                config = {**CONFIG, 'bmcPort': listener.getsockname()[1]}
+                config_file = Path(directory) / 'config.json'
+                config_file.write_text(json.dumps(config))
+                root = Path(directory) / 'data'
+                root.mkdir()
+                routes = [{'dst': '10.84.0.0/16', 'dev': 'eth0'}] if failure == 'overlap' else []
+                with patch.object(TARGET, 'ROOT', root), \
+                        patch.object(sys, 'argv', ['target.py', '--config', str(config_file)]), \
+                        patch.dict(TARGET.os.environ, NODE_NAME=config['nodeName']), \
+                        patch.object(TARGET.platform, 'machine', return_value='aarch64'), \
+                        patch.object(TARGET.preflight, 'check_kvm'), \
+                        patch.object(TARGET, 'run', side_effect=['[]', json.dumps(routes)]), \
+                        self.assertRaises((ValueError, OSError)):
+                    TARGET.main()
+                self.assertEqual(list(root.iterdir()), [])
 
     def test_bmc_stops_before_guest_save_and_libvirt_shutdown(self):
         events = []

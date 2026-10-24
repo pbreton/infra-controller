@@ -10,7 +10,7 @@ if not k8s_context().startswith('kind-'):
     fail('The native target lab requires a selected kind context')
 
 repo_root = os.path.realpath(os.path.join(os.path.dirname(__file__), '../../..'))
-chart = os.path.join(repo_root, 'helm/charts/nico-bmc-target')
+chart = os.path.join(repo_root, 'helm/nico-bmc-target')
 config.define_string('values')
 config.define_string('namespace')
 config.define_string('release')

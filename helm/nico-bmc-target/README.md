@@ -14,7 +14,7 @@ machine-a-tron development remains independent of this chart.
 
 ## Prepare an isolated runtime
 
-Run the [host preflight](../../../dev/deployment/lab/README.md) before allocating
+Run the [host preflight](../../dev/deployment/lab/README.md) before allocating
 resources. The default guest has 2 vCPUs, 4 GiB RAM and a sparse 24 GiB disk. Budget
 additional memory and disk for libvirt, images, saved guest memory and kind.
 The chart requests 2 CPUs and 5 GiB memory for its pod; adjust `resources` when
@@ -85,7 +85,7 @@ use Make and Helm directly:
 ```bash
 make images-dev DEV_TARGET=bmc-target DEV_IMAGE=nico-bmc-target:local
 kind load docker-image nico-bmc-target:local --name nico-target
-helm upgrade --install target-one helm/charts/nico-bmc-target \
+helm upgrade --install target-one helm/nico-bmc-target \
   --namespace bmc-lab --values /tmp/nico-target.yaml \
   --set image.tag=local --wait --timeout 5m
 ```
@@ -125,7 +125,10 @@ The PVC holds the disk, UEFI variables, libvirt definition/saved state, BMC
 credentials and logs. A filesystem lock prevents concurrent target writers.
 Recreate deployment strategy stops the old pod before starting its replacement.
 During graceful shutdown the runtime stops BMC writes, saves a running guest,
-then stops libvirt. The replacement leaves the guest off; Redfish `On` restores
+then stops libvirt. Saving is best-effort and bounded to 150 seconds; a timeout
+or storage failure can lose guest memory even during graceful shutdown. The
+boot and retention checks use 4 GiB guests. Larger guests need enough storage
+throughput to save within that deadline. The replacement leaves the guest off; Redfish `On` restores
 saved state. Autostart is rejected. Forced termination can lose guest memory and
 unflushed writes; retained disks are not a backup. A missing initialized disk,
 firmware file, domain or BMC state fails startup and requires restoring the data.
@@ -159,7 +162,7 @@ the same defaults as Tilt; `--context` and `--credentials` are required.
 Remove the release while retaining the claim with:
 
 ```bash
-helm uninstall target-one --namespace bmc-lab --wait --timeout 5m
+helm uninstall target-one --namespace bmc-lab --cascade foreground --wait --timeout 5m
 ```
 
 Only when the isolated test data is no longer needed, delete its claim and the

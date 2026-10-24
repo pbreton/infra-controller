@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import importlib.util
+import json
+import subprocess
+import sys
+
+import yaml
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -43,3 +49,25 @@ class TargetWiringTest(unittest.TestCase):
         for args in [('x86_64', 'arm64', 'kind-lab'), ('aarch64', 'arm64', 'production')]:
             with self.subTest(args=args), self.assertRaises(ValueError):
                 self.evaluate(*args)
+
+    def test_helm_configuration_is_accepted_by_the_native_runtime(self):
+        lab = ROOT / 'dev/deployment/lab'
+        sys.path.insert(0, str(lab))
+        try:
+            spec = importlib.util.spec_from_file_location('native_target', lab / 'target.py')
+            runtime = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(runtime)
+        finally:
+            sys.path.pop(0)
+        result = subprocess.run(
+            ['helm', 'template', 'target-two', str(ROOT / 'helm/nico-bmc-target'),
+             '--namespace', 'test-lab', '--show-only', 'templates/configmap.yaml',
+             '--set', 'nodeName=node,clusterUID=cluster,storage.existingClaim=data,service.clusterIP=10.96.40.10',
+             '--set', 'architecture=arm64,target.instanceIndex=2,target.memoryMiB=8192'],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = runtime.configuration(json.loads(yaml.safe_load(result.stdout)['data']['config.json']))
+        self.assertEqual(config['owner'], 'test-lab/target-two')
+        self.assertEqual(config['memoryMiB'], 8192)
+        self.assertEqual(config['mac'], '02:00:00:02:00:02')
+        self.assertEqual(config['architecture'], 'arm64')
