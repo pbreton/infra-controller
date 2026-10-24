@@ -48,6 +48,9 @@ observability_namespace = local_config['observabilityNamespace']
 
 machine_a_tron_dhcp_pod = tilt_values['machineATronDhcp']['podName']
 machine_a_tron_values = all_values['nico-machine-a-tron']
+selected_mat_pod = machine_a_tron_values.get('pods', {}).get(machine_a_tron_dhcp_pod)
+if not selected_mat_pod or not (selected_mat_pod.get('machines') or selected_mat_pod.get('racks')):
+    fail('MAT readiness requires a configured pod: %s' % machine_a_tron_dhcp_pod)
 enable_mat_gateway = machine_a_tron_values.get('mat-k8s-controller', {}).get('gateway', {}).get('enabled', False)
 
 def merged(first, second):

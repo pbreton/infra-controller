@@ -195,6 +195,24 @@ else:
 
 
 class FrontendTest(unittest.TestCase):
+    def test_tilt_rejects_an_unconfigured_readiness_pod_before_deploying(self):
+        source = (Path(SPEC.origin).parent / "tilt/Tiltfile").read_text()
+        block = source[source.index("machine_a_tron_dhcp_pod ="):source.index("\ndef merged(")]
+        def fail(message):
+            raise ValueError(message)
+        for pod_name in ("mat-test", "missing"):
+            with self.subTest(pod_name=pod_name):
+                scope = {"tilt_values": {"machineATronDhcp": {"podName": pod_name}},
+                         "all_values": {"nico-machine-a-tron": {"pods": {
+                             "mat-test": {"machines": {"compute": {"hostCount": 1}}}}}},
+                         "fail": fail}
+                if pod_name == "missing":
+                    with self.assertRaisesRegex(ValueError, "configured pod: missing"):
+                        exec(block, scope)
+                else:
+                    exec(block, scope)
+                    self.assertEqual(scope["machine_a_tron_dhcp_pod"], "mat-test")
+
     def test_tilt_gates_selected_profile_and_context(self):
         import os
         source = (Path(SPEC.origin).parent / "tilt/Tiltfile").read_text()

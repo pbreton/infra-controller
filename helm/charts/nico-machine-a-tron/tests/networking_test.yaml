@@ -35,6 +35,11 @@ tests:
           value: 10.96.0.21
         template: service.yaml
         documentIndex: 1
+      - equal:
+          path: spec.ports[0].port
+          value: 6768
+        template: service.yaml
+        documentIndex: 1
       - contains:
           path: spec.template.spec.containers[0].ports
           content: {name: dhcp-relay, containerPort: 6768, protocol: UDP}
@@ -89,4 +94,11 @@ tests:
       configFiles.matConfigs.mat-0: 'server_address = "__NICO_DHCP_SERVER_ADDRESS__"'
     asserts:
       - failedTemplate:
-          errorMessage: "MAT DHCP server placeholder requires dhcpRelay.serverAddress (IPv4:port)"
+          errorMessage: "MAT DHCP relay requires dhcpRelay.serverAddress (IPv4:port)"
+  - it: also rejects a missing server in the generated relay config
+    templates: [deployment.yaml]
+    set:
+      dhcpRelay.baseIP: 10.96.0.21
+    asserts:
+      - failedTemplate:
+          errorMessage: "MAT DHCP relay requires dhcpRelay.serverAddress (IPv4:port)"

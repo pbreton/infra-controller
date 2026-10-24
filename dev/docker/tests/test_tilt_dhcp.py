@@ -45,6 +45,8 @@ class TiltDhcpTest(unittest.TestCase):
         console = values["nico-ssh-console-rs"]["configFiles"]["config"]
         self.assertIn('override_bmc_ssh_host = "nico-machine-a-tron-mat-0-ssh.nico-system.svc.cluster.local"', console)
         deployment = next(r for r in resources if r["kind"] == "Deployment" and r["metadata"]["name"] == "nico-machine-a-tron-mat-0")
+        labels = deployment["spec"]["template"]["metadata"]["labels"]
+        self.assertTrue(all(labels.get(k) == v for k, v in relay["selector"].items()))
         ports = deployment["spec"]["template"]["spec"]["containers"][0]["ports"]
         target = next(p for p in ports if p["name"] == relay["ports"][0]["targetPort"])
         self.assertEqual(target["containerPort"], relay["ports"][0]["port"])

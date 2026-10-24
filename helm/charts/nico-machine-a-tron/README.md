@@ -712,6 +712,7 @@ fails. Overrides without these placeholders remain literal. The relay Service
 and container port use the same chart settings, including the existing sorted
 pod indexing for addresses. Set `dhcpRelay.serverAddress` to the DHCP server's
 IPv4 literal and port: MAT's UDP relay configuration requires `IPv4:port`.
+Generated relay configs also require this setting; there is no DNS fallback.
 
 **When to use:** Scale testing that needs to validate the DHCP server's packet
 handling under load, or when testing DHCP relay agent behavior.
@@ -780,8 +781,10 @@ handling under load, or when testing DHCP relay agent behavior.
    - `server_address` points to nico-dhcp ClusterIP
    - `listen_address` binds to `0.0.0.0:<listenPort>`
    - `advertise_address` is the pod's relay Service ClusterIP
-3. All machine groups in that pod automatically use the relay IP as their
-   `oob_dhcp_relay_address` (any user-provided value is overridden)
+3. In generated configs, machine groups use the relay IP as their BMC link
+   selection address, overriding the configured group value. A full TOML
+   override retains its own group addresses; the chart only expands its
+   documented placeholders.
 4. Machine-a-tron sends DHCP packets with `giaddr` set to the advertise address
 5. nico-dhcp replies to the advertise address (the relay Service ClusterIP)
 6. The Service routes replies to the correct pod
@@ -793,8 +796,9 @@ handling under load, or when testing DHCP relay agent behavior.
 - Each pod must have a unique IP - the chart auto-increments from baseIP
 - The baseIP range must not overlap with BMC Services or other Kubernetes
   Services
-- When relay is enabled, you cannot use different `oob_dhcp_relay_address`
-  values per machine group within a pod - all machines share the pod's relay IP
+- Generated relay configs use one BMC link selection address per pod. Full
+  TOML overrides can specify per-group addresses for DHCP option 82 link
+  selection while retaining the pod's relay Service IP as the reply destination.
 
 **Disable relay mode:**
 

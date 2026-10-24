@@ -86,9 +86,9 @@ data:
     {{- fail "MAT DHCP placeholders require dhcpRelay.baseIP" }}
     {{- end }}
     {{- if contains "__NICO_DHCP_SERVER_ADDRESS__" $config }}
-    {{- $_ := required "MAT DHCP server placeholder requires dhcpRelay.serverAddress (IPv4:port)" $root.Values.dhcpRelay.serverAddress }}
+    {{- $config = $config | replace "__NICO_DHCP_SERVER_ADDRESS__" (include "nico-machine-a-tron.dhcpServerAddress" $root) }}
     {{- end }}
-    {{- $config = $config | replace "__NICO_DHCP_SERVER_ADDRESS__" (include "nico-machine-a-tron.dhcpServerAddress" $root) | replace "__MAT_DHCP_LISTEN_PORT__" (toString ($root.Values.dhcpRelay.listenPort | default 67)) | replace "__MAT_DHCP_SERVICE_IP__" $relayIP }}
+    {{- $config = $config | replace "__MAT_DHCP_LISTEN_PORT__" (toString ($root.Values.dhcpRelay.listenPort | default 67)) | replace "__MAT_DHCP_SERVICE_IP__" $relayIP }}
     {{- end }}
     {{- $config | nindent 4 }}
     {{- else }}

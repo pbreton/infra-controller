@@ -130,8 +130,8 @@ dhcpRelay:
   ## relay response port (typically 67).
   listenPort: 67
 
-  ## DHCP server address (host:port). Default: nico-dhcp.nico-system.svc.cluster.local:67
-  ## Override if nico-dhcp is deployed in a different namespace or uses a non-standard port.
+  ## Explicit IPv4:port for generated relay configs or the raw server placeholder.
+  ## Required in those paths; MAT does not resolve DNS names here.
   serverAddress: ""
 
 certificate:
