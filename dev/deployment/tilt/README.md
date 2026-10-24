@@ -12,6 +12,7 @@ charts and Kubernetes sources.
 - Docker connected to a Linux AMD64 or ARM64 daemon, with BuildKit available
 - Tilt
 - Helm 3 or Helm 4, plus Python 3 for Tilt's `helm_resource` extension
+- OpenSSL for validating the local Vault public CA certificate
 - `kubectl` connected to a native kind cluster; the setup helper below requires
   kind 0.32.0 or newer and `jq`
 

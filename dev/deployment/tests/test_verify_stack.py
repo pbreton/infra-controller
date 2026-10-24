@@ -180,6 +180,8 @@ else:
                 result, calls = self.invoke(mode, rest=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(sum("show" in args for _, args in calls), 2)
+                if mode == "retry":
+                    self.assertIn("Core machine show failed (exit 1)", result.stdout)
                 if mode == "scout-retry":
                     self.assertEqual(sum("scout-stream" in args for _, args in calls), 2)
 

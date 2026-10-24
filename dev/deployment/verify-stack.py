@@ -99,9 +99,9 @@ class Verification:
         return self.run(["kubectl", "--context", self.context, "--request-timeout=30s",
                          "-n", namespace, *args], "Kubernetes " + args[0])
 
-    def admin(self, *args):
+    def admin(self, *args, description):
         return self.run(["bash", str(Path(__file__).with_name("core-admin.sh")), *args],
-                        "Core " + args[0], env={**os.environ,
+                        description, env={**os.environ,
                             "LOCAL_DEV_NAMESPACE": self.args.core_namespace,
                             "LOCAL_DEV_KUBE_CONTEXT": self.context,
                             "FORGE_CLIENT_REQUEST_TIMEOUT_SECS": "15"})
@@ -167,13 +167,13 @@ class Verification:
                             "curl", "--fail", "--insecure", "--silent", "--max-time", "5",
                             "https://" + address + ":1266/machines/status"))
         expected = mat_host_ids(status)
-        hosts = core_hosts(json.loads(self.admin("-f", "json", "machine", "show")), expected)
+        hosts = core_hosts(json.loads(self.admin("-f", "json", "machine", "show", description="Core machine show")), expected)
         if self.args.rest:
             self.check_rest(expected)
         # An Assigned/Ready host runs a tenant OS; only idle Ready hosts run Scout.
         for host in hosts:
             if host["state"] == "Ready":
-                self.admin("scout-stream", "ping", host["id"])
+                self.admin("scout-stream", "ping", host["id"], description="Core scout-stream ping")
         return len(hosts)
 
 

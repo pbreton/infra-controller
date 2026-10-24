@@ -45,8 +45,10 @@ def main():
             finally:
                 temporary.unlink(missing_ok=True)
         return 0
-    except (OSError, ValueError, subprocess.SubprocessError):
-        print("Could not export the local Vault public CA; existing values were retained", file=sys.stderr)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        # Commands contain only public endpoint arguments; never print their output.
+        print(f"Could not export the local Vault public CA: {error}; output was not changed",
+              file=sys.stderr)
         return 1
 
 

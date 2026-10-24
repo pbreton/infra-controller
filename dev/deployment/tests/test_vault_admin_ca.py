@@ -47,6 +47,23 @@ print(Path(os.environ["TEST_CA"]).read_text() if mode == "valid" else mode)
                     if before is not None:
                         self.assertEqual(output.stat().st_mtime_ns, before)
 
+    def test_missing_openssl_is_identified_without_creating_output(self):
+        with tempfile.TemporaryDirectory(prefix="vault missing openssl ") as directory:
+            root = Path(directory)
+            command = root / "kubectl"
+            command.write_text(f"#!{sys.executable}\nfrom pathlib import Path\nprint(Path({str(CA)!r}).read_text())\n")
+            command.chmod(0o755)
+            output = root / "ca.json"
+            result = subprocess.run([sys.executable, "-B", str(SCRIPT), "--context", "kind-test",
+                                     "--namespace", "core", "--pki-mount", "certs", "--output", str(output)],
+                                    env={**os.environ, "PATH": str(root)},
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("openssl", result.stderr)
+            self.assertIn("output was not changed", result.stderr)
+            self.assertNotIn("BEGIN CERTIFICATE", result.stderr)
+            self.assertFalse(output.exists())
+
     def test_production_context_rejected_before_export(self):
         result = subprocess.run([sys.executable, "-B", str(SCRIPT), "--context", "production",
                                  "--namespace", "core", "--pki-mount", "certs", "--output", "/unused"],
