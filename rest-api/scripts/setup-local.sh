@@ -309,6 +309,11 @@ save_site_registration() {
     if [ -n "$existing" ]; then
         current_site_id=$(printf '%s' "$existing" | jq -er '.data["site-uuid"]' | base64 -d) || return 1
         if [ "$current_site_id" = "$SITE_ID" ]; then
+            if ! printf '%s' "$existing" | jq -e '.data | [.["otp"], .["creds-url"], .cacert] |
+                all(.[]; type == "string" and length > 0)' >/dev/null; then
+                echo "ERROR: Existing site credentials are incomplete; restore the registration Secret" >&2
+                return 1
+            fi
             echo "Preserving existing site credentials"
             return
         fi

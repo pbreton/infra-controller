@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class RegistrationTest(unittest.TestCase):
     def test_registration_creates_or_preserves_binding_without_patching_helm(self):
-        for mode in ("new", "existing", "mismatch", "lookup-error", "site-list-error", "legacy-placeholder"):
+        for mode in ("new", "existing", "mismatch", "lookup-error", "site-list-error", "legacy-placeholder", "incomplete"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 command = root / "command"
@@ -57,7 +57,8 @@ elif name == "kubectl":
         if mode != "new":
             print(json.dumps({"metadata": {"name": "site-registration"}, "data": {
                 "site-uuid": base64.b64encode(("other-site" if mode == "mismatch" else "00000000-0000-4000-8000-000000000001" if mode == "legacy-placeholder" else "site-a").encode()).decode(),
-                "otp": "cm90YXRlZC1vdHA="}}))
+                "otp": "" if mode == "incomplete" else "cm90YXRlZC1vdHA=",
+                "creds-url": "aHR0cHM6Ly9leGFtcGxlLmNvbQ==", "cacert": "Y2VydA=="}}))
     elif "get" in args and "site-manager-tls" in args:
         print(base64.b64encode(b"fixture-ca").decode())
     elif ("create" in args or "apply" in args) and "-f" in args:

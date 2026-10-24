@@ -137,7 +137,8 @@ helm upgrade --install nico-rest nico-rest/ \
 
 ### Site Agent (deployed separately per-site)
 
-Site agent requires a registered site (UUID + OTP). The chart must be installed first, then bootstrapped:
+The Site Agent requires a registered site (UUID + OTP). With the default
+ConfigMap identity path, install the chart first, then bootstrap it:
 
 ```bash
 # 1. Install chart
@@ -184,5 +185,12 @@ global:
 ### Site Agent Chart (`nico-rest-site-agent`)
 
 Standalone chart with its own `global` section (same structure as above).
+
+Alternatively, set `siteIdentityFromRegistrationSecret: true` to read `CLUSTER_ID`
+and `TEMPORAL_SUBSCRIBE_NAMESPACE` from the `site-uuid` key of
+`secrets.siteRegistration`. Register the site before installing the workload;
+this mode requires `bootstrap.enabled: false`. See the
+[shared local registration workflow](../../dev/deployment/tilt/README.md#site-registration)
+for the command, precedence, prerequisites and recovery contract.
 
 See each chart's `values.yaml` for full configuration options.
