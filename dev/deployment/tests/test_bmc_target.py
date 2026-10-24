@@ -27,17 +27,19 @@ CONFIG = {'nodeName': 'node', 'bmcAddress': '10.96.40.10', 'clusterUID': 'cluste
 
 class TargetTest(unittest.TestCase):
     def test_native_domain_preserves_identity_and_boot_contract(self):
-        for arch, machine, firmware in [('arm64', 'virt', 'AAVMF'), ('amd64', 'q35', 'OVMF')]:
+        for arch, machine, firmware, index, mac, serial in [
+                ('arm64', 'virt', 'AAVMF', 1, '02:00:00:01:00:02', '020000010001'),
+                ('amd64', 'q35', 'OVMF', 10, '02:00:00:0a:00:02', '0200000A0001')]:
             with self.subTest(arch=arch):
-                config = TARGET.configuration({**CONFIG, 'architecture': arch})
+                config = TARGET.configuration({**CONFIG, 'architecture': arch, 'instanceIndex': index})
                 xml = ET.fromstring(TARGET.domain_xml(config))
                 self.assertEqual(xml.attrib['type'], 'kvm')
                 self.assertEqual(xml.findtext('uuid'), config['uuid'])
                 self.assertEqual(xml.find('os/type').attrib['machine'], machine)
                 self.assertIn(firmware, xml.findtext('os/loader'))
                 self.assertEqual([b.attrib['dev'] for b in xml.findall('os/boot')], ['network', 'hd'])
-                self.assertEqual(xml.find('devices/interface/mac').attrib['address'], '02:00:00:01:00:02')
-                self.assertEqual(xml.findtext("sysinfo/system/entry[@name='serial']"), '020000010001')
+                self.assertEqual(xml.find('devices/interface/mac').attrib['address'], mac)
+                self.assertEqual(xml.findtext("sysinfo/system/entry[@name='serial']"), serial)
                 self.assertEqual(xml.find('devices/disk/source').attrib['file'], '/data/disks/root.qcow2')
                 self.assertEqual(xml.findtext('os/nvram'), '/data/disks/nvram.fd')
 
@@ -122,7 +124,7 @@ class TargetTest(unittest.TestCase):
         self.assertEqual(run.call_args_list[-1].args, ('ip', 'link', 'delete', config['bridge']))
 
     def test_port_probe_matches_bmc_fallback_without_hiding_conflicts(self):
-        for failure in ('create-v6', 'setup-v6', 'bind'):
+        for failure in ('dual-stack', 'create-v6', 'setup-v6', 'bind'):
             with self.subTest(failure=failure):
                 ipv6, ipv4 = Mock(), Mock()
                 for listener in (ipv6, ipv4):
@@ -139,6 +141,12 @@ class TargetTest(unittest.TestCase):
                             TARGET.check_bmc_port(CONFIG)
                         self.assertEqual(error.exception.errno, errno.EADDRINUSE)
                         self.assertEqual(create.call_count, 1)
+                    elif failure == 'dual-stack':
+                        TARGET.check_bmc_port(CONFIG)
+                        self.assertEqual(create.call_count, 1)
+                        ipv6.setsockopt.assert_any_call(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+                        ipv6.bind.assert_called_once_with(('::', CONFIG['bmcPort']))
+                        ipv6.listen.assert_called_once()
                     else:
                         TARGET.check_bmc_port(CONFIG)
                         ipv4.bind.assert_called_once_with(('0.0.0.0', CONFIG['bmcPort']))

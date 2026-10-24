@@ -58,7 +58,7 @@ def configuration(value):
     return dict(value, version=1, uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, identity)),
                 bridge='nvt' + hashlib.sha256(identity.encode()).hexdigest()[:10],
                 mac=f'02:00:00:{value["instanceIndex"]:02x}:00:02',
-                serial=f'020000{value["instanceIndex"]:02x}0001')
+                serial=f'020000{value["instanceIndex"]:02X}0001')
 
 
 def claim(root, config):
