@@ -184,8 +184,8 @@ setup steps.
 
 Use a fresh development cluster when switching from a checkout where Tilt
 created these resources directly. Helm does not automatically adopt those
-objects. On an existing stack installed with this release, reconcile the common
-resources from the repository root with:
+objects. On a stack whose common resources were installed by the
+`nico-rest-common` Helm release, reconcile them from the repository root with:
 
 ```bash
 helm upgrade nico-rest-common helm/rest/nico-rest/charts/nico-rest-common \
@@ -196,7 +196,7 @@ kubectl -n nico-rest wait --for=condition=Ready \
 
 Select the stack's kubeconfig first; use its REST namespace if it differs from
 `nico-rest`. Reconciliation keeps the supplied credential values and site
-identity. Uninstalling this release removes its four Secrets and Certificate
+identity. Uninstalling `nico-rest-common` removes its four Secrets and Certificate
 and interrupts consumers that need them. Preserve the release's credential
 values before removal; restoring against retained data requires the same
 Temporal encryption key and database credentials. This release does not own
