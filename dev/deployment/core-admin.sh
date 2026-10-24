@@ -44,9 +44,16 @@ printf '%s\n' "${certificate}" | kubectl exec -i -n "${namespace}" "${pod}" -- s
     export FORGE_CLIENT_REQUEST_TIMEOUT_SECS="${request_timeout}"
   fi
   unset DISABLE_TLS_ENFORCEMENT
-  /opt/carbide/nico-admin-cli \
+  set -- /opt/carbide/nico-admin-cli \
     --api-url "https://nico-api.${namespace}.svc.cluster.local:1079" \
     --root-ca-path /var/run/secrets/spiffe.io/ca.crt \
     --client-cert-path "${directory}/identity.pem" \
     --client-key-path "${directory}/identity.pem" "$@"
+  if [ -n "${request_timeout}" ]; then
+    # Bound connection retries in the pod as well as individual RPCs. Closing
+    # kubectl alone does not reliably stop the remote process or remove its key.
+    /usr/bin/timeout --kill-after=5s "${request_timeout}s" "$@"
+  else
+    "$@"
+  fi
 ' _ "${namespace}" "${FORGE_CLIENT_REQUEST_TIMEOUT_SECS:-}" "$@"

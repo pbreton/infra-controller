@@ -154,9 +154,15 @@ python3 dev/deployment/verify-stack.py --rest
 ```
 
 The verifier uses Python 3, Bash, `kubectl`, `jq` and `curl`. It captures the active
-`kind-` context, or accepts `--context NAME`; Tilt passes its selected context
-explicitly. It uses the bundled Core admin CLI with a short-lived certificate
-issued by the local Vault, without changing Core or Helm configuration.
+Kubernetes context, or accepts `--context NAME`; Tilt passes its selected
+`kind-` context explicitly. It uses the bundled Core admin CLI with a short-lived certificate
+issued by the local Vault, without changing Core or Helm configuration during
+verification. Tilt's `vault-admin-ca` prerequisite exports the public Vault CA to
+an ignored `.local/CONTEXT/vault-admin-ca.json` file beside the Tiltfile. The Core
+Helm release consumes it through `siteConfig.adminRootCertPem`; its local auth
+configuration also recognizes the Vault issuer. The export contains no private
+key. If the ephemeral Vault restarts with a new CA, rerun `vault-admin-ca` and
+then update `nico-api` before rerunning readiness.
 It polls every five seconds with a 900-second overall deadline, limits individual
 commands to 45 seconds, and returns nonzero on failure. `--timeout SECONDS`
 accepts 1–3600; repeated options use the last value. `--help` lists the options.

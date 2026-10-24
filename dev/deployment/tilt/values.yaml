@@ -14,6 +14,8 @@ nico-api:
   # (which chains to bmc-mock through its own bmc_proxy override).
   bmcProxy:
     enabled: true
+  auth:
+    additionalIssuerCns: ["local-vault-ca"]
   automountServiceAccountToken: false
   migrationJob:
     sslMode: disable
@@ -101,7 +103,7 @@ nico-api:
       spiffe_trust_domain = "nico.local"
       spiffe_service_base_paths = ["/nico-system/sa/", "/default/sa/"]
       spiffe_machine_base_path = "/nico-system/machine/"
-      additional_issuer_cns = []
+      additional_issuer_cns = ["local-vault-ca"]
 
       [host_health]
       hardware_health_reports = "MonitorOnly"

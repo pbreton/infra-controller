@@ -141,8 +141,11 @@ def helm_chart(
         links=[],
         manual=False,
         wait=True,
-        timeout='5m'):
+        timeout='5m',
+        values_files=[]):
     flags = ['--create-namespace'] + helm_json_flags(values)
+    for path in values_files:
+        flags.extend(['--values', path])
     if wait:
         flags.extend(['--wait', '--wait-for-jobs', '--timeout=%s' % timeout])
     helm_resource(
@@ -150,7 +153,7 @@ def helm_chart(
         chart=chart,
         release_name=name,
         namespace=namespace,
-        deps=[chart, values_file],
+        deps=[chart, values_file] + values_files,
         resource_deps=resource_deps,
         image_deps=image_deps,
         image_keys=image_keys,
@@ -278,6 +281,20 @@ prerequisite(
     version='0.34.0',
     values=tilt_values['vault'],
     repo='repo-hashicorp',
+)
+
+# The local Vault has its own PKI. Supply its public CA through Helm before
+# Core starts so the shared admin CLI can keep mutual TLS verification enabled.
+vault_admin_values = os.path.join(tilt_dir, '.local', cluster_context, 'vault-admin-ca.json')
+vault_ca_exporter = os.path.join(tilt_dir, 'vault-admin-ca.py')
+local_resource(
+    'vault-admin-ca',
+    ['python3', vault_ca_exporter, '--context', cluster_context,
+     '--namespace', core_namespace, '--pki-mount', local_config['vault']['pkiMount'],
+     '--output', vault_admin_values],
+    deps=[vault_ca_exporter],
+    resource_deps=['vault'],
+    labels=['infrastructure'],
 )
 
 local_ca_certificate = str(read_file(
@@ -973,7 +990,7 @@ rest_image(
 
 core_global = all_values['global']
 nico_api_values = component_values(core_global, all_values['nico-api'])
-nico_api_dependencies = ['nico-local-config', 'nico-postgres', 'vault']
+nico_api_dependencies = ['nico-local-config', 'nico-postgres', 'vault-admin-ca']
 
 if enable_dsx_exchange:
     helm_repo(
@@ -999,6 +1016,7 @@ helm_chart(
     chart=os.path.join(core_charts, 'nico-api'),
     namespace=core_namespace,
     values=nico_api_values,
+    values_files=[vault_admin_values],
     resource_deps=nico_api_dependencies,
     image_deps=['nico-api'],
     image_keys=[('global.image.repository', 'global.image.tag')],
@@ -1310,6 +1328,7 @@ local_resource(
 
 enabled_resources = [
     'stack-ready',
+    'vault-admin-ca',
     'repo-jetstack',
     'repo-cnpg',
     'repo-hashicorp',

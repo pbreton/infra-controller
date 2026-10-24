@@ -64,13 +64,14 @@ import base64, json, os, sys, time
 from pathlib import Path
 name, args = Path(sys.argv[0]).name, sys.argv[1:]
 mode = os.environ["TEST_MODE"]
+context = os.environ["TEST_CONTEXT"]
 with open(os.environ["TEST_CALLS"], "a") as log:
     log.write(json.dumps([name, args]) + "\n")
 if name == "kubectl":
     if args == ["config", "current-context"]:
-        print("kind-selected")
+        print(context)
         sys.exit()
-    assert args[:3] == ["--context", "kind-selected", "--request-timeout=30s"], args
+    assert args[:3] == ["--context", context, "--request-timeout=30s"], args
     assert args[3:5] in (["-n", "core-test"], ["-n", "rest-test"]), args
     args = args[5:]
     if args[:2] == ["get", "service"]:
@@ -95,7 +96,7 @@ if name == "kubectl":
         sys.exit("unexpected kubectl command")
 elif name == "bash":
     assert args[0].endswith("/deployment/core-admin.sh"), args
-    assert os.environ["LOCAL_DEV_KUBE_CONTEXT"] == "kind-selected"
+    assert os.environ["LOCAL_DEV_KUBE_CONTEXT"] == context
     assert os.environ["LOCAL_DEV_NAMESPACE"] == "core-test"
     assert os.environ["FORGE_CLIENT_REQUEST_TIMEOUT_SECS"] == "15"
     if args[1:] == ["-f", "json", "machine", "show"]:
@@ -107,7 +108,10 @@ elif name == "bash":
         print(json.dumps({"machines": [{"machine_type": 2, "id": "host-a",
             "state": "Assigned/Ready" if mode == "assigned" else "Ready"}]}))
     elif args[1:] == ["scout-stream", "ping", "host-a"]:
-        if mode == "scout-down":
+        marker = Path(os.environ["TEST_CALLS"] + ".scout-retry")
+        fail = mode == "scout-retry" and not marker.exists()
+        marker.touch()
+        if mode == "scout-down" or fail:
             sys.exit(1)
     else:
         sys.exit("unexpected admin command")
@@ -121,8 +125,11 @@ elif name == "curl":
     else:
         assert "--dump-header" in args
         print('HTTP/1.1 200 OK\r\nX-Pagination: {"total": ' + ("101" if mode == "truncated" else "1") + '}\r\n\r\n', end="")
+        marker = Path(os.environ["TEST_CALLS"] + ".rest-retry")
+        pending = mode == "rest-retry" and not marker.exists()
+        marker.touch()
         print(json.dumps([{"controllerMachineId": "wrong" if mode == "wrong-rest" else "host-a",
-                           "siteId": "site-a", "isUsableByTenant": mode != "unusable"}]))
+                           "siteId": "site-a", "isUsableByTenant": mode != "unusable" and not pending}]))
 else:
     sys.exit("unexpected executable")
 ''')
@@ -132,10 +139,11 @@ else:
             calls = root / "calls"
             result = subprocess.run(
                 [sys.executable, "-B", str(SPEC.origin), "--core-namespace", "core-test",
-                 "--rest-namespace", "rest-test", "--timeout", "15" if mode in ("retry", "healthy", "assigned") else "3",
+                 "--rest-namespace", "rest-test", "--timeout", "15" if mode in ("retry", "rest-retry", "scout-retry", "healthy", "assigned") else "3",
                  *(["--rest"] if rest else []), *extra],
                 env={**os.environ, "PATH": f"{root}:{os.environ['PATH']}",
-                     "TEST_MODE": mode, "TEST_CALLS": str(calls)},
+                     "TEST_MODE": mode, "TEST_CALLS": str(calls),
+                     "TEST_CONTEXT": extra[extra.index("--context") + 1] if "--context" in extra else "kind-selected"},
                 capture_output=True, text=True, timeout=25)
             records = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
             return result, records
@@ -166,18 +174,22 @@ else:
                 self.assertIn(reason, result.stdout + result.stderr)
                 self.assertNotIn("Stack ready:", result.stdout)
 
-    def test_transient_core_failure_is_retried(self):
-        result, calls = self.invoke("retry")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sum("show" in args for _, args in calls), 2)
+    def test_core_rest_and_scout_recover_before_readiness(self):
+        for mode in ("retry", "rest-retry", "scout-retry"):
+            with self.subTest(mode=mode):
+                result, calls = self.invoke(mode, rest=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(sum("show" in args for _, args in calls), 2)
+                if mode == "scout-retry":
+                    self.assertEqual(sum("scout-stream" in args for _, args in calls), 2)
 
-    def test_context_override_and_nonlocal_rejection(self):
+    def test_context_override_preserves_non_kind_support(self):
         result, calls = self.invoke("healthy", False, "--context", "kind-selected")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(args == ["config", "current-context"] for _, args in calls))
-        result, calls = self.invoke("healthy", False, "--context", "production")
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(calls, [])
+        result, calls = self.invoke("healthy", False, "--context", "k3s-local")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(args == ["config", "current-context"] for _, args in calls))
 
 
 class FrontendTest(unittest.TestCase):

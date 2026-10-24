@@ -70,8 +70,8 @@ class Verification:
         self.deadline = time.monotonic() + args.timeout
         self.since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         self.context = args.context or self.run(["kubectl", "config", "current-context"], "Kubernetes context").strip()
-        if not self.context.startswith("kind-"):
-            raise NotReady("local verification requires a kind- context")
+        if not self.context:
+            raise NotReady("no Kubernetes context selected")
 
     def run(self, command, description, env=None, input=None):
         remaining = self.deadline - time.monotonic()
@@ -186,7 +186,7 @@ def positive_seconds(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--context", help="kind context (default: active kubectl context)")
+    parser.add_argument("--context", help="Kubernetes context (default: active kubectl context)")
     parser.add_argument("--core-namespace", default="nico-system")
     parser.add_argument("--mat-service", default="nico-machine-a-tron-mat-0-bmc-mock",
                         help="single MAT control Service in the Core namespace (HTTPS port 1266)")
@@ -209,7 +209,7 @@ def main():
                 print(f"Stack ready: {count} matching MAT/Core hosts; idle Scout pings passed" +
                       ("; registered REST site and fresh usable inventory verified" if args.rest else ""), flush=True)
                 return 0
-            except (NotReady, KeyError, TypeError, ValueError) as error:
+            except (NotReady, KeyError, TypeError, ValueError, AttributeError) as error:
                 reason = str(error) if isinstance(error, NotReady) else "invalid readiness response shape"
                 remaining = verification.deadline - time.monotonic()
                 if remaining <= 0:
