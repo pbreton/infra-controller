@@ -97,6 +97,30 @@ class LocalPrerequisitesTest(unittest.TestCase):
 
 
 
+    def test_rest_trust_rejects_incompatible_issuer_references_at_load(self):
+        tree = ast.parse((ROOT / "dev/deployment/tilt/Tiltfile").read_text())
+        guards = [node for node in tree.body if isinstance(node, ast.If)
+                  and any(isinstance(child, ast.Name) and child.id == "rest_global"
+                          for child in ast.walk(node.test))]
+        cases = [
+            ("supported issuer", True, "ClusterIssuer", "cert-manager.io", False),
+            ("namespaced issuer", True, "Issuer", "cert-manager.io", True),
+            ("external issuer", True, "ClusterIssuer", "external.example", True),
+            ("REST disabled", False, "Issuer", "external.example", False),
+        ]
+        def fail(message):
+            raise ValueError(message)
+        for name, enabled, kind, group, rejected in cases:
+            with self.subTest(name=name):
+                environment = {"enable_rest": enabled, "rest_global": {
+                    "certificate": {"issuerRef": {"kind": kind, "group": group}}}, "fail": fail}
+                code = compile(ast.Module(body=guards, type_ignores=[]), "Tiltfile", "exec")
+                if rejected:
+                    with self.assertRaisesRegex(ValueError, "Local REST trust requires"):
+                        exec(code, environment)
+                else:
+                    exec(code, environment)
+
     def test_rest_trust_preserves_certificate_contract_and_forwards_namespaces(self):
         tree = ast.parse((ROOT / "dev/deployment/tilt/Tiltfile").read_text())
         call = next(node for node in tree.body if isinstance(node, ast.Expr)

@@ -43,6 +43,9 @@ enable_observability = options.get('observability', profiles['observability'])
 local_config = tilt_values['localConfig']
 rest_values = tilt_values['rest']
 rest_global = rest_values['global']
+if enable_rest and (rest_global['certificate']['issuerRef'].get('kind') != 'ClusterIssuer' or
+                    rest_global['certificate']['issuerRef'].get('group', 'cert-manager.io') != 'cert-manager.io'):
+    fail('Local REST trust requires issuerRef.kind=ClusterIssuer and issuerRef.group=cert-manager.io')
 prereqs_values_file = os.path.join(repo_root, 'helm-prereqs/values/local-development.yaml')
 prereqs_values = read_yaml(prereqs_values_file)
 core_namespace = prereqs_values['namespace']
