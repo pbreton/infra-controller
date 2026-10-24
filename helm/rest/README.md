@@ -29,7 +29,9 @@ Helm charts for deploying the NICo REST API platform services.
 chart (`secrets.migrationHooks` when installing the common chart directly).
 It makes `db-creds` and `image-pull-secret` pre-install/pre-upgrade hooks at
 weight `-10`, before the database migration hook at `-5`. Hooks use
-`before-hook-creation`, so upgrades recreate these two Secrets.
+`before-hook-creation`, so upgrades recreate these two Secrets. Choose the hook
+mode at initial installation; changing it on an existing release is unsupported
+because Helm does not safely transfer objects between hook and ordinary ownership.
 
 Set this boolean to `false` only when the common chart is installed as a
 separate prerequisite release **before** installing or upgrading migrations and
