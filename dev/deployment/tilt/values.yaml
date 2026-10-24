@@ -746,7 +746,6 @@ tilt:
               host: nico-pg-cluster-rw.nico-system.svc.cluster.local
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
     databaseUrl: jdbc:postgresql://nico-pg-cluster-rw.nico-system.svc.cluster.local:5432/keycloak
 
   rest:

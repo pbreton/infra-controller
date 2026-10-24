@@ -167,6 +167,29 @@ different immutable ClusterIP. There is no in-place ownership or address migrati
 for these Services. Keep any cluster with needed lab data until that data
 has been accounted for; the cluster setup helper does not recreate it.
 
+## Development Keycloak
+
+With REST or MCP enabled, the `keycloak` Helm release owns the Deployment,
+ClusterIP and NodePort Services, realm ConfigMap and database credential Secret.
+The [shared development chart](../../../helm/nico-dev-keycloak/README.md) supplies
+the pinned multi-architecture image. Optional `tilt.keycloak.image` overrides it;
+`tilt.keycloak.databaseUrl` and `tilt.localConfig.database.keycloak` supply the
+existing database connection. Tilt waits for database provisioning before
+installing Keycloak and for Keycloak readiness before starting the REST API.
+
+The canonical `nico-dev` realm JSON is shared with the retained Kustomize
+workflow. Import seeds an absent realm; it does not update a realm already in
+PostgreSQL. Use Keycloak's administration API or console to change an existing
+realm. Reconciliation or recreating the Keycloak workload preserves users,
+clients and identity data in the separately managed database. Database credential
+changes roll the workload and require matching changes to the database role.
+
+Use a fresh development cluster when switching from raw Tilt Keycloak resources;
+Helm does not adopt their ownership. Removing the release interrupts login and
+removes its Kubernetes objects, but does not remove the database. Reinstall with
+the same database inputs to recover the existing realm. The reference deployment's
+`nico` realm and its setup script remain separate from this `nico-dev` workflow.
+
 ## REST trust prerequisites
 
 With `--rest=true` or `--mcp=true`, `nico-core-prereqs` also owns the

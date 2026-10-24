@@ -692,30 +692,28 @@ local_resource(
 )
 
 keycloak_values = tilt_values['keycloak']
-keycloak_objects = decode_yaml_stream(kustomize(os.path.join(
-    rest_api_dir,
-    'deploy/kustomize/base/keycloak',
-)))
-for obj in keycloak_objects:
-    if obj['kind'] == 'Deployment' and obj['metadata']['name'] == 'keycloak':
-        container = obj['spec']['template']['spec']['containers'][0]
-        container['image'] = keycloak_values['image']
-        for variable in container['env']:
-            if variable['name'] == 'KC_DB_URL':
-                variable['value'] = keycloak_values['databaseUrl']
-            if variable['name'] == 'KC_DB_USERNAME':
-                variable['value'] = keycloak_database['user']
-            if variable['name'] == 'KC_DB_PASSWORD':
-                variable['value'] = keycloak_database['password']
-
-k8s_yaml(encode_yaml_stream(keycloak_objects))
-k8s_resource(
-    'keycloak',
-    objects=['keycloak-realm:configmap:%s' % rest_namespace],
+keycloak_realm_file = os.path.join(rest_api_dir, 'deploy/kustomize/base/keycloak/nico-dev-realm.json')
+keycloak_chart_values = {
+    'database': {
+        'url': keycloak_values['databaseUrl'],
+        'username': keycloak_database['user'],
+        'password': keycloak_database['password'],
+    },
+    'realmFiles': {'nico-dev-realm.json': str(read_file(keycloak_realm_file))},
+}
+if 'image' in keycloak_values:
+    keycloak_chart_values['image'] = keycloak_values['image']
+helm_resource(
+    name='keycloak',
+    chart=os.path.join(repo_root, 'helm/nico-dev-keycloak'),
+    release_name='keycloak',
+    namespace=rest_namespace,
+    deps=[os.path.join(repo_root, 'helm/nico-dev-keycloak'), values_file, keycloak_realm_file],
     resource_deps=['rest-databases-ready', 'nico-local-config'],
     labels=['application'],
-    port_forwards=[port_forward(18082, 8080)],
     pod_readiness='wait',
+    port_forwards=[port_forward(18082, 8080)],
+    flags=helm_json_flags(keycloak_chart_values) + ['--wait', '--timeout=5m'],
 )
 
 # Install common resources before migrations; ordinary Secrets retain their UIDs.

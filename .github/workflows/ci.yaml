@@ -2263,6 +2263,11 @@ jobs:
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_vault_admin_ca.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/devspace/tests -p 'test_core_admin.py'
 
+      - name: Set up kubectl for shared deployment rendering tests
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.1
+
       - name: Test local native development image builds
         run: /usr/bin/python3 -B -m unittest discover -s dev/docker/tests
 
@@ -2283,6 +2288,7 @@ jobs:
             helm/charts/nico-dns
             helm/charts/nico-dsx-exchange-consumer
             helm/nico-flow
+            helm/nico-dev-keycloak
             helm/charts/nico-hardware-health
             helm/charts/nico-machine-a-tron
             helm/charts/nico-machine-a-tron/charts/mat-k8s-controller
