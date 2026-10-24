@@ -625,3 +625,12 @@ Stopping `tilt up` leaves the stack running. Remove Tilt-managed resources with:
 ```bash
 tilt down -f dev/deployment/tilt/Tiltfile
 ```
+
+## Optional native guest lab
+
+BMC-backed guests need a Linux runtime that exposes native KVM. Before preparing
+that runtime, use the shared [lab preflight](../lab/README.md) to verify KVM
+access and an explicit host budget. This is a prerequisite check; guest topology
+and BMC deployment remain a separate part of
+[the migration](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
+The default machine-a-tron workflow does not require this check.
