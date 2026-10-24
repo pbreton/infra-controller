@@ -205,7 +205,10 @@ apply to the legacy `site-agent` command). The legacy command also configures
 and restarts its already installed agent.
 
 Rerunning registration preserves a complete matching Secret, including a rotated OTP;
-it never rebinds an existing real registration to another site. Incomplete credentials, failed registration Secret or site-list reads,
+it never rebinds an existing real registration to another site. Completeness requires
+nonempty `site-uuid`, `otp`, `creds-url` and `cacert` data. An incomplete Secret is
+rejected even if the API still exposes a token; restore the complete credential
+set for the same site before rerunning. Incomplete credentials, failed registration Secret or site-list reads,
 ambiguous names and an absent match on a full 100-site page fail instead of
 creating a new binding. This helper is for the bounded local fixture, not bulk
 site administration. If a registered site's credentials are lost and the API no
