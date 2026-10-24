@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -16,7 +17,16 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class RegistrationTest(unittest.TestCase):
     def test_registration_creates_or_preserves_binding_without_patching_helm(self):
-        for mode in ("new", "existing", "mismatch", "lookup-error", "site-list-error", "legacy-placeholder", "incomplete"):
+        fixture = (ROOT / "rest-api/deploy/kustomize/base/site-agent/site-registration-secret.yaml").read_text()
+        fixture_id = re.search(r'site-uuid: "([^"]+)"', fixture).group(1)
+        cases = {
+            "new": None, "existing": None, "existing-token": None, "legacy-placeholder": None,
+            "mismatch": "belongs to a different site", "placeholder": "use a fresh local cluster",
+            "lookup-error": "fixture registration lookup failed", "site-list-error": "fixture site lookup failed",
+            "incomplete": "credentials are incomplete", "ambiguous": "ambiguous local site",
+            "full-page": "lookup exceeds one page", "invalid-list": "invalid site list",
+        }
+        for mode, error in cases.items():
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 command = root / "command"
@@ -40,9 +50,15 @@ if name == "curl":
     elif "tenant/current" in url:
         print("{}")
     elif "site?" in url:
-        if mode == "site-list-error": sys.exit(22)
-        print(json.dumps([{"id": "site-a", "name": "local-dev-site", "infrastructureProviderId": "provider-a",
-                           "registrationToken": None if mode == "existing" else "fixture-otp"}]))
+        if mode == "site-list-error":
+            sys.exit("fixture site lookup failed")
+        site = {"id": "site-a", "name": "local-dev-site", "infrastructureProviderId": "provider-a",
+                "registrationToken": None if mode == "existing" else "fixture-otp"}
+        sites = [site]
+        if mode == "ambiguous": sites *= 2
+        if mode == "full-page": sites = [{**site, "name": "unrelated"}] * 100
+        if mode == "invalid-list": sites = {"error": "invalid"}
+        print(json.dumps(sites))
     elif "/site/site-a" in url:
         print(json.dumps({"id": "site-a"}))
     else:
@@ -53,10 +69,10 @@ elif name == "kubectl":
     elif "exec" in args:
         assert "namespace" in args and "describe" in args, args
     elif "get" in args and "site-registration" in args:
-        if mode == "lookup-error": sys.exit(1)
+        if mode == "lookup-error": sys.exit("fixture registration lookup failed")
         if mode != "new":
             print(json.dumps({"metadata": {"name": "site-registration"}, "data": {
-                "site-uuid": base64.b64encode(("other-site" if mode == "mismatch" else "00000000-0000-4000-8000-000000000001" if mode == "legacy-placeholder" else "site-a").encode()).decode(),
+                "site-uuid": base64.b64encode(("other-site" if mode == "mismatch" else os.environ["FIXTURE_ID"] if mode in ("legacy-placeholder", "placeholder") else "site-a").encode()).decode(),
                 "otp": "" if mode == "incomplete" else "cm90YXRlZC1vdHA=",
                 "creds-url": "aHR0cHM6Ly9leGFtcGxlLmNvbQ==", "cacert": "Y2VydA=="}}))
     elif "get" in args and "site-manager-tls" in args:
@@ -64,6 +80,7 @@ elif name == "kubectl":
     elif ("create" in args or "apply" in args) and "-f" in args:
         content = sys.stdin.read()
         if content.startswith("{"):
+            assert ("apply" if mode == "legacy-placeholder" else "create") in args, args
             Path(os.environ["CREATED"]).write_text(content)
         else:
             assert mode == "legacy-placeholder", args
@@ -84,8 +101,11 @@ elif name == "kubectl":
                     ["bash", str(ROOT / "rest-api/scripts/setup-local.sh"), "site-agent" if mode == "legacy-placeholder" else "register-site"],
                     env={**os.environ, "PATH": f"{root}:{os.environ['PATH']}", "MODE": mode,
                          "CALLS": str(root / "calls"), "CREATED": str(root / "created"),
-                         "RESTART_API": "0"}, capture_output=True, text=True, timeout=15)
-                self.assertEqual(result.returncode == 0, mode in ("new", "existing", "legacy-placeholder"), result.stdout + result.stderr)
+                         "RESTART_API": "0", "FIXTURE_ID": fixture_id}, capture_output=True, text=True, timeout=15)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(result.returncode == 0, error is None, result.stdout + result.stderr)
+                if error:
+                    self.assertIn(error, result.stdout + result.stderr)
                 if mode in ("new", "legacy-placeholder"):
                     obj = json.loads((root / "created").read_text())
                     self.assertEqual(obj["stringData"]["site-uuid"], "site-a")

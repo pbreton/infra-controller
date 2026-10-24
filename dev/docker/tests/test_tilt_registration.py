@@ -6,6 +6,7 @@
 import ast
 from pathlib import Path
 import unittest
+import subprocess
 
 import yaml
 
@@ -13,6 +14,13 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class RegistrationWiringTest(unittest.TestCase):
+    def test_default_chart_keeps_configmap_identity(self):
+        output = subprocess.check_output([
+            "helm", "template", "nico-rest-site-agent", str(ROOT / "helm/rest/nico-rest-site-agent")], text=True)
+        workload = next(o for o in yaml.safe_load_all(output) if o and o["kind"] == "StatefulSet")
+        names = {e["name"] for e in workload["spec"]["template"]["spec"]["containers"][0]["env"]}
+        self.assertTrue(names.isdisjoint({"CLUSTER_ID", "TEMPORAL_SUBSCRIBE_NAMESPACE"}))
+
     def test_registration_runs_before_agent_and_does_not_render_placeholder(self):
         source = (ROOT / "dev/deployment/tilt/Tiltfile").read_text()
         tree = ast.parse(source)
@@ -45,6 +53,7 @@ class RegistrationWiringTest(unittest.TestCase):
         self.assertTrue(workload["values"]["siteIdentityFromRegistrationSecret"])
         self.assertTrue(workload.get("wait", True))
         self.assertNotIn("'site-registration'", source)
+        self.assertNotIn("local_config['site']", source)
 
 
 if __name__ == "__main__":

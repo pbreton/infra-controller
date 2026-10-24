@@ -169,6 +169,10 @@ has been accounted for; the cluster setup helper does not recreate it.
 
 ## Site registration
 
+Use a fresh development cluster when switching from the older Tilt setup that
+rendered a placeholder registration Secret. Reloading that setup can overwrite
+live credentials; deleting the Secret does not recover an already consumed OTP.
+
 With REST enabled, `rest-integration` runs the shared `register-site` command
 before deploying the Site Agent. It uses the local REST API to create or reuse
 `local-dev-site` for the current infrastructure provider in `test-org`, ensures

@@ -669,10 +669,6 @@ temporal_namespaces_command = '\n'.join([
     'set -e',
     '"%s" temporal-namespace cloud' % setup_local,
     '"%s" temporal-namespace site' % setup_local,
-    '"%s" temporal-namespace "%s"' % (
-        setup_local,
-        local_config['site']['id'],
-    ),
 ])
 local_resource(
     'temporal-namespaces',
