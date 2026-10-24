@@ -163,6 +163,14 @@ certManager:
     enabled: false
     certificate: ""
     privateKey: ""
+    ## Opt-in local REST trust and Temporal server certificates, using this CA.
+    ## Namespaces must already exist. certManagerNamespace must match the
+    ## cert-manager controller's cluster-resource namespace.
+    rest:
+      enabled: false
+      namespace: nico-rest
+      temporalNamespace: temporal
+      issuerName: nico-rest-ca-issuer
   siteRoot:
     create: true
   vaultAuthServiceAccount:

@@ -34,13 +34,20 @@ class LocalPrerequisitesTest(unittest.TestCase):
                          and any(isinstance(target, ast.Name) and target.id in (
                              "prereqs_values_file", "prereqs_values", "core_namespace",
                          ) for target in node.targets)]
+        helpers = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "helm_json_flags"]
         captured = []
-        exec(compile(ast.Module(body=[*configuration, call], type_ignores=[]), "Tiltfile", "exec"), {
+        exec(compile(ast.Module(body=[*helpers, *configuration, call], type_ignores=[]), "Tiltfile", "exec"), {
             "helm_resource": lambda **kwargs: captured.append(kwargs),
             "os": os, "repo_root": str(ROOT),
+            "values_file": str(ROOT / "dev/deployment/tilt/values.yaml"),
+            "enable_rest": False, "rest_namespace": "nico-rest", "temporal_namespace": "temporal",
+            "rest_global": {"certificate": {"issuerRef": {"name": "nico-rest-ca-issuer"}}},
+            "encode_json": json.dumps, "type": lambda value: type(value).__name__,
             "read_yaml": lambda path: yaml.safe_load(Path(path).read_text()),
         })
         resource = captured[0]
+        self.assertNotIn("nico-local-namespaces", resource["resource_deps"])
         # Remove only installation controls; preserve all value-affecting flags.
         render_flags = [flag for flag in resource["flags"]
                         if flag not in ("--create-namespace", "--wait")
@@ -88,6 +95,80 @@ class LocalPrerequisitesTest(unittest.TestCase):
             "ssh_host_ed25519_key_pub": Path(str(ssh_key) + ".pub").read_text(),
         })
 
+
+
+    def test_rest_trust_preserves_certificate_contract_and_forwards_namespaces(self):
+        tree = ast.parse((ROOT / "dev/deployment/tilt/Tiltfile").read_text())
+        call = next(node for node in tree.body if isinstance(node, ast.Expr)
+                    and isinstance(node.value, ast.Call)
+                    and getattr(node.value.func, "id", None) == "helm_resource"
+                    and any(k.arg == "name" and isinstance(k.value, ast.Constant)
+                            and k.value.value == "nico-core-prereqs" for k in node.value.keywords))
+        helpers = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                   and node.name == "helm_json_flags"]
+        captured = []
+        exec(compile(ast.Module(body=[*helpers, call], type_ignores=[]), "Tiltfile", "exec"), {
+            "helm_resource": lambda **kwargs: captured.append(kwargs),
+            "os": os, "repo_root": str(ROOT), "core_namespace": "nico-system",
+            "prereqs_values_file": str(ROOT / "helm-prereqs/values/local-development.yaml"),
+            "values_file": str(ROOT / "dev/deployment/tilt/values.yaml"),
+            "enable_rest": True, "rest_namespace": "custom-rest", "temporal_namespace": "custom-temporal",
+            "rest_global": {"certificate": {"issuerRef": {"name": "custom-rest-ca"}}},
+            "encode_json": json.dumps, "type": lambda value: type(value).__name__,
+        })
+        resource = captured[0]
+        self.assertIn("nico-local-namespaces", resource["resource_deps"])
+        self.assertIn("cert-manager", resource["resource_deps"])
+        self.assertIn(str(ROOT / "dev/deployment/tilt/values.yaml"), resource["deps"])
+        render_flags = [flag for flag in resource["flags"]
+                        if flag not in ("--create-namespace", "--wait")
+                        and not flag.startswith("--timeout=")]
+        result = subprocess.run(
+            ["helm", "template", resource["release_name"], resource["chart"],
+             "--namespace", resource["namespace"], *render_flags],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        resources = list(filter(None, yaml.safe_load_all(result.stdout)))
+        by_identity = {(r["kind"], r["metadata"].get("namespace"), r["metadata"]["name"]): r
+                       for r in resources}
+        self.assertEqual(len(resources), len(by_identity))
+        self.assertEqual(len(resources), 14)
+        for namespace in ("cert-manager", "custom-rest"):
+            ca = by_identity[("Secret", namespace, "ca-signing-secret")]
+            self.assertEqual(ca["type"], "kubernetes.io/tls")
+            self.assertEqual(ca["stringData"], {
+                "tls.crt": (ROOT / "dev/certs/localhost/ca.crt").read_text(),
+                "tls.key": (ROOT / "dev/certs/localhost/ca.key").read_text(),
+            })
+        issuer = by_identity[("ClusterIssuer", None, "custom-rest-ca")]
+        self.assertEqual(issuer["spec"], {"ca": {"secretName": "ca-signing-secret"}})
+        # Preserve the entire existing TLS contract, adjusting only the explicit
+        # namespace and issuer inputs. This covers every SAN and mounted Secret.
+        old_certificates = yaml.safe_load_all((ROOT /
+            "rest-api/deploy/kustomize/base/temporal-helm/certificates.yaml").read_text())
+        for old in old_certificates:
+            expected = old["spec"]
+            expected["issuerRef"]["name"] = "custom-rest-ca"
+            expected["dnsNames"] = [".".join("custom-temporal" if part == "temporal" else part
+                                             for part in name.split("."))
+                                    if ".server.temporal.local" not in name else name
+                                    for name in expected["dnsNames"]]
+            actual = by_identity[("Certificate", "custom-temporal", old["metadata"]["name"])]
+            self.assertEqual(actual["spec"], expected)
+        local_objects = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                             and any(isinstance(t, ast.Name) and t.id == "local_objects" for t in node.targets))
+        self.assertNotIn("ca-signing-secret", [n.value for n in ast.walk(local_objects)
+                                              if isinstance(n, ast.Constant)])
+        self.assertNotIn("deploy/kustomize/base/temporal-helm/certificates.yaml",
+                         [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant)])
+        ready = next(node.value for node in tree.body if isinstance(node, ast.Expr)
+                     and isinstance(node.value, ast.Call)
+                     and getattr(node.value.func, "id", None) == "local_resource"
+                     and node.value.args and isinstance(node.value.args[0], ast.Constant)
+                     and node.value.args[0].value == "temporal-certificates-ready")
+        self.assertEqual(ast.literal_eval(next(k.value for k in ready.keywords
+                                               if k.arg == "resource_deps")), ["nico-core-prereqs"])
 
     def test_rest_common_owns_secrets_and_certificate_with_forwarded_inputs(self):
         tree = ast.parse((ROOT / "dev/deployment/tilt/Tiltfile").read_text())

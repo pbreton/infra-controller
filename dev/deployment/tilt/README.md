@@ -138,8 +138,9 @@ It owns Core's CA, Issuer, SSH host key, Vault Secrets and connection ConfigMaps
 Tilt supplies the existing local CA and OpenSSH key fixture with Helm's
 `--set-file`; the same profile and files work with
 [direct Helm](../../../helm-prereqs/README.md#local-core-prerequisites).
-Vault and PostgreSQL installation, REST prerequisites and site registration
-remain separate steps. Use a fresh development cluster when switching from
+With REST enabled, the same release also owns the REST trust resources described
+below. Vault and PostgreSQL installation, database provisioning and site
+registration remain separate steps. Use a fresh development cluster when switching from
 Tilt-created Core prerequisites; Helm does not adopt their existing objects.
 
 ## MAT networking
@@ -165,6 +166,27 @@ owned outside its release, and an existing DHCP Service may already have a
 different immutable ClusterIP. There is no in-place ownership or address migration
 for these Services. Keep any cluster with needed lab data until that data
 has been accounted for; the cluster setup helper does not recreate it.
+
+## REST trust prerequisites
+
+With `--rest=true` or `--mcp=true`, `nico-core-prereqs` also owns the
+`ca-signing-secret` Secrets in `cert-manager` and the REST namespace, the
+`nico-rest-ca-issuer` ClusterIssuer, and the three Temporal server Certificates.
+They use the same supplied local CA as Core. Tilt forwards the REST and Temporal
+namespace settings from `tilt.localConfig` and the issuer name from
+`tilt.rest.global.certificate.issuerRef`; the local issuer must be a ClusterIssuer.
+The chart's [REST trust settings](../../../helm-prereqs/README.md#local-rest-trust)
+also work with direct Helm. Namespace creation precedes the release, and Temporal
+startup waits for all three Certificates to become Ready.
+
+Use a fresh development cluster when switching from raw Tilt CA Secrets and
+Temporal Certificates; Helm does not adopt them. Reconciliation with unchanged
+CA inputs preserves trust and certificate identities. Disabling REST updates the
+prerequisite release to remove its REST trust resources, so stop REST consumers
+before switching to Core-only mode. Uninstalling the prerequisite release removes
+both Core and REST trust resources. Preserve its CA and SSH key inputs for
+restoration against retained application data; neither removal nor restoration
+registers a new site or changes database ownership.
 
 ## REST common prerequisites
 

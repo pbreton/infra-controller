@@ -83,6 +83,48 @@ adoption is performed. Uninstalling this release removes its Secrets, Issuer and
 ConfigMaps and interrupts dependent services; it does not remove the external
 namespace, Vault, PostgreSQL or their data.
 
+## Local REST trust
+
+`certManager.localCA.rest.enabled` defaults to `false`. Set it to `true` only
+with `certManager.localCA.enabled=true` and its explicit PEM `certificate` and
+`privateKey` inputs. The existing local-CA exclusions still apply:
+`externalSecrets.enabled=false` and `certManager.siteRoot.create=false`.
+This option adds two `ca-signing-secret` TLS Secrets, one ClusterIssuer and
+three Temporal server Certificates to the same prerequisite release. It creates
+no namespaces, workloads, databases or site registration.
+
+The optional namespace and issuer settings are nonempty strings:
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `certManagerNamespace` | `cert-manager` | The controller's cluster-resource namespace, where the ClusterIssuer reads its CA Secret. Match the controller's configuration. |
+| `certManager.localCA.rest.namespace` | `nico-rest` | REST signing service's copy of the CA Secret. |
+| `certManager.localCA.rest.temporalNamespace` | `temporal` | Namespace for the three Temporal Certificates and their DNS SANs. |
+| `certManager.localCA.rest.issuerName` | `nico-rest-ca-issuer` | ClusterIssuer name; REST client certificate issuer references must match. |
+
+All selected namespaces and cert-manager must exist first. If the REST and
+controller namespaces are equal, the chart creates only one copy of the CA
+Secret. Fixed Certificate names `server-interservice-cert`, `server-cloud-cert`
+and `server-site-cert` produce Secrets named `server-interservice-certs`,
+`server-cloud-certs` and `server-site-certs`, respectively. They preserve the
+local Temporal TLS identities and service names, use RSA-2048 keys, last 2160
+hours and renew 360 hours before expiry. Service DNS SANs follow the configured
+Temporal namespace with the `cluster.local` DNS suffix; the logical names
+`interservice.server.temporal.local`, `cloud.server.temporal.local` and
+`site.server.temporal.local` remain fixed. Temporal must mount those Secrets and
+wait for Certificate readiness before starting. Helm's resource installation
+completion alone does not establish certificate issuance.
+
+The chart is the sole owner of these objects. Existing objects from the local
+setup script or Kustomize are not adopted; use a fresh development cluster for
+this ownership change. Upgrades preserve the supplied CA inputs; no CA is
+generated. Changing the CA requires coordinating certificate renewal and trust
+with all consumers. Disabling this option or uninstalling the release removes
+its REST trust resources and interrupts dependent consumers. Preserve the CA
+inputs before removal and reuse them when restoring retained data. Cert-manager
+owns generated certificate Secrets; their deletion follows its controller's
+certificate owner-reference configuration.
+
 ## Documentation
 
 For complete step-by-step deployment instructions, see the **[Quick Start Guide](https://docs.nvidia.com/infra-controller/documentation/getting-started/quick-start-guide)** in the NICo documentation site. The Quick Start Guide covers:
