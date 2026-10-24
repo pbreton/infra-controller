@@ -1289,7 +1289,27 @@ local_resource(
     labels=['application'],
 )
 
+# Pod readiness does not prove that simulated hosts are usable. Verify the same
+# inventory contract through the shared command after the selected stack starts.
+stack_verifier = os.path.join(repo_root, 'dev/deployment/verify-stack.py')
+stack_readiness_command = [
+    'python3', stack_verifier, '--context', cluster_context, '--core-namespace', core_namespace,
+    '--mat-service', 'nico-machine-a-tron-%s-bmc-mock' % machine_a_tron_dhcp_pod,
+]
+stack_readiness_dependencies = ['nico-machine-a-tron', 'nico-api']
+if enable_rest:
+    stack_readiness_command.extend(['--rest', '--rest-namespace', rest_namespace])
+    stack_readiness_dependencies.append('rest-integration')
+local_resource(
+    'stack-ready',
+    stack_readiness_command,
+    deps=[stack_verifier, os.path.join(repo_root, 'dev/deployment/core-admin.sh')],
+    resource_deps=stack_readiness_dependencies,
+    labels=['application'],
+)
+
 enabled_resources = [
+    'stack-ready',
     'repo-jetstack',
     'repo-cnpg',
     'repo-hashicorp',

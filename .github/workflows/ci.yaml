@@ -2257,6 +2257,11 @@ jobs:
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_setup_kind.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/devspace/tests -p 'test_setup_devspace_on_host.py'
 
+      - name: Test shared local stack readiness
+        run: |
+          /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_verify_stack.py'
+          /usr/bin/python3 -B -m unittest discover -s dev/deployment/devspace/tests -p 'test_core_admin.py'
+
       - name: Test local native development image builds
         run: /usr/bin/python3 -B -m unittest discover -s dev/docker/tests
 

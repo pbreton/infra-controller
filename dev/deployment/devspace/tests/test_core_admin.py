@@ -16,6 +16,8 @@ class CoreAdminTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             kubectl = Path(directory) / "kubectl"
             kubectl.write_text("""#!/bin/sh
+[ "$1" = --context ] && [ "$2" = kind-fixture ] || exit 98
+shift 2
 if [ "$1" = get ]; then
   printf '%s\\n' '{"items": []}'
 else
@@ -27,7 +29,7 @@ fi
             result = subprocess.run(
                 ["bash", str(SCRIPT), "machine", "list"],
                 env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
-                     "LOCAL_DEV_NAMESPACE": "fixture"},
+                     "LOCAL_DEV_NAMESPACE": "fixture", "LOCAL_DEV_KUBE_CONTEXT": "kind-fixture"},
                 capture_output=True, text=True, timeout=10,
             )
             self.assertNotEqual(result.returncode, 0)
@@ -47,7 +49,8 @@ printf 'arg=%s\\n' "$@"
                 kubectl = root / "kubectl"
                 kubectl.write_text("""#!/usr/bin/env python3
 import json, os, subprocess, sys
-args = sys.argv[1:]
+assert sys.argv[1:3] == ["--context", "kind-fixture"]
+args = sys.argv[3:]
 if args[0] == "get":
     print(json.dumps({"items": [{"metadata": {"name": "ready"}, "status": {
         "conditions": [{"type": "Ready", "status": "True"}]}}]}))
@@ -62,7 +65,7 @@ else:
 """)
                 kubectl.chmod(0o755)
                 environment = {**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
-                               "FIXTURE_CLI": str(cli), "DISABLE_TLS_ENFORCEMENT": "1"}
+                               "LOCAL_DEV_KUBE_CONTEXT": "kind-fixture", "FIXTURE_CLI": str(cli), "DISABLE_TLS_ENFORCEMENT": "1"}
                 environment.pop("FORGE_CLIENT_REQUEST_TIMEOUT_SECS", None)
                 if timeout is not None:
                     environment["FORGE_CLIENT_REQUEST_TIMEOUT_SECS"] = timeout

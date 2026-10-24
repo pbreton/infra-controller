@@ -99,12 +99,22 @@ The default stack includes:
 - the CloudNativePG operator and one PostgreSQL cluster
 - Vault in local development mode
 - NICo API, BMC proxy, DHCP server, machine-a-tron, and mat-k8s-controller
+
+Enable REST with:
+
+```bash
+tilt up -f dev/deployment/tilt/Tiltfile -- --rest=true
+```
+
+This adds:
+
 - Temporal and its local namespaces
 - Keycloak and the `nico-dev` realm
 - NICo REST API, database migrations, certificate manager, site manager,
   workflow workers, and site agent
-- NICo MCP
 - automatic local site registration
+
+Enable MCP separately with `--mcp=true`; it also enables REST.
 
 Tilt forwards these endpoints:
 
@@ -118,6 +128,54 @@ Tilt forwards these endpoints:
 | Temporal UI | `http://localhost:18233` |
 | Grafana | `http://localhost:13000` |
 | Prometheus | `http://localhost:19090` |
+
+## Verify stack readiness
+
+The `stack-ready` resource runs after Core and MAT start. It requires a nonempty
+set of distinct MAT host identities matching Core, every host in `Ready` or
+`Assigned/Ready`, and a responsive Scout stream for every idle `Ready` host.
+Switches, DPUs and power shelves do not count as hosts. Assigned hosts run a
+tenant OS and do not require Scout.
+
+With `--rest=true` or `--mcp=true`, verification also waits for matching site
+registration IDs, an online `Registered` site, the same usable host identities in
+REST, and a completed nonempty machine inventory received after verification
+started. This can take several minutes because REST inventory is periodic.
+A failure makes the resource fail, including in `tilt ci`; Kubernetes pod
+readiness alone is insufficient. Verification checks discovery and inventory,
+not instance allocation or tenant network connectivity.
+
+While Tilt is running, rerun the same check from the repository root using the
+cluster kubeconfig selected above:
+
+```bash
+python3 dev/deployment/verify-stack.py
+python3 dev/deployment/verify-stack.py --rest
+```
+
+The verifier uses Python 3, Bash, `kubectl`, `jq` and `curl`. It captures the active
+`kind-` context, or accepts `--context NAME`; Tilt passes its selected context
+explicitly. It uses the bundled Core admin CLI with a short-lived certificate
+issued by the local Vault, without changing Core or Helm configuration.
+It polls every five seconds with a 900-second overall deadline, limits individual
+commands to 45 seconds, and returns nonzero on failure. `--timeout SECONDS`
+accepts 1–3600; repeated options use the last value. `--help` lists the options.
+
+Defaults are `--core-namespace nico-system`,
+`--mat-service nico-machine-a-tron-mat-0-bmc-mock`, and
+`--rest-namespace nico-rest`. This check supports one MAT control Service at
+HTTPS port 1266 and, with REST enabled, at most 100 hosts in `test-org` using the
+local `nico-dev` Keycloak realm. `--api-url` defaults to
+`http://localhost:18388` and `--keycloak-url` to `http://localhost:18082`;
+REST checks require these port-forwards to remain available. REST namespace and
+URL options are ignored without `--rest`. The verifier creates no port-forwards
+and does not register sites, reset machines or repair failed services.
+
+To rerun from Tilt, trigger `stack-ready` in the UI or use:
+
+```bash
+tilt trigger stack-ready
+```
 
 ## NICo PostgreSQL dashboard
 
