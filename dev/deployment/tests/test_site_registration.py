@@ -21,7 +21,7 @@ class RegistrationTest(unittest.TestCase):
         fixture_id = re.search(r'site-uuid: "([^"]+)"', fixture).group(1)
         cases = {
             "new": None, "existing": None, "existing-token": None, "legacy-placeholder": None,
-            "mismatch": "belongs to a different site", "placeholder": "use a fresh local cluster",
+            "mismatch": "belongs to a different site", "placeholder": "complete its legacy site-agent setup",
             "lookup-error": "fixture registration lookup failed", "site-list-error": "fixture site lookup failed",
             "incomplete": "credentials are incomplete", "ambiguous": "ambiguous local site",
             "full-page": "lookup exceeds one page", "invalid-list": "invalid site list",

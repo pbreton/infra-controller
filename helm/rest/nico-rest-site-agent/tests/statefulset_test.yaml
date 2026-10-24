@@ -55,3 +55,9 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: siteIdentityFromRegistrationSecret requires bootstrap.enabled=false
+  - it: retains ConfigMap identity by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name == "CLUSTER_ID")]
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name == "TEMPORAL_SUBSCRIBE_NAMESPACE")]

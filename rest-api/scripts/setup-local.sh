@@ -319,7 +319,7 @@ save_site_registration() {
         fi
         if [ "${ALLOW_PLACEHOLDER_REGISTRATION:-0}" != 1 ] && \
            [ "$current_site_id" = "00000000-0000-4000-8000-000000000001" ]; then
-            echo "ERROR: Existing registration is an older setup placeholder; use a fresh local cluster" >&2
+            echo "ERROR: Existing registration is a setup placeholder; complete its legacy site-agent setup before using register-site" >&2
             return 1
         fi
         if [ "${ALLOW_PLACEHOLDER_REGISTRATION:-0}" != 1 ] || \

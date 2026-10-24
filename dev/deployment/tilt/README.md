@@ -172,6 +172,9 @@ has been accounted for; the cluster setup helper does not recreate it.
 Use a fresh development cluster when switching from the older Tilt setup that
 rendered a placeholder registration Secret. Reloading that setup can overwrite
 live credentials; deleting the Secret does not recover an already consumed OTP.
+The registration-first path starts with an absent Secret or complete existing
+credentials. A placeholder from a legacy setup is rejected too: complete that
+setup's documented `site-agent` bootstrap before switching to Secret identity.
 
 With REST enabled, `rest-integration` runs the shared `register-site` command
 before deploying the Site Agent. It uses the local REST API to create or reuse
