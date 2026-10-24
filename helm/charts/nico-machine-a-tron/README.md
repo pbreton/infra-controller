@@ -719,8 +719,27 @@ handling under load, or when testing DHCP relay agent behavior.
 
 **Prerequisites:**
 
-- `nico-dhcp` must be deployed (default: `nico-system` namespace)
+- `nico-dhcp` must be deployed and reachable at its explicit IPv4 Service address
 - A dedicated ServiceCIDR for DHCP relay IPs (recommended)
+
+For a stable DHCP server endpoint, set these values in the
+[`nico-dhcp` chart](../nico-dhcp/values.yaml). With the umbrella chart, nest them
+under `nico-dhcp`:
+
+```yaml
+service:
+  clusterIP: 10.96.0.20
+config:
+  kea:
+    serverIdentifier: 10.96.0.20
+```
+
+Choose an available address from your cluster's ServiceCIDR; `10.96.0.20` is
+only an example. `service.clusterIP` defaults to empty for Kubernetes allocation
+and is immutable after creation. The separate `config.kea.serverIdentifier`
+sets DHCP option 54 so clients use that address for unicast renewals. Set MAT's
+`dhcpRelay.serverAddress` to the chosen address and UDP port; do not copy the
+example address unless it belongs to your DHCP Service.
 
 **Setup:**
 

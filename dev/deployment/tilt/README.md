@@ -150,8 +150,8 @@ This does not replace the remaining Tilt prerequisite and site-registration step
 Use a fresh development cluster when switching from a checkout that created
 these Services directly in Tilt. Helm will reject a relay or console Service
 owned outside its release, and an existing DHCP Service may already have a
-different immutable ClusterIP. This migration does not adopt or delete existing
-Services automatically. Keep any cluster with needed lab data until that data
+different immutable ClusterIP. There is no in-place ownership or address migration
+for these Services. Keep any cluster with needed lab data until that data
 has been accounted for; the cluster setup helper does not recreate it.
 
 ## Verify stack readiness
