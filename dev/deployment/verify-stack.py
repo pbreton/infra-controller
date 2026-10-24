@@ -151,7 +151,10 @@ class Verification:
             raise NotReady("REST does not contain the exact usable Core/MAT host inventory")
         logs = self.kubectl(namespace, "logs", "deployment/nico-rest-site-worker", "--since-time=" + self.since)
         if not fresh_inventory(logs, site_id, len(expected)):
-            raise NotReady("waiting for a fresh completed nonempty REST machine inventory")
+            raise NotReady(
+                f"waiting for a fresh successful final-page completion with {len(expected)} hosts; "
+                "the receipt must include matching inventory_total_items and structured inventory metadata. "
+                "Rebuild the REST workflow image if completion logs lack inventory_* fields")
 
     def check(self):
         namespace = self.args.core_namespace

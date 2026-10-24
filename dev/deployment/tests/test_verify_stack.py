@@ -104,9 +104,12 @@ if name == "kubectl":
         assert args[-1].startswith("--since-time="), args
         if mode != "stale":
             for msg in ["starting activity", "Received Machine inventory page: 1 of 1, page size: 100, total count: 1", "completed activity"]:
-                print(json.dumps({"Activity": "UpdateMachinesInDB", "Site ID": "site-a", "msg": msg,
-                                  "inventory_page": 1, "inventory_total_pages": 1, "inventory_total_items": 1,
-                                  "inventory_status": "INVENTORY_STATUS_SUCCESS"}))
+                event = {"Activity": "UpdateMachinesInDB", "Site ID": "site-a", "msg": msg}
+                if mode != "legacy-worker":
+                    event.update(inventory_page=1, inventory_total_pages=1,
+                                 inventory_total_items=2 if mode == "wrong-receipt-total" else 1,
+                                 inventory_status="INVENTORY_STATUS_SUCCESS")
+                print(json.dumps(event))
     else:
         sys.exit("unexpected kubectl command")
 elif name == "bash":
@@ -178,7 +181,10 @@ else:
         self.assertFalse(any("scout-stream" in args for _, args in calls))
 
     def test_failures_do_not_become_readiness(self):
-        for mode, reason in (("stale", "fresh completed"), ("offline", "Registered"),
+        for mode, reason in (("stale", "fresh successful final-page"),
+                             ("legacy-worker", "Rebuild the REST workflow image"),
+                             ("wrong-receipt-total", "completion with 1 hosts"),
+                             ("offline", "Registered"),
                              ("wrong-rest", "exact usable"), ("unusable", "exact usable"),
                              ("truncated", "inventory total"),
                              ("wrong-registration", "disagree"), ("scout-down", "scout-stream"),
