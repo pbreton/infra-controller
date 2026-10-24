@@ -129,10 +129,28 @@ class Verification:
         namespace = self.args.rest_namespace
         config = json.loads(self.kubectl(namespace, "get", "configmap", "nico-rest-site-agent-config", "-o", "json"))
         secret = json.loads(self.kubectl(namespace, "get", "secret", "site-registration", "-o", "json"))
-        site_id = config["data"]["CLUSTER_ID"]
+        workload = json.loads(self.kubectl(namespace, "get", "statefulset", "nico-rest-site-agent", "-o", "json"))
+        container = next((c for c in workload["spec"]["template"]["spec"]["containers"] if c["name"] == "site-agent"), None)
+        if container is None:
+            raise NotReady("site-agent workload has no site-agent container")
+        env = {entry["name"]: entry for entry in container.get("env", [])}
+        identities = []
+        for name in ("CLUSTER_ID", "TEMPORAL_SUBSCRIBE_NAMESPACE"):
+            entry = env.get(name)
+            if entry is None:
+                identities.append(config["data"][name])
+            elif entry.get("valueFrom") == {"secretKeyRef": {"name": "site-registration", "key": "site-uuid"}}:
+                identities.append(base64.b64decode(secret["data"]["site-uuid"], validate=True).decode())
+            elif "value" in entry:
+                identities.append(entry["value"])
+            else:
+                raise NotReady("unsupported site-agent identity source")
+        site_id = identities[0]
+        if identities[1] != site_id:
+            raise NotReady("site-agent identity and Temporal subscription namespace disagree")
         secret_id = base64.b64decode(secret["data"]["site-uuid"], validate=True).decode()
         if not site_id or site_id == "00000000-0000-4000-8000-000000000001" or site_id != secret_id:
-            raise NotReady("site-agent ConfigMap and registration Secret disagree or contain a placeholder")
+            raise NotReady("site-agent identity and registration Secret disagree or contain a placeholder")
         token = self.rest_json(self.args.keycloak_url + "/realms/nico-dev/protocol/openid-connect/token", form=True)["access_token"]
         if not isinstance(token, str) or not token or any(c in token for c in '\n\r"\\'):
             raise NotReady("Keycloak did not return a valid token")

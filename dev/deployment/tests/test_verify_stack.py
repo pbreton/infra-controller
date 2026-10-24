@@ -96,7 +96,14 @@ if name == "kubectl":
         print(json.dumps({"machines": [{"device_kind": "machine", "machine_id": "host-a"},
                                       {"device_kind": "switch", "machine_id": "switch-a"}]}))
     elif args[:2] == ["get", "configmap"]:
-        print(json.dumps({"data": {"CLUSTER_ID": "site-a"}}))
+        print(json.dumps({"data": {"CLUSTER_ID": "stale" if mode == "secret-identity" else "site-a", "TEMPORAL_SUBSCRIBE_NAMESPACE": "stale" if mode == "secret-identity" else "site-a"}}))
+    elif args[:2] == ["get", "statefulset"]:
+        env = []
+        if mode in ("secret-identity", "wrong-identity-source"):
+            env = [{"name": key, "valueFrom": {"secretKeyRef": {
+                "name": "other-secret" if mode == "wrong-identity-source" else "site-registration", "key": "site-uuid"}}}
+                for key in ("CLUSTER_ID", "TEMPORAL_SUBSCRIBE_NAMESPACE")]
+        print(json.dumps({"spec": {"template": {"spec": {"containers": [{"name": "site-agent", "env": env}]}}}}))
     elif args[:2] == ["get", "secret"]:
         print(json.dumps({"data": {"site-uuid": base64.b64encode(
             ("other-site" if mode == "wrong-registration" else "site-a").encode()).decode()}}))
@@ -174,6 +181,14 @@ else:
                 self.assertTrue(any("scout-stream" in args for _, args in calls))
                 self.assertEqual(any(name == "curl" for name, _ in calls), rest)
 
+    def test_secret_identity_checks_both_environment_bindings(self):
+        for mode, expected in (("secret-identity", 0), ("wrong-identity-source", 1)):
+            with self.subTest(mode=mode):
+                result, _ = self.invoke(mode, rest=True)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                if expected:
+                    self.assertIn("unsupported site-agent identity source", result.stdout)
+
     def test_assigned_hosts_do_not_require_scout(self):
         result, calls = self.invoke("assigned", rest=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -236,10 +251,10 @@ class FrontendTest(unittest.TestCase):
         import os
         source = (Path(SPEC.origin).parent / "tilt/Tiltfile").read_text()
         block = source[source.index("stack_verifier ="):source.index("\nenabled_resources =")]
-        for rest in (False, True):
-            with self.subTest(rest=rest):
+        for rest, mcp in ((False, False), (True, False), (True, True)):
+            with self.subTest(rest=rest, mcp=mcp):
                 resources = []
-                scope = {"os": os, "repo_root": "/repo with spaces", "enable_rest": rest,
+                scope = {"os": os, "repo_root": "/repo with spaces", "enable_rest": rest, "enable_mcp": mcp,
                          "cluster_context": "kind-selected", "core_namespace": "core-test",
                          "rest_namespace": "rest-test", "machine_a_tron_dhcp_pod": "mat-test",
                          "local_resource": lambda *a, **kw: resources.append((a, kw))}
@@ -250,7 +265,8 @@ class FrontendTest(unittest.TestCase):
                                                "--context", "kind-selected"])
                 self.assertIn("nico-machine-a-tron-mat-test-bmc-mock", command)
                 self.assertEqual("--rest" in command, rest)
-                self.assertEqual("rest-integration" in options["resource_deps"], rest)
+                self.assertEqual("nico-rest-site-agent" in options["resource_deps"], rest)
+                self.assertEqual("nico-mcp" in options["resource_deps"], mcp)
                 self.assertIn("'stack-ready'", source[source.index("enabled_resources ="):])
 
     def test_legacy_setup_delegates_and_propagates_failure(self):

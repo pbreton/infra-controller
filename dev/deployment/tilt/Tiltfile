@@ -470,16 +470,6 @@ local_objects = [
         labels=cnpg_labels,
     ),
     secret(
-        'site-registration',
-        rest_namespace,
-        {
-            'site-uuid': local_config['site']['id'],
-            'otp': 'local-dev-otp-token',
-            'creds-url': 'https://nico-rest-site-manager:8100/v1/sitecreds',
-            'cacert': local_ca_certificate,
-        },
-    ),
-    secret(
         'db-creds',
         temporal_namespace,
         {'password': temporal_database['password']},
@@ -1057,6 +1047,21 @@ helm_chart(
     image_keys=rest_image_keys,
     manual=True,
 )
+# Registration owns the mutable Secret; Helm consumes it without a second writer.
+local_resource(
+    'rest-integration',
+    [setup_local, 'register-site'],
+    env={
+        'NAMESPACE': rest_namespace,
+        'API_URL': 'http://localhost:18388',
+        'KEYCLOAK_URL': 'http://localhost:18082',
+        'RESTART_API': '0',
+    },
+    deps=[setup_local],
+    resource_deps=['nico-rest-api', 'nico-rest-site-manager', 'nico-rest-workflow'],
+    labels=['application'],
+)
+
 helm_chart(
     name='nico-rest-site-agent',
     chart=os.path.join(rest_charts, 'nico-rest-site-agent'),
@@ -1067,11 +1072,11 @@ helm_chart(
         'nico-rest-api',
         'nico-rest-site-manager',
         'nico-rest-workflow',
+        'rest-integration',
     ],
     image_deps=['localhost/nico-rest-site-agent'],
     image_keys=rest_image_keys,
     manual=True,
-    wait=False,
 )
 helm_chart(
     name='nico-mcp',
@@ -1085,23 +1090,6 @@ helm_chart(
     manual=True,
 )
 
-rest_integration_dependencies = ['nico-rest-site-agent']
-if enable_mcp:
-    rest_integration_dependencies.append('nico-mcp')
-
-local_resource(
-    'rest-integration',
-    [setup_local, 'site-agent'],
-    env={
-        'NAMESPACE': rest_namespace,
-        'API_URL': 'http://localhost:18388',
-        'KEYCLOAK_URL': 'http://localhost:18082',
-        'RESTART_API': '0',
-    },
-    resource_deps=rest_integration_dependencies,
-    labels=['application'],
-)
-
 # Pod readiness does not prove that simulated hosts are usable. Verify the same
 # inventory contract through the shared command after the selected stack starts.
 stack_verifier = os.path.join(repo_root, 'dev/deployment/verify-stack.py')
@@ -1112,7 +1100,9 @@ stack_readiness_command = [
 stack_readiness_dependencies = ['nico-machine-a-tron', 'nico-api']
 if enable_rest:
     stack_readiness_command.extend(['--rest', '--rest-namespace', rest_namespace])
-    stack_readiness_dependencies.append('rest-integration')
+    stack_readiness_dependencies.append('nico-rest-site-agent')
+    if enable_mcp:
+        stack_readiness_dependencies.append('nico-mcp')
 local_resource(
     'stack-ready',
     stack_readiness_command,

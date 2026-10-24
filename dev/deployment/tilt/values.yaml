@@ -812,6 +812,7 @@ tilt:
           queue: cloud
 
     siteAgent:
+      siteIdentityFromRegistrationSecret: true
       certificate:
         uris:
           - spiffe://nico.local/nico-system/sa/elektra-site-agent
@@ -821,9 +822,7 @@ tilt:
         CORE_GRPC_ADDRESS: nico-api.nico-system.svc.cluster.local:1079
         CORE_GRPC_SEC_OPT: "2"
         FLOW_GRPC_ENABLED: "false"
-        CLUSTER_ID: 00000000-0000-4000-8000-000000000001
         TEMPORAL_SERVER: site.server.temporal.local
-        TEMPORAL_SUBSCRIBE_NAMESPACE: 00000000-0000-4000-8000-000000000001
         TEMPORAL_SUBSCRIBE_QUEUE: site
 
     mcp:

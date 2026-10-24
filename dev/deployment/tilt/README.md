@@ -167,6 +167,50 @@ different immutable ClusterIP. There is no in-place ownership or address migrati
 for these Services. Keep any cluster with needed lab data until that data
 has been accounted for; the cluster setup helper does not recreate it.
 
+## Site registration
+
+With REST enabled, `rest-integration` runs the shared `register-site` command
+before deploying the Site Agent. It uses the local REST API to create or reuse
+`local-dev-site` for the current infrastructure provider in `test-org`, ensures
+its Temporal namespace exists, and creates the `site-registration` Secret.
+Registration owns that Secret; the Site Agent may rotate its OTP. Tilt does not
+render a placeholder or patch the Helm-owned ConfigMap.
+
+The Site Agent chart's `siteIdentityFromRegistrationSecret` defaults to `false`;
+Tilt enables it. Both `CLUSTER_ID` and `TEMPORAL_SUBSCRIBE_NAMESPACE` then read
+`site-uuid` from `secrets.siteRegistration`, overriding `envConfig` for those
+fields. The Secret and key must exist before the pod can start. This mode rejects
+`bootstrap.enabled=true`; registration runs through the API before Helm deploys
+the agent. Other chart consumers retain the ConfigMap identity path by default.
+
+For an already deployed local REST stack, select its kubeconfig and keep API and
+Keycloak port-forwards running, then use the same command directly:
+
+```bash
+NAMESPACE=nico-rest API_URL=http://localhost:18388 KEYCLOAK_URL=http://localhost:18082 \
+  bash rest-api/scripts/setup-local.sh register-site
+```
+
+`NAMESPACE` defaults to `nico-rest`; `API_URL` and `KEYCLOAK_URL` default to
+`http://localhost:8388` and `http://localhost:8082`. `ORG` defaults to `test-org`.
+The command requires Bash, kubectl, curl, jq and base64, the development
+`nico-dev` realm and its fixture administrator, a ready REST API/site-manager,
+and Temporal in namespace `temporal`. It uses the selected kubectl context.
+It does not restart the API or agent (`RESTART_API` and `WAIT_FOR_SITE_AGENT`
+apply to the legacy `site-agent` command). The legacy command also configures
+and restarts its already installed agent.
+
+Rerunning registration preserves a matching Secret, including a rotated OTP;
+it never rebinds an existing real registration to another site. Failed registration Secret or site-list reads,
+ambiguous names and an absent match on a full 100-site page fail instead of
+creating a new binding. This helper is for the bounded local fixture, not bulk
+site administration. If a registered site's credentials are lost and the API no
+longer returns its token, restore the saved Secret through the site's recovery
+procedure; rerunning cannot recover a consumed token. Removing the agent's Helm
+release leaves its registration and API site intact. Reinstall with the same
+Secret. Changing its site ID requires a separately managed re-registration and
+pod replacement; this command does not change an existing binding.
+
 ## Development Keycloak
 
 With REST or MCP enabled, the `keycloak` Helm release owns the Deployment,
@@ -258,7 +302,7 @@ Switches, DPUs and power shelves do not count as hosts. Assigned hosts run a
 tenant OS and do not require Scout.
 
 With `--rest=true` or `--mcp=true`, verification also waits for matching site
-registration IDs, an online `Registered` site, the same usable host identities in
+effective agent and registration identities, an online `Registered` site, the same usable host identities in
 REST, and a successful final-page completion logged after verification started,
 with the expected nonzero host count. This can take several minutes because REST
 inventory is periodic. The completion record must contain structured page
