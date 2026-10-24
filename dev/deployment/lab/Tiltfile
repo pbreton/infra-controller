@@ -1,0 +1,49 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+load('ext://helm_resource', 'helm_resource')
+
+# Allow Helm's five-minute wait to cover guest save and pod replacement.
+update_settings(k8s_upsert_timeout_secs=360)
+
+if not k8s_context().startswith('kind-'):
+    fail('The native target lab requires a selected kind context')
+
+repo_root = os.path.realpath(os.path.join(os.path.dirname(__file__), '../../..'))
+chart = os.path.join(repo_root, 'helm/charts/nico-bmc-target')
+config.define_string('values')
+config.define_string('namespace')
+config.define_string('release')
+options = config.parse()
+if not options.get('values'):
+    fail('--values must name the target configuration and existing PVC')
+values_file = os.path.abspath(options['values'])
+values = read_yaml(values_file)
+architecture = str(local(['docker', 'info', '--format', '{{.Architecture}}'], quiet=True)).strip()
+architectures = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64', 'amd64': 'amd64'}
+if architecture not in architectures or values.get('architecture', 'amd64') != architectures[architecture]:
+    fail('Target architecture must match the native Docker runtime')
+image = values.get('image', {}).get('repository', 'nico-bmc-target')
+release = options.get('release', 'target-one')
+namespace = options.get('namespace', 'bmc-lab')
+
+custom_build(
+    image,
+    command='make images-dev DEV_TARGET=bmc-target DEV_IMAGE="$EXPECTED_REF"',
+    dir=repo_root,
+    deps=[os.path.join(repo_root, path) for path in [
+        'Makefile', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo',
+        'include', 'crates', 'dev/docker', 'dev/deployment/lab',
+    ]],
+)
+helm_resource(
+    release,
+    chart=chart,
+    release_name=release,
+    namespace=namespace,
+    deps=[chart, values_file],
+    image_deps=[image],
+    image_keys=[('image.repository', 'image.tag')],
+    flags=['--values', values_file, '--wait', '--timeout=5m'],
+    labels=['lab'],
+)

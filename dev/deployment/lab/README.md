@@ -55,8 +55,10 @@ The `kvm` command checks only KVM access; it does not check the host budget.
 For kind, a `hostNetwork` pod runs in the kind node's network namespace, so its
 result still does not prove guest networking to the outer host or NICo services.
 This prerequisite does not establish QEMU/UEFI boot, Scout discovery, DHCP
-identity, BMC control, retained disks or credential recovery. Those require the
-single-target topology validation tracked in
+identity, BMC control, retained disks or credential recovery. Use the
+[native BMC target chart](../../../helm/charts/nico-bmc-target/README.md) for
+guest boot, BMC control and retained-state validation. Scout discovery and tenant
+networking remain provisioning work tracked in
 [the Tilt migration issue](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 Both commands print one JSON object with `scope`, `architecture`, `ready` and

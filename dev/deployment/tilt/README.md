@@ -630,7 +630,7 @@ tilt down -f dev/deployment/tilt/Tiltfile
 
 BMC-backed guests need a Linux runtime that exposes native KVM. Before preparing
 that runtime, use the shared [lab preflight](../lab/README.md) to verify KVM
-access and an explicit host budget. This is a prerequisite check; guest topology
-and BMC deployment remain a separate part of
-[the migration](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
+access and an explicit host budget. Then use the standalone
+[native BMC target workflow](../../../helm/charts/nico-bmc-target/README.md)
+to build and exercise one guest through its dedicated Tilt entrypoint.
 The default machine-a-tron workflow does not require this check.

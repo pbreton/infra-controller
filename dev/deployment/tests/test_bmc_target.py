@@ -1,0 +1,154 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+import importlib.util
+import json
+from pathlib import Path
+import sys
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+import xml.etree.ElementTree as ET
+
+LAB = Path(__file__).resolve().parents[1] / 'lab'
+sys.path.insert(0, str(LAB))
+SPEC = importlib.util.spec_from_file_location('bmc_target', LAB / 'target.py')
+TARGET = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(TARGET)
+sys.path.pop(0)
+
+CONFIG = {'nodeName': 'node', 'bmcAddress': '10.96.40.10', 'clusterUID': 'cluster', 'owner': 'namespace/release', 'architecture': 'arm64',
+          'instanceIndex': 1, 'memoryMiB': 4096, 'cpus': 2, 'diskGiB': 24,
+          'bridgeAddress': '10.84.40.1/24', 'bmcPort': 2443}
+
+
+class TargetTest(unittest.TestCase):
+    def test_native_domain_preserves_identity_and_boot_contract(self):
+        for arch, machine, firmware in [('arm64', 'virt', 'AAVMF'), ('amd64', 'q35', 'OVMF')]:
+            with self.subTest(arch=arch):
+                config = TARGET.configuration({**CONFIG, 'architecture': arch})
+                xml = ET.fromstring(TARGET.domain_xml(config))
+                self.assertEqual(xml.attrib['type'], 'kvm')
+                self.assertEqual(xml.findtext('uuid'), config['uuid'])
+                self.assertEqual(xml.find('os/type').attrib['machine'], machine)
+                self.assertIn(firmware, xml.findtext('os/loader'))
+                self.assertEqual([b.attrib['dev'] for b in xml.findall('os/boot')], ['network', 'hd'])
+                self.assertEqual(xml.find('devices/interface/mac').attrib['address'], '02:00:00:01:00:02')
+                self.assertEqual(xml.findtext("sysinfo/system/entry[@name='serial']"), '020000010001')
+                self.assertEqual(xml.find('devices/disk/source').attrib['file'], '/data/disks/root.qcow2')
+                self.assertEqual(xml.findtext('os/nvram'), '/data/disks/nvram.fd')
+
+    def test_config_rejects_incompatible_guest_inputs(self):
+        for changes in [{'architecture': 'ppc64le'}, {'cpus': True}, {'instanceIndex': 0},
+                        {'memoryMiB': 0}, {'owner': ''}, {'bridgeAddress': '10.84.40.0/24'},
+                        {'bridgeAddress': 'fd42::1/64'}, {'extra': 'field'}]:
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                TARGET.configuration({**CONFIG, **changes})
+
+    def test_retained_storage_is_not_adopted_or_resized(self):
+        config = TARGET.configuration(CONFIG)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            TARGET.claim(root, config)
+            before = (root / 'inventory.json').read_bytes()
+            TARGET.claim(root, config)
+            for changed in [{**config, 'clusterUID': 'other'}, {**config, 'diskGiB': 48}]:
+                with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'retained target'):
+                    TARGET.claim(root, changed)
+            self.assertEqual((root / 'inventory.json').read_bytes(), before)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'bmc.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError, 'unrecognized'):
+                TARGET.claim(root, config)
+
+    def test_lock_rejects_a_second_writer_and_releases_after_failure(self):
+        config = TARGET.configuration(CONFIG)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, 'startup failure'):
+                with TARGET.bound_storage(root, config):
+                    with self.assertRaises(BlockingIOError):
+                        with TARGET.bound_storage(root, config):
+                            self.fail('second writer acquired the target')
+                    raise RuntimeError('startup failure')
+            with TARGET.bound_storage(root, config):
+                self.assertTrue((root / 'inventory.json').is_file())
+
+    def test_lost_bmc_state_is_not_reinitialized(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(TARGET, 'ROOT', Path(directory)), \
+                patch.object(TARGET, 'run') as run:
+            (Path(directory) / 'bmc-initialized').touch()
+            with self.assertRaisesRegex(ValueError, 'missing its credentials'):
+                TARGET.prepare_storage(TARGET.configuration(CONFIG))
+            run.assert_not_called()
+
+    def test_bridge_cleanup_preserves_foreign_and_attached_links(self):
+        config = TARGET.configuration(CONFIG)
+        for alias, attached, delete in [('other', [], False), (config['uuid'], [{'ifname': 'tap0'}], False), (config['uuid'], [], True)]:
+            with self.subTest(alias=alias, attached=attached), \
+                    patch.object(TARGET, 'run', side_effect=[json.dumps([{'ifname': config['bridge'], 'ifalias': alias}]), json.dumps(attached), '']) as run:
+                TARGET.clear_bridge(config)
+                self.assertEqual(any(call.args[:3] == ('ip', 'link', 'delete') for call in run.call_args_list), delete)
+
+    def test_initialized_target_never_recreates_lost_disk(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(TARGET, 'ROOT', Path(directory)), \
+                patch.object(TARGET, 'run') as run:
+            (Path(directory) / 'initialized').touch()
+            with self.assertRaisesRegex(ValueError, 'missing its disk'):
+                TARGET.prepare_storage(TARGET.configuration(CONFIG))
+            run.assert_not_called()
+
+    def test_foreign_bridge_and_overlapping_routes_fail_before_mutation(self):
+        config = TARGET.configuration(CONFIG)
+        cases = [([{'ifname': config['bridge'], 'ifalias': 'another'}], [], 'different owner'),
+                 ([], [{'dst': '10.84.0.0/16', 'dev': 'eth0'}], 'overlaps')]
+        for links, routes, error in cases:
+            with self.subTest(error=error), patch.object(TARGET, 'run', side_effect=[json.dumps(links), json.dumps(routes)]) as run:
+                with self.assertRaisesRegex(ValueError, error):
+                    TARGET.bridge(config)
+                self.assertTrue(all(call.args[:3] in [('ip', '-json', 'link'), ('ip', '-4', '-json')]
+                                    for call in run.call_args_list))
+
+    def test_failed_alias_assignment_removes_only_the_new_bridge(self):
+        config = TARGET.configuration(CONFIG)
+        error = subprocess.CalledProcessError(1, 'ip')
+        with patch.object(TARGET, 'run', side_effect=['[]', '[]', '', error, '']) as run:
+            with self.assertRaises(subprocess.CalledProcessError):
+                TARGET.bridge(config)
+        self.assertEqual(run.call_args_list[-1].args, ('ip', 'link', 'delete', config['bridge']))
+
+    def test_bmc_stops_before_guest_save_and_libvirt_shutdown(self):
+        events = []
+        config = TARGET.configuration(CONFIG)
+
+        class Child:
+            def __init__(self, command):
+                self.name = command[0]
+            def poll(self):
+                return None
+            def terminate(self):
+                events.append(('stop', self.name))
+            def wait(self, timeout):
+                return 0
+
+        def virsh(*args, **kwargs):
+            events.append(('virsh', args[0]))
+            return {'list': 'target', 'domuuid': config['uuid'], 'domstate': 'running'}.get(args[0], '')
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(TARGET, 'ROOT', Path(directory)), \
+                patch.object(TARGET, 'READY', Path(directory) / 'ready'), \
+                patch.object(TARGET, 'prepare_storage'), patch.object(TARGET, 'bridge'), \
+                patch.object(TARGET, 'clear_bridge'), \
+                patch.object(TARGET.Path, 'mkdir'), \
+                patch.object(TARGET, 'virsh', side_effect=virsh), \
+                patch.object(TARGET.subprocess, 'Popen', side_effect=Child), \
+                patch.object(TARGET.socket, 'create_connection'), \
+                patch.object(TARGET.time, 'sleep', side_effect=lambda _: setattr(TARGET, 'STOP', True)), \
+                patch.object(TARGET, 'STOP', False):
+            (Path(directory) / 'bmc.json').write_text('{}')
+            TARGET.serve(config)
+        self.assertLess(events.index(('stop', 'bmc-mock')), events.index(('virsh', 'managedsave')))
+        self.assertLess(events.index(('virsh', 'managedsave')), events.index(('stop', 'libvirtd')))
+        self.assertNotIn(('virsh', 'start'), events)

@@ -28,3 +28,8 @@
 !pxe/ipxe/local
 !pxe/ipxe/local/
 !pxe/ipxe/local/embed.ipxe
+
+!dev/deployment
+!dev/deployment/lab
+!dev/deployment/lab/preflight.py
+!dev/deployment/lab/target.py

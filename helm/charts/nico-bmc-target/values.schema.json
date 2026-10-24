@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "architecture": {
+      "enum": [
+        "amd64",
+        "arm64"
+      ]
+    },
+    "nodeName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clusterUID": {
+      "type": "string",
+      "minLength": 1
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "existingClaim": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "instanceIndex": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255
+        },
+        "memoryMiB": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65536
+        },
+        "cpus": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "diskGiB": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 1024
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "clusterIP": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetPort": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
+        }
+      }
+    }
+  }
+}

@@ -98,6 +98,14 @@ class DevImagesTest(unittest.TestCase):
         self.assertIn("CONTAINER_BUILD=example/build:check", service)
         self.assertIn("CONTAINER_RUNTIME=example/runtime:check", service)
 
+    def test_bmc_target_uses_shared_native_builds_on_both_architectures(self):
+        for platform in ("linux/amd64", "linux/arm64"):
+            with self.subTest(platform=platform):
+                result, calls = self.run_make(platform, arguments=("DEV_TARGET=bmc-target",))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(calls[-1][calls[-1].index("--target") + 1], "bmc-target")
+                self.assertEqual(calls[-1][calls[-1].index("--platform") + 1], platform)
+
     def test_unsupported_platforms_stop_before_building(self):
         for platform in ("linux/ppc64le", "windows/amd64", ""):
             with self.subTest(platform=platform):

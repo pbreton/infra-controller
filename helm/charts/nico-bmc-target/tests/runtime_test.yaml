@@ -1,0 +1,73 @@
+suite: Persistent native BMC target
+templates:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+release:
+  name: target-one
+  namespace: lab
+set:
+  nodeName: lab-control-plane
+  clusterUID: cluster-identity
+  storage.existingClaim: target-data
+  service.clusterIP: 10.96.40.10
+tests:
+  - it: confines one privileged writer to the selected node and external claim
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchFields[0].values
+          value: [lab-control-plane]
+      - notExists:
+          path: spec.template.spec.nodeName
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+      - equal:
+          path: spec.template.spec.volumes[1].persistentVolumeClaim.claimName
+          value: target-data
+      - equal:
+          path: spec.template.spec.volumes[2].hostPath.type
+          value: CharDevice
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.privileged
+          value: true
+  - it: selects native ARM64 and an explicitly sized guest
+    template: configmap.yaml
+    set:
+      architecture: arm64
+      target.instanceIndex: 2
+      target.memoryMiB: 8192
+    asserts:
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"architecture":"arm64"'
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"memoryMiB":8192'
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"instanceIndex":2'
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"owner":"lab/target-one"'
+  - it: keeps the BMC service identity separate from its node listener
+    template: service.yaml
+    set:
+      service.targetPort: 2444
+    asserts:
+      - equal:
+          path: spec.clusterIP
+          value: 10.96.40.10
+      - equal:
+          path: spec.ports[0].port
+          value: 443
+      - equal:
+          path: spec.ports[0].targetPort
+          value: redfish
