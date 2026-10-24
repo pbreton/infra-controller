@@ -25,8 +25,8 @@ helm upgrade --install keycloak helm/nico-dev-keycloak \
 ```
 
 The URL and explicit password above match the standard local stack. Override
-the connection and credentials in a private values file for another database. Helm stores supplied values
-in its release Secret. The realm JSON contains public development users and
+the connection and credentials in a private values file for another database.
+Helm stores supplied values in its release Secret. The realm JSON contains public development users and
 client credentials; use private import files outside the isolated local stack.
 
 For reconciliation of a Tilt-installed release using its saved values:
@@ -44,7 +44,7 @@ helm upgrade keycloak helm/nico-dev-keycloak \
 | `database.url` | `jdbc:postgresql://postgres.postgres:5432/keycloak` | Nonempty JDBC connection URL for an existing PostgreSQL database. |
 | `database.username` | `keycloak` | Nonempty existing database role. |
 | `database.password` | `keycloak` | Nonempty password matching that role. |
-| `realmFiles` | `{}` | Map of ConfigMap-compatible filenames to JSON import strings, normally with `.json` extensions. Empty imports no realm. Inputs are written literally, without template expansion. Keycloak validates their contents at startup. |
+| `realmFiles` | `{}` | Map of ConfigMap-compatible filenames to JSON import strings. Realm files must be named `<realm>-realm.json`; see [Keycloak import conventions](https://www.keycloak.org/server/importExport) for associated user files. Empty imports no realm. Helm writes the strings literally; Keycloak interprets them at startup. |
 | `service.nodePort.enabled` | `true` | Create `keycloak-nodeport` in addition to the ClusterIP Service. |
 | `service.nodePort.port` | `30082` | NodePort accepted by the cluster and available on its nodes; ignored when disabled. |
 
