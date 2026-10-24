@@ -166,7 +166,7 @@ DevSpace will:
 - inject the built image names and DevSpace-generated tags into both deployments at runtime
 - register a local REST site, configure its Temporal namespace, and confirm that the site agent establishes a Core gRPC connection
 - build and deploy the dedicated PXE image and the inherited `dsx-exchange` services
-- wait for a fresh, completed machine inventory cycle, confirm that REST reports every MAT host as tenant-usable at the registered, online site, and verify Core readiness and Scout responses
+- wait for a fresh successful final-page completion with the expected nonzero host count, confirm that REST reports every MAT host as tenant-usable at the registered, online site, and verify Core readiness and Scout responses. Rebuild the REST workflow image from this checkout when upgrading: older workers without structured completion metadata cannot pass this check. The receipt proves final-page processing, not atomic completion of every page in an inventory batch
 
 [`setup-devspace-on-host.sh`](setup-devspace-on-host.sh) selects `full` explicitly
 by default. Its optional `--profile PROFILE` accepts one profile name defined in

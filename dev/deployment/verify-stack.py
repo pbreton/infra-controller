@@ -11,7 +11,6 @@ from email.parser import Parser
 import json
 import os
 from pathlib import Path
-import re
 import signal
 import subprocess
 import sys
@@ -42,10 +41,9 @@ def core_hosts(status, expected):
     return hosts
 
 
-def fresh_inventory(logs, site_id):
-    # Preserve the integration check's evidence of a completed nonempty inventory
-    # after this invocation. A new activity must not complete a previous failed page.
-    last_page = False
+def fresh_inventory(logs, site_id, expected_total):
+    # Page activities run concurrently. Only a self-contained completion record
+    # can prove that the final page succeeded; adjacent log lines cannot.
     for line in logs.splitlines():
         try:
             event = json.loads(line)
@@ -53,13 +51,13 @@ def fresh_inventory(logs, site_id):
             continue
         if not isinstance(event, dict) or event.get("Activity") != "UpdateMachinesInDB" or event.get("Site ID") != site_id:
             continue
-        message = event.get("msg", "")
-        if message == "starting activity":
-            last_page = False
-        elif isinstance(message, str) and message.startswith("Received Machine inventory page:"):
-            page = re.fullmatch(r"Received Machine inventory page: (\d+) of (\d+), page size: \d+, total count: (\d+)", message)
-            last_page = bool(page and int(page[1]) == int(page[2]) and int(page[3]) > 0)
-        elif message == "completed activity" and last_page:
+        if event.get("msg") != "completed activity" or event.get("inventory_status") != "INVENTORY_STATUS_SUCCESS":
+            continue
+        page = event.get("inventory_page")
+        pages = event.get("inventory_total_pages")
+        total = event.get("inventory_total_items")
+        if (all(type(value) is int for value in (page, pages, total))
+                and page == pages and pages > 0 and total == expected_total and total > 0):
             return True
     return False
 
@@ -152,7 +150,7 @@ class Verification:
         } != expected or any(m.get("siteId") != site_id or m.get("isUsableByTenant") is not True for m in machines):
             raise NotReady("REST does not contain the exact usable Core/MAT host inventory")
         logs = self.kubectl(namespace, "logs", "deployment/nico-rest-site-worker", "--since-time=" + self.since)
-        if not fresh_inventory(logs, site_id):
+        if not fresh_inventory(logs, site_id, len(expected)):
             raise NotReady("waiting for a fresh completed nonempty REST machine inventory")
 
     def check(self):

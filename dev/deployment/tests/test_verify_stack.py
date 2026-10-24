@@ -31,22 +31,35 @@ class InventoryTest(unittest.TestCase):
         assigned = {**host, "state": "Assigned/Ready"}
         self.assertEqual(VERIFY.core_hosts({"machines": [assigned]}, {"host-a"}), [assigned])
 
-    def test_fresh_inventory_needs_final_nonempty_page_and_success(self):
+    def test_fresh_inventory_requires_a_self_contained_successful_final_page(self):
         import json
-        def logs(messages, site="site-a"):
-            return "\n".join(json.dumps({"Activity": "UpdateMachinesInDB", "Site ID": site,
-                                         "msg": message}) for message in messages)
-        page = "Received Machine inventory page: 2 of 2, page size: 100, total count: 101"
-        complete = ["starting activity", page, "completed activity"]
-        self.assertTrue(VERIFY.fresh_inventory(logs(complete), "site-a"))
-        for messages in ([page], ["completed activity"],
-                         [page, "starting activity", "completed activity"],
-                         [page.replace("2 of 2", "1 of 2"), "completed activity"],
-                         [page.replace("count: 101", "count: 0"), "completed activity"]):
-            with self.subTest(messages=messages):
-                self.assertFalse(VERIFY.fresh_inventory(logs(messages), "site-a"))
-        self.assertFalse(VERIFY.fresh_inventory(logs(complete, "other-site"), "site-a"))
-        self.assertFalse(VERIFY.fresh_inventory("not json\n{}", "site-a"))
+        final = {"Activity": "UpdateMachinesInDB", "Site ID": "site-a",
+                 "msg": "completed activity", "inventory_page": 2,
+                 "inventory_total_pages": 2, "inventory_total_items": 38,
+                 "inventory_status": "INVENTORY_STATUS_SUCCESS"}
+        received = {"Activity": "UpdateMachinesInDB", "Site ID": "site-a",
+                    "msg": "Received Machine inventory page: 2 of 2, page size: 13, total count: 38"}
+        first = {**final, "inventory_page": 1}
+        received_first = {**received, "msg": "Received Machine inventory page: 1 of 2, page size: 25, total count: 38"}
+        cases = [
+            ("reordered pages and completions", [received, received_first, first, final], True),
+            ("later activity does not erase completed receipt", [final, {**first, "msg": "starting activity"}], True),
+            ("other page cannot complete a failed final page", [received, first], False),
+            ("retries without success", [received, {**final, "msg": "starting activity"}], False),
+            ("legacy uncorrelated completion", [received, {"Activity": "UpdateMachinesInDB", "Site ID": "site-a", "msg": "completed activity"}], False),
+            ("empty inventory", [{**final, "inventory_total_items": 0}], False),
+            ("different inventory size", [{**final, "inventory_total_items": 39}], False),
+            ("failed collection", [{**final, "inventory_status": "INVENTORY_STATUS_FAILED"}], False),
+            ("other site", [{**final, "Site ID": "other-site"}], False),
+            ("other activity", [{**final, "Activity": "UpdateExpectedMachinesInDB"}], False),
+            ("malformed pagination", [{**final, "inventory_page": "2"}], False),
+            ("missing pagination", [{k: v for k, v in final.items() if k != "inventory_total_pages"}], False),
+            ("no receipt", [], False),
+        ]
+        for name, events, expected in cases:
+            with self.subTest(name=name):
+                logs = "not json\n[]\n{}\n" + "\n".join(json.dumps(e) for e in events)
+                self.assertEqual(VERIFY.fresh_inventory(logs, "site-a", 38), expected)
 
 
 class CommandTest(unittest.TestCase):
@@ -91,7 +104,9 @@ if name == "kubectl":
         assert args[-1].startswith("--since-time="), args
         if mode != "stale":
             for msg in ["starting activity", "Received Machine inventory page: 1 of 1, page size: 100, total count: 1", "completed activity"]:
-                print(json.dumps({"Activity": "UpdateMachinesInDB", "Site ID": "site-a", "msg": msg}))
+                print(json.dumps({"Activity": "UpdateMachinesInDB", "Site ID": "site-a", "msg": msg,
+                                  "inventory_page": 1, "inventory_total_pages": 1, "inventory_total_items": 1,
+                                  "inventory_status": "INVENTORY_STATUS_SUCCESS"}))
     else:
         sys.exit("unexpected kubectl command")
 elif name == "bash":

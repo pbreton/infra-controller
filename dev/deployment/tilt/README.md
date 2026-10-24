@@ -176,8 +176,13 @@ tenant OS and do not require Scout.
 
 With `--rest=true` or `--mcp=true`, verification also waits for matching site
 registration IDs, an online `Registered` site, the same usable host identities in
-REST, and a completed nonempty machine inventory received after verification
-started. This can take several minutes because REST inventory is periodic.
+REST, and a successful final-page completion logged after verification started,
+with the expected nonzero host count. This can take several minutes because REST
+inventory is periodic. The completion record must contain structured page
+metadata; rebuild the REST workflow image from this checkout when upgrading an
+existing stack. Older worker images without that metadata cannot pass this
+check. This receipt proves final-page processing, not atomic completion of every
+page in an inventory batch.
 A failure makes the resource fail, including in `tilt ci`; Kubernetes pod
 readiness alone is insufficient. Verification checks discovery and inventory,
 not instance allocation or tenant network connectivity.
