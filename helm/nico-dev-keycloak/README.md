@@ -44,7 +44,7 @@ helm upgrade keycloak helm/nico-dev-keycloak \
 | `database.url` | `jdbc:postgresql://postgres.postgres:5432/keycloak` | Nonempty JDBC connection URL for an existing PostgreSQL database. |
 | `database.username` | `keycloak` | Nonempty existing database role. |
 | `database.password` | `keycloak` | Nonempty password matching that role. |
-| `realmFiles` | `{}` | Map of ConfigMap-compatible filenames to JSON import strings. Realm files must be named `<realm>-realm.json`; see [Keycloak import conventions](https://www.keycloak.org/server/importExport) for associated user files. Empty imports no realm. Helm writes the strings literally; Keycloak interprets them at startup. |
+| `realmFiles` | `{}` | Map of ConfigMap-compatible filenames to JSON import strings. Use `<realm>-realm.json` for realm exports with associated user files; see [Keycloak import conventions](https://www.keycloak.org/server/importExport). Startup also imports other regular `.json` files as single-file exports, excluding names containing `-realm.json` or `-users-`. Non-JSON files are ignored. Empty imports no realm. Helm writes the strings literally; Keycloak interprets them at startup. |
 | `service.nodePort.enabled` | `true` | Create `keycloak-nodeport` in addition to the ClusterIP Service. |
 | `service.nodePort.port` | `30082` | NodePort accepted by the cluster and available on its nodes; ignored when disabled. |
 
