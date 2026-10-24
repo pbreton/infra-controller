@@ -8,9 +8,11 @@ import json
 import os
 from pathlib import Path
 import secrets
+import re
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 # Credentials of the generated generic_ami test profile, not a hardware BMC.
 FACTORY = {'username': 'root', 'password': 'factory_password'}
@@ -44,7 +46,7 @@ with socket.socket(socket.AF_PACKET,socket.SOCK_RAW,socket.htons(3)) as capture:
 '''
 
 
-def command(args, input=None, timeout=60):
+def command(args, input='', timeout=60):
     result = subprocess.run(args, input=input, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
     if result.returncode:
         # Do not include request input or credentials in diagnostic output.
@@ -100,8 +102,21 @@ def main():
     system = request(credentials, 'GET', system_path)
     if system['PowerState'] != 'Off':
         raise ValueError('BMC and libvirt power states disagree')
+    domain = ET.fromstring(command(execute + ['virsh', '-c', 'qemu:///system', 'dumpxml', 'target']))
+    guest_mac = domain.find('devices/interface/mac').attrib['address'].lower()
+    guest_serial = domain.findtext("sysinfo/system/entry[@name='serial']")
+    if system['SerialNumber'] != guest_serial or guest_serial != config['serial']:
+        raise ValueError('Redfish serial and guest SMBIOS identity disagree')
+    # GenericAmi advertises NIC MACs in BootOptions; its EthernetInterfaces is empty.
+    options = request(credentials, 'GET', system['Boot']['BootOptions']['@odata.id'])
+    advertised_macs = set()
+    for member in options['Members']:
+        option = request(credentials, 'GET', member['@odata.id'])
+        advertised_macs.update(re.findall(r'(?:[0-9a-f]{2}:){5}[0-9a-f]{2}', option['DisplayName'].lower()))
+    if guest_mac != config['mac'] or advertised_macs != {guest_mac}:
+        raise ValueError('Redfish network boot MAC and guest NIC identity disagree')
     action = system['Actions']['#ComputerSystem.Reset']['target']
-    capture = subprocess.Popen(execute + ['python3', '-u', '-c', CAPTURE], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    capture = subprocess.Popen(execute + ['python3', '-u', '-c', CAPTURE], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         import select
         if not select.select([capture.stdout], [], [], 15)[0] or capture.stdout.readline().strip() != 'listening':
@@ -125,7 +140,7 @@ def main():
     if request(credentials, 'GET', system_path)['PowerState'] != 'On':
         raise ValueError('guest firmware ran but BMC did not observe power-on')
     command(execute + ['test', '-s', '/data/logs/console.log'])
-    print(f'PASS {args.phase}: authenticated BMC power, native firmware and DHCP identity {config["mac"]}; guest left running')
+    print(f'PASS {args.phase}: Redfish/guest identity, authenticated power, native firmware and DHCP identity {config["mac"]}; guest left running')
 
 
 if __name__ == '__main__':

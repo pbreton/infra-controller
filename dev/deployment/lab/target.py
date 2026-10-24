@@ -165,10 +165,21 @@ def check_network(config):
 
 
 def check_bmc_port(config):
-    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as listener:
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Match bmc-mock's wildcard listener: IPv4 fallback is only for IPv6 setup.
+    listener = None
+    address = '::'
+    try:
+        listener = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
         listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-        listener.bind(("::", config["bmcPort"]))
+    except OSError:
+        if listener is not None:
+            listener.close()
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        address = '0.0.0.0'
+    with listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind((address, config['bmcPort']))
+        listener.listen(1)
 
 
 def bridge(config):

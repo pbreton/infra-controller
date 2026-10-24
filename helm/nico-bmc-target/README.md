@@ -137,7 +137,8 @@ firmware file, domain or BMC state fails startup and requires restoring the data
 
 The smoke test below is **destructive and only for a fresh isolated test disk**:
 it writes a disk marker, rotates the fixture password and boots the guest. It
-captures a real DHCPv4 request on the guest bridge and checks the configured MAC.
+compares Redfish serial and network-boot MAC with the libvirt guest identity,
+then captures a real DHCPv4 request on the guest bridge with that MAC.
 It does not provide a DHCP lease, install an OS or establish Scout readiness.
 
 ```bash

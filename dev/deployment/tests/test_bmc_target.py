@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import importlib.util
+import errno
 import json
 from pathlib import Path
 import sys
@@ -9,7 +10,7 @@ import subprocess
 import socket
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 LAB = Path(__file__).resolve().parents[1] / 'lab'
@@ -120,11 +121,44 @@ class TargetTest(unittest.TestCase):
                 TARGET.bridge(config)
         self.assertEqual(run.call_args_list[-1].args, ('ip', 'link', 'delete', config['bridge']))
 
+    def test_port_probe_matches_bmc_fallback_without_hiding_conflicts(self):
+        for failure in ('create-v6', 'setup-v6', 'bind'):
+            with self.subTest(failure=failure):
+                ipv6, ipv4 = Mock(), Mock()
+                for listener in (ipv6, ipv4):
+                    listener.__enter__ = Mock(return_value=listener)
+                    listener.__exit__ = Mock(return_value=False)
+                if failure == 'setup-v6':
+                    ipv6.setsockopt.side_effect = OSError(errno.ENOPROTOOPT, 'no dual stack')
+                if failure == 'bind':
+                    ipv6.bind.side_effect = OSError(errno.EADDRINUSE, 'busy')
+                creation = [OSError(errno.EAFNOSUPPORT, 'no IPv6') if failure == 'create-v6' else ipv6, ipv4]
+                with patch.object(TARGET.socket, 'socket', side_effect=creation) as create:
+                    if failure == 'bind':
+                        with self.assertRaises(OSError) as error:
+                            TARGET.check_bmc_port(CONFIG)
+                        self.assertEqual(error.exception.errno, errno.EADDRINUSE)
+                        self.assertEqual(create.call_count, 1)
+                    else:
+                        TARGET.check_bmc_port(CONFIG)
+                        ipv4.bind.assert_called_once_with(('0.0.0.0', CONFIG['bmcPort']))
+                        ipv4.listen.assert_called_once()
+                        self.assertEqual(create.call_args.args[0], socket.AF_INET)
+                        if failure == 'setup-v6':
+                            ipv6.close.assert_called_once()
+
     def test_bad_network_or_busy_port_does_not_claim_fresh_storage(self):
+        create_socket = socket.socket
+
+        def ipv4_only(family, kind):
+            if family == socket.AF_INET6:
+                raise OSError(errno.EAFNOSUPPORT, 'IPv4-only fixture')
+            return create_socket(family, kind)
+
         for failure in ('overlap', 'busy-port'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory, \
-                    socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as listener:
-                listener.bind(('::', 0))
+                    socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(('0.0.0.0', 0))
                 listener.listen()
                 config = {**CONFIG, 'bmcPort': listener.getsockname()[1]}
                 config_file = Path(directory) / 'config.json'
@@ -137,6 +171,7 @@ class TargetTest(unittest.TestCase):
                         patch.dict(TARGET.os.environ, NODE_NAME=config['nodeName']), \
                         patch.object(TARGET.platform, 'machine', return_value='aarch64'), \
                         patch.object(TARGET.preflight, 'check_kvm'), \
+                        patch.object(TARGET.socket, 'socket', side_effect=ipv4_only), \
                         patch.object(TARGET, 'run', side_effect=['[]', json.dumps(routes)]), \
                         self.assertRaises((ValueError, OSError)):
                     TARGET.main()
