@@ -174,8 +174,9 @@ With `--rest=true` or `--mcp=true`, `nico-core-prereqs` also owns the
 `nico-rest-ca-issuer` ClusterIssuer, and the three Temporal server Certificates.
 They use the same supplied local CA as Core. Tilt forwards the REST and Temporal
 namespace settings from `tilt.localConfig` and the issuer name from
-`tilt.rest.global.certificate.issuerRef`; Tilt rejects a local issuer kind other than `ClusterIssuer` or a group other
-than `cert-manager.io` before deployment.
+`tilt.rest.global.certificate.issuerRef`; Tilt requires
+`kind: ClusterIssuer` and accepts only `group: cert-manager.io` (also the default
+when `group` is omitted). Incompatible references fail before deployment.
 The chart's [REST trust settings](../../../helm-prereqs/README.md#local-rest-trust)
 also work with direct Helm. Namespace creation precedes the release, and Temporal
 startup waits for all three Certificates to become Ready.

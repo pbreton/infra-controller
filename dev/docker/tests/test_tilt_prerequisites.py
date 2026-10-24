@@ -103,17 +103,19 @@ class LocalPrerequisitesTest(unittest.TestCase):
                   and any(isinstance(child, ast.Name) and child.id == "rest_global"
                           for child in ast.walk(node.test))]
         cases = [
-            ("supported issuer", True, "ClusterIssuer", "cert-manager.io", False),
-            ("namespaced issuer", True, "Issuer", "cert-manager.io", True),
-            ("external issuer", True, "ClusterIssuer", "external.example", True),
-            ("REST disabled", False, "Issuer", "external.example", False),
+            ("supported issuer", True, {"kind": "ClusterIssuer", "group": "cert-manager.io"}, False),
+            ("namespaced issuer", True, {"kind": "Issuer", "group": "cert-manager.io"}, True),
+            ("external issuer", True, {"kind": "ClusterIssuer", "group": "external.example"}, True),
+            ("default API group", True, {"kind": "ClusterIssuer"}, False),
+            ("missing required kind", True, {"group": "cert-manager.io"}, True),
+            ("REST disabled", False, {"kind": "Issuer", "group": "external.example"}, False),
         ]
         def fail(message):
             raise ValueError(message)
-        for name, enabled, kind, group, rejected in cases:
+        for name, enabled, issuer, rejected in cases:
             with self.subTest(name=name):
                 environment = {"enable_rest": enabled, "rest_global": {
-                    "certificate": {"issuerRef": {"kind": kind, "group": group}}}, "fail": fail}
+                    "certificate": {"issuerRef": issuer}}, "fail": fail}
                 code = compile(ast.Module(body=guards, type_ignores=[]), "Tiltfile", "exec")
                 if rejected:
                     with self.assertRaisesRegex(ValueError, "Local REST trust requires"):
