@@ -739,7 +739,17 @@ only an example. `service.clusterIP` defaults to empty for Kubernetes allocation
 and is immutable after creation. The separate `config.kea.serverIdentifier`
 sets DHCP option 54 so clients use that address for unicast renewals. Set MAT's
 `dhcpRelay.serverAddress` to the chosen address and UDP port; do not copy the
-example address unless it belongs to your DHCP Service.
+example address unless it belongs to your DHCP Service. For an existing release,
+use its already-allocated ClusterIP; setting a different one fails the upgrade
+and requires planned Service recreation.
+
+The example is for an isolated in-cluster DHCP deployment. If
+`externalService.enabled` and its
+`metallb.universe.tf/loadBalancerIPs` annotation already advertise a stable VIP,
+MAT can target that VIP instead. Leave `config.kea.serverIdentifier` empty to
+retain the chart's VIP inference, or explicitly set it to that VIP. An explicit
+identifier overrides the annotation and must be reachable by every DHCP client
+using the release, including clients outside Kubernetes.
 
 **Setup:**
 
