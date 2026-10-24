@@ -681,11 +681,37 @@ depends on that volume's reclaim policy.
 | `generic_ami` | Generic AMI BMC |
 | `generic_supermicro` | Generic Supermicro BMC |
 
+### Direct console DNS
+
+`service.ssh.headless` defaults to `false`. Setting it to `true` while
+`machineATron.mockBmcSshServer` is enabled creates one headless Service named
+`<chart-name>-<pod-name>-ssh` for each configured pod. It selects that pod and
+publishes its address without port translation. This lets the SSH console use
+individual machine ports reported by Redfish. A disabled mock SSH server or an
+unconfigured pod produces no headless Service. Other SSH Service settings and
+ports are unchanged.
+
 ### DHCP Relay Mode
 
 By default, machine-a-tron obtains IP addresses for simulated BMCs directly
 through the NICo API. DHCP relay mode exercises the real DHCP packet path
 by sending UDP DISCOVER/REQUEST packets to the nico-dhcp server.
+
+When supplying a complete TOML override through `configFiles.matConfigs`, these
+optional placeholders are expanded by Helm wherever they occur in that pod's
+string:
+
+| Placeholder | Replacement |
+| --- | --- |
+| `__NICO_DHCP_SERVER_ADDRESS__` | Explicit `dhcpRelay.serverAddress` (required for this placeholder) |
+| `__MAT_DHCP_LISTEN_PORT__` | `dhcpRelay.listenPort`, defaulting to 67 |
+| `__MAT_DHCP_SERVICE_IP__` | This pod's calculated relay ClusterIP |
+
+Using any placeholder requires nonempty `dhcpRelay.baseIP`; otherwise rendering
+fails. Overrides without these placeholders remain literal. The relay Service
+and container port use the same chart settings, including the existing sorted
+pod indexing for addresses. Set `dhcpRelay.serverAddress` to the DHCP server's
+IPv4 literal and port: MAT's UDP relay configuration requires `IPv4:port`.
 
 **When to use:** Scale testing that needs to validate the DHCP server's packet
 handling under load, or when testing DHCP relay agent behavior.
@@ -725,7 +751,7 @@ handling under load, or when testing DHCP relay agent behavior.
    dhcpRelay:
      baseIP: "10.96.127.10" # First relay IP (from mat-dhcp-services CIDR)
      listenPort: 67
-     # serverAddress: ""    # Optional: override DHCP server (default: nico-dhcp.nico-system.svc.cluster.local:67)
+     serverAddress: "10.96.0.20:67" # The nico-dhcp Service ClusterIP and UDP port
 
    pods:
      mat-0:

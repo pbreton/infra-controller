@@ -130,6 +130,30 @@ Tilt forwards these endpoints:
 | Grafana | `http://localhost:13000` |
 | Prometheus | `http://localhost:19090` |
 
+## MAT networking
+
+Helm owns the local network Services. The DHCP chart pins `nico-dhcp` to
+`10.96.0.20` through `service.clusterIP`; the local values set Kea's
+`config.kea.serverIdentifier` to the same address for unicast renewals. An empty
+`service.clusterIP` retains Kubernetes address allocation for other chart users.
+An explicit address must be IPv4, available in the cluster's ServiceCIDR, and is
+immutable after creation. The chart does not infer the Kea identifier from it.
+
+The MAT chart uses `dhcpRelay.baseIP: 10.96.0.21`, `listenPort: 67` and
+`serverAddress: 10.96.0.20:67` for both its relay Service and the placeholders
+in the local TOML configuration. Its optional `service.ssh.headless: true`
+provides direct pod DNS for console ports reported by Redfish. Both settings
+are ordinary chart values; Tilt no longer creates separate network Services.
+The same values render these resources with Helm without evaluating a Tiltfile.
+This does not replace the remaining Tilt prerequisite and site-registration steps.
+
+Use a fresh development cluster when switching from a checkout that created
+these Services directly in Tilt. Helm will reject a relay or console Service
+owned outside its release, and an existing DHCP Service may already have a
+different immutable ClusterIP. This migration does not adopt or delete existing
+Services automatically. Keep any cluster with needed lab data until that data
+has been accounted for; the cluster setup helper does not recreate it.
+
 ## Verify stack readiness
 
 The `stack-ready` resource runs after Core and MAT start. It requires a nonempty

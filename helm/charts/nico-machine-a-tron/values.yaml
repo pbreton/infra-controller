@@ -92,6 +92,10 @@ service:
   bmcMock:
     port: 1266
   ssh:
+    ## Optional per-pod <chart-name>-<pod-name>-ssh headless Service. Supplies
+    ## direct pod DNS for per-machine console ports reported through Redfish;
+    ## no ports are translated. Disabled by default; requires mockBmcSshServer.
+    headless: false
     port: 22
     targetPort: 2222
   metrics:

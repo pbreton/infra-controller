@@ -197,8 +197,11 @@ nico-bmc-proxy:
 
 nico-dhcp:
   enabled: true
+  service:
+    clusterIP: &dhcpServerIP 10.96.0.20
   config:
     kea:
+      serverIdentifier: *dhcpServerIP
       hookLibraryPath: /usr/lib/kea/hooks/libdhcp.so
       hookParameters:
         nameservers: 127.0.0.1
@@ -230,6 +233,13 @@ nico-ssh-console-rs:
 
 nico-machine-a-tron:
   enabled: true
+  dhcpRelay:
+    baseIP: 10.96.0.21
+    listenPort: 67
+    serverAddress: 10.96.0.20:67
+  service:
+    ssh:
+      headless: true
   machineATron:
     nicoApiUrl: https://nico-api.nico-system.svc.cluster.local:1079
   mat-k8s-controller:
@@ -312,11 +322,7 @@ nico-machine-a-tron:
 
 tilt:
   machineATronDhcp:
-    serverIP: 10.96.0.20
-    serverPort: 67
     podName: mat-0
-    serviceIP: 10.96.0.21
-    listenPort: 67
 
   profiles: # Toggle optional stacks; required dependencies follow automatically.
     rest: false
