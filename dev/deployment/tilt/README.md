@@ -166,6 +166,42 @@ different immutable ClusterIP. There is no in-place ownership or address migrati
 for these Services. Keep any cluster with needed lab data until that data
 has been accounted for; the cluster setup helper does not recreate it.
 
+## REST common prerequisites
+
+With `--rest=true` or `--mcp=true`, the `nico-rest-common` Helm release owns
+`db-creds`, `keycloak-client-secret`, `temporal-encryption-key`,
+`image-pull-secret` and the `temporal-client-cloud-cert` Certificate in the REST
+namespace. Tilt supplies the database, Keycloak and Temporal inputs from
+`tilt.localConfig` and the issuer from `tilt.rest.global.certificate.issuerRef`.
+The shared [chart](../../../helm/rest/README.md#installing-common-resources-separately)
+can also be installed directly.
+
+Tilt sets `secrets.migrationHooks=false`: these are ordinary Helm resources
+installed before the migration Job. The `rest-certificate-ready` resource waits
+for certificate issuance before starting API and workflow services. The chart
+leaves CA signing, database provisioning and site registration to their existing
+setup steps.
+
+Use a fresh development cluster when switching from a checkout where Tilt
+created these resources directly. Helm does not automatically adopt those
+objects. On an existing stack installed with this release, reconcile the common
+resources from the repository root with:
+
+```bash
+helm upgrade nico-rest-common helm/rest/nico-rest/charts/nico-rest-common \
+  --namespace nico-rest --reuse-values --wait --timeout 5m
+kubectl -n nico-rest wait --for=condition=Ready \
+  certificate/temporal-client-cloud-cert --timeout=5m
+```
+
+Select the stack's kubeconfig first; use its REST namespace if it differs from
+`nico-rest`. Reconciliation keeps the supplied credential values and site
+identity. Uninstalling this release removes its four Secrets and Certificate
+and interrupts consumers that need them. Preserve the release's credential
+values before removal; restoring against retained data requires the same
+Temporal encryption key and database credentials. This release does not own
+PostgreSQL storage or the site-registration Secret.
+
 ## Verify stack readiness
 
 The `stack-ready` resource runs after Core and MAT start. It requires a nonempty

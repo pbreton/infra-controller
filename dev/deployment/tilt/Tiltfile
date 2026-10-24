@@ -41,6 +41,8 @@ enable_rest = options.get('rest', profiles['rest']) or enable_mcp
 enable_dsx_exchange = options.get('dsx-exchange', profiles['dsxExchange'])
 enable_observability = options.get('observability', profiles['observability'])
 local_config = tilt_values['localConfig']
+rest_values = tilt_values['rest']
+rest_global = rest_values['global']
 prereqs_values_file = os.path.join(repo_root, 'helm-prereqs/values/local-development.yaml')
 prereqs_values = read_yaml(prereqs_values_file)
 core_namespace = prereqs_values['namespace']
@@ -278,7 +280,6 @@ database_config = local_config['database']
 rest_database = database_config['rest']
 keycloak_database = database_config['keycloak']
 temporal_database = database_config['temporal']
-rest_labels = {'app.kubernetes.io/part-of': 'nico-rest'}
 cnpg_labels = {'cnpg.io/reload': 'true'}
 
 namespace_objects = [
@@ -481,34 +482,6 @@ local_objects = [
         secret_type='kubernetes.io/basic-auth',
         labels=cnpg_labels,
     ),
-    secret(
-        'db-creds',
-        rest_namespace,
-        {'password': rest_database['password']},
-        labels=rest_labels,
-    ),
-    secret(
-        'keycloak-client-secret',
-        rest_namespace,
-        {'keycloak-client-secret': local_config['keycloak']['clientSecret']},
-        labels=rest_labels,
-    ),
-    secret(
-        'temporal-encryption-key',
-        rest_namespace,
-        {'temporal-encryption-key': local_config['temporal']['encryptionKey']},
-        labels=rest_labels,
-    ),
-    {
-        'apiVersion': 'v1',
-        'kind': 'Secret',
-        'metadata': merged(
-            object_metadata('image-pull-secret', rest_namespace),
-            {'labels': rest_labels},
-        ),
-        'type': 'kubernetes.io/dockerconfigjson',
-        'data': {'.dockerconfigjson': 'eyJhdXRocyI6e319'},
-    },
     secret(
         'site-registration',
         rest_namespace,
@@ -773,16 +746,25 @@ k8s_resource(
     pod_readiness='wait',
 )
 
-k8s_yaml(os.path.join(
-    rest_api_dir,
-    'deploy/kustomize/base/common/temporal-client-cloud-cert.yaml',
-))
-k8s_resource(
-    new_name='rest-certificate',
-    objects=['temporal-client-cloud-cert:certificate:%s' % rest_namespace],
+# Install common resources before migrations; ordinary Secrets retain their UIDs.
+rest_common_values = component_values(rest_global, {
+    'secrets': {
+        'migrationHooks': False,
+        'dbCreds': {'username': rest_database['user'], 'password': rest_database['password']},
+        'keycloakClientSecret': {'value': local_config['keycloak']['clientSecret']},
+        'temporalEncryptionKey': {'value': local_config['temporal']['encryptionKey']},
+    },
+})
+helm_resource(
+    name='nico-rest-common',
+    chart=os.path.join(rest_charts, 'nico-rest/charts/nico-rest-common'),
+    release_name='nico-rest-common',
+    namespace=rest_namespace,
+    deps=[os.path.join(rest_charts, 'nico-rest/charts/nico-rest-common'), values_file],
     resource_deps=['nico-local-config'],
     labels=['infrastructure'],
     pod_readiness='ignore',
+    flags=helm_json_flags(rest_common_values) + ['--wait', '--timeout=5m'],
 )
 local_resource(
     'rest-certificate-ready',
@@ -794,7 +776,7 @@ local_resource(
         '--timeout=5m',
         'certificate/temporal-client-cloud-cert',
     ],
-    resource_deps=['rest-certificate'],
+    resource_deps=['nico-rest-common'],
     labels=['infrastructure'],
 )
 
@@ -1023,8 +1005,6 @@ helm_chart(
     manual=True,
 )
 
-rest_values = tilt_values['rest']
-rest_global = rest_values['global']
 rest_image_keys = [(
     'global.image.repository',
     'image.name',
@@ -1051,7 +1031,7 @@ k8s_yaml(rest_db_yaml)
 k8s_resource(
     'nico-rest-db-migration-dev',
     new_name='nico-rest-db',
-    resource_deps=['rest-databases-ready'],
+    resource_deps=['rest-databases-ready', 'nico-rest-common'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     labels=['application'],
     pod_readiness='wait',
@@ -1213,7 +1193,7 @@ if enable_rest:
         'temporal-ui',
         'temporal-namespaces',
         'keycloak',
-        'rest-certificate',
+        'nico-rest-common',
         'rest-certificate-ready',
         'nico-rest-db',
         'nico-rest-cert-manager',

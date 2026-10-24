@@ -23,6 +23,29 @@ Helm charts for deploying the NICo REST API platform services.
 > `nico-rest-common` creates the secrets (`db-creds`, `temporal-encryption-key`, `image-pull-secret`,
 > `keycloak-client-secret`) and the `temporal-client-cloud-cert` Certificate as part of the Helm install.
 
+### Installing common resources separately
+
+`nico-rest-common.secrets.migrationHooks` defaults to `true` in the umbrella
+chart (`secrets.migrationHooks` when installing the common chart directly).
+It makes `db-creds` and `image-pull-secret` pre-install/pre-upgrade hooks at
+weight `-10`, before the database migration hook at `-5`. Hooks use
+`before-hook-creation`, so upgrades recreate these two Secrets.
+
+Set this boolean to `false` only when the common chart is installed as a
+separate prerequisite release **before** installing or upgrading migrations and
+services. All four Secrets then have ordinary Helm ownership: upgrades update
+them in place and uninstall removes them. Disable `nico-rest-common.enabled`
+in any subsequent umbrella installation to avoid competing releases. With
+`secrets.create=false`, neither hook mode creates Secrets; pre-create the required
+Secrets yourself. The Certificate is still rendered.
+
+The separate release requires `global.certificate.issuerRef` and an existing
+issuer. Supply credentials matching the database and authentication services.
+An explicit `secrets.temporalEncryptionKey.value` overrides an existing key;
+omitting it reuses an existing key, generates one on a fresh install, or fails
+an upgrade without an existing key. Preserve that key with the database when
+removing or restoring a deployment: a new key cannot decrypt existing payloads.
+
 ## Prerequisites
 
 The following must be running before installing charts:
@@ -87,6 +110,7 @@ nico-rest-api:
 ```
 
 If `nico-rest-common.enabled=false`, you must pre-create the following resources in the target namespace before install:
+
 - Secrets: `db-creds`, `temporal-encryption-key`, `image-pull-secret`
 - `keycloak-client-secret` (when Keycloak authentication is enabled)
 - The `temporal-client-cloud-cert` Certificate (or its resulting TLS Secret) consumed by the workflow workers
