@@ -869,19 +869,10 @@ tilt:
         enabled: false
 
   localConfig:
-    coreNamespace: nico-system
     restNamespace: nico-rest
     temporalNamespace: temporal
     observabilityNamespace: observability
-    vault:
-      service: http://nico-vault.nico-system.svc.cluster.local:8200
-      mount: secrets
-      pkiMount: certs
-      token: root
     database:
-      host: nico-pg-cluster-rw.nico-system.svc.cluster.local
-      port: 5432
-      name: nico_system_nico
       rest:
         resourceName: nico-rest
         name: nico_rest

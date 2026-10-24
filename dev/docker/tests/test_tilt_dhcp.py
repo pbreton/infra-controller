@@ -60,7 +60,7 @@ class TiltDhcpTest(unittest.TestCase):
         )
         result = subprocess.run(
             ["helm", "template", "nico-dhcp", str(ROOT / "helm/charts/nico-dhcp"),
-             "--namespace", tilt_values["tilt"]["localConfig"]["coreNamespace"],
+             "--namespace", yaml.safe_load((ROOT / "helm-prereqs/values/local-development.yaml").read_text())["namespace"],
              "--values", "-", "--show-only", "templates/configmap.yaml",
              "--show-only", "templates/configmap-v6.yaml"],
             input=yaml.safe_dump(values), capture_output=True, text=True, timeout=30,

@@ -23,6 +23,66 @@ export NICO_DPF_DPU_CLUSTER_VIP=<free-routable-ip>    # DPU cluster control-plan
 > required `NICO_DPF_*` vars above must be set unless you pass `--skip-dpf`. See
 > [DPF](#dpf) and [DPF images and registries](#dpf-images-and-registries).
 
+## Local Core prerequisites
+
+The [local development values](values/local-development.yaml) reuse this chart
+for Core's CA, Issuer, SSH host key, Vault Secrets and connection ConfigMaps.
+They do not install operators, configure Vault, create databases, or register a
+REST site. Cert-manager and a namespace must exist before installation; Helm's
+`--create-namespace` can create the release namespace. Vault and PostgreSQL must
+be configured separately at the endpoints in that values file.
+
+From the repository root, with the development cluster's kubeconfig selected:
+
+```bash
+helm upgrade --install nico-core-prereqs helm-prereqs \
+  --namespace nico-system --create-namespace --wait --timeout 5m \
+  --values helm-prereqs/values/local-development.yaml \
+  --set-file certManager.localCA.certificate=dev/certs/localhost/ca.crt \
+  --set-file certManager.localCA.privateKey=dev/certs/localhost/ca.key \
+  --set-file sshHostKey.privateKey=crates/ssh-console/tests/fixtures/ssh_host_ed25519_key \
+  --set-file sshHostKey.publicKey=crates/ssh-console/tests/fixtures/ssh_host_ed25519_key.pub
+```
+
+These repository fixtures and the profile's Vault root token are public local
+development credentials. Supply your own files and token outside an isolated
+development cluster. Helm stores supplied values in its release Secret.
+
+`certManager.localCA.enabled` defaults to `false`. When enabled, both
+`certificate` and `privateKey` must be supplied as PEM strings; neither is
+generated. The chart creates `nico-local-ca`, `nico-roots` and the namespaced
+`local-ca-issuer`. It rejects `externalSecrets.enabled=true` or
+`certManager.siteRoot.create=true`, which would introduce competing CA/trust
+owners. The profile also disables Vault PKI/bootstrap jobs and the Vault Issuer.
+It preserves the supplied CA on repeated installs; changing the supplied files
+changes the rendered Secret data and requires coordinating certificate renewal.
+
+`sshHostKey.create` defaults to `true`. Optional `privateKey` and `publicKey`
+strings default to empty. An explicit private key overrides the existing Secret;
+without it the chart reuses the existing private key, or generates one if absent.
+The console requires OpenSSH format, so this profile's command supplies the
+existing OpenSSH fixture. `publicKey` is written as provided, including empty;
+the console derives its public key from the private key. Keep the same inputs on
+upgrades to preserve host identity. Key-format and CA/key-pair validation remain
+the consuming services' responsibility.
+
+`createNamespace` defaults to `true`; the managed namespace has a Helm `keep`
+policy. The local profile sets it to `false` because the namespace is created
+separately. The chart then neither owns nor deletes it. Do not toggle ownership
+on an existing deployment without a planned migration.
+
+`postgresql.host`, `port` and `database` populate Core's connection ConfigMap.
+The latter two default to `5432` and `nico_system_nico`. Different ports or
+database names require `postgresql.enabled=false`; this configures the connection
+but does not provision an external database or its credentials. The local
+profile uses the separately deployed CloudNativePG database.
+
+Use a fresh development cluster when switching from Tilt-created prerequisite
+objects: Helm rejects existing objects owned outside this release. No automatic
+adoption is performed. Uninstalling this release removes its Secrets, Issuer and
+ConfigMaps and interrupts dependent services; it does not remove the external
+namespace, Vault, PostgreSQL or their data.
+
 ## Documentation
 
 For complete step-by-step deployment instructions, see the **[Quick Start Guide](https://docs.nvidia.com/infra-controller/documentation/getting-started/quick-start-guide)** in the NICo documentation site. The Quick Start Guide covers:

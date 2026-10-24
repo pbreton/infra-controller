@@ -130,6 +130,18 @@ Tilt forwards these endpoints:
 | Grafana | `http://localhost:13000` |
 | Prometheus | `http://localhost:19090` |
 
+## Core prerequisites
+
+The `nico-core-prereqs` release uses the shared `helm-prereqs` chart and
+[local development profile](../../../helm-prereqs/values/local-development.yaml).
+It owns Core's CA, Issuer, SSH host key, Vault Secrets and connection ConfigMaps.
+Tilt supplies the existing local CA and OpenSSH key fixture with Helm's
+`--set-file`; the same profile and files work with
+[direct Helm](../../../helm-prereqs/README.md#local-core-prerequisites).
+Vault and PostgreSQL installation, REST prerequisites and site registration
+remain separate steps. Use a fresh development cluster when switching from
+Tilt-created Core prerequisites; Helm does not adopt their existing objects.
+
 ## MAT networking
 
 Helm owns the local network Services. The DHCP chart pins `nico-dhcp` to
@@ -226,7 +238,8 @@ a cumulative **Slow queries** table. See the chart README for collection behavio
 metric contracts, binary configuration, and installation with your own Grafana.
 
 Tilt passes `tilt.observability.postgresExporter` as chart values, supplying the
-image and `tilt.localConfig.database` host, port, and database name. Development
+image and the `postgresql` host, port, and database name from the shared
+local prerequisite profile. Development
 values use `database.credentialsSecret: nico-pg-cluster-app` and
 `database.sslMode: disable`; the credentials Secret is in the release namespace.
 For verified TLS, configure `database.sslMode` and `database.sslRootCertSecret`

@@ -41,7 +41,9 @@ enable_rest = options.get('rest', profiles['rest']) or enable_mcp
 enable_dsx_exchange = options.get('dsx-exchange', profiles['dsxExchange'])
 enable_observability = options.get('observability', profiles['observability'])
 local_config = tilt_values['localConfig']
-core_namespace = local_config['coreNamespace']
+prereqs_values_file = os.path.join(repo_root, 'helm-prereqs/values/local-development.yaml')
+prereqs_values = read_yaml(prereqs_values_file)
+core_namespace = prereqs_values['namespace']
 rest_namespace = local_config['restNamespace']
 temporal_namespace = local_config['temporalNamespace']
 observability_namespace = local_config['observabilityNamespace']
@@ -96,14 +98,6 @@ def secret(name, namespace, string_data, secret_type='Opaque', labels={}):
         'metadata': merged(object_metadata(name, namespace), {'labels': labels}),
         'type': secret_type,
         'stringData': string_data,
-    }
-
-def config_map(name, namespace, data):
-    return {
-        'apiVersion': 'v1',
-        'kind': 'ConfigMap',
-        'metadata': object_metadata(name, namespace),
-        'data': data,
     }
 
 def helm_chart(
@@ -267,7 +261,7 @@ vault_ca_exporter = os.path.join(tilt_dir, 'vault-admin-ca.py')
 local_resource(
     'vault-admin-ca',
     ['python3', vault_ca_exporter, '--context', cluster_context,
-     '--namespace', core_namespace, '--pki-mount', local_config['vault']['pkiMount'],
+     '--namespace', core_namespace, '--pki-mount', prereqs_values['vault']['pkiMount'],
      '--output', vault_admin_values],
     deps=[vault_ca_exporter],
     resource_deps=['vault'],
@@ -280,14 +274,6 @@ local_ca_certificate = str(read_file(
 local_ca_key = str(read_file(
     os.path.join(repo_root, 'dev/certs/localhost/ca.key'),
 ))
-ssh_console_host_key = str(read_file(os.path.join(
-    repo_root,
-    'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key',
-)))
-ssh_console_host_key_public = str(read_file(os.path.join(
-    repo_root,
-    'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key.pub',
-)))
 database_config = local_config['database']
 rest_database = database_config['rest']
 keycloak_database = database_config['keycloak']
@@ -431,156 +417,122 @@ helm_resource(
     ],
 )
 
+# The shared prerequisite chart owns Core trust, connection settings and keys.
+helm_resource(
+    name='nico-core-prereqs',
+    pod_readiness='ignore',
+    chart=os.path.join(repo_root, 'helm-prereqs'),
+    release_name='nico-core-prereqs',
+    namespace=core_namespace,
+    deps=[os.path.join(repo_root, 'helm-prereqs'),
+          os.path.join(repo_root, 'dev/certs/localhost/ca.crt'),
+          os.path.join(repo_root, 'dev/certs/localhost/ca.key'),
+          os.path.join(repo_root, 'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key'),
+          os.path.join(repo_root, 'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key.pub')],
+    resource_deps=['cert-manager', 'vault'],
+    labels=['infrastructure'],
+    flags=[
+        '--create-namespace', '--wait', '--timeout=5m',
+        '--values', prereqs_values_file,
+        '--set-file', 'certManager.localCA.certificate=%s' % os.path.join(repo_root, 'dev/certs/localhost/ca.crt'),
+        '--set-file', 'certManager.localCA.privateKey=%s' % os.path.join(repo_root, 'dev/certs/localhost/ca.key'),
+        '--set-file', 'sshHostKey.privateKey=%s' % os.path.join(repo_root, 'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key'),
+        '--set-file', 'sshHostKey.publicKey=%s' % os.path.join(repo_root, 'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key.pub'),
+    ],
+)
+
 local_objects = [
     secret(
-        'nico-local-ca',
-        core_namespace,
+        'ca-signing-secret',
+        'cert-manager',
         {'tls.crt': local_ca_certificate, 'tls.key': local_ca_key},
         secret_type='kubernetes.io/tls',
     ),
-    secret('nico-roots', core_namespace, {'ca.crt': local_ca_certificate}),
     secret(
-        'ssh-host-key',
-        core_namespace,
-        {
-            'ssh_host_ed25519_key': ssh_console_host_key,
-            'ssh_host_ed25519_key_pub': ssh_console_host_key_public,
-        },
+        'ca-signing-secret',
+        rest_namespace,
+        {'tls.crt': local_ca_certificate, 'tls.key': local_ca_key},
+        secret_type='kubernetes.io/tls',
     ),
     {
         'apiVersion': 'cert-manager.io/v1',
-        'kind': 'Issuer',
-        'metadata': object_metadata('local-ca-issuer', core_namespace),
-        'spec': {'ca': {'secretName': 'nico-local-ca'}},
+        'kind': 'ClusterIssuer',
+        'metadata': object_metadata('nico-rest-ca-issuer'),
+        'spec': {'ca': {'secretName': 'ca-signing-secret'}},
     },
     secret(
-        'nico-vault-token',
+        'nico-rest-db-user',
         core_namespace,
-        {'token': local_config['vault']['token']},
+        {'username': rest_database['user'], 'password': rest_database['password']},
+        secret_type='kubernetes.io/basic-auth',
+        labels=cnpg_labels,
     ),
     secret(
-        'nico-vault-approle-tokens',
+        'keycloak-db-user',
         core_namespace,
-        {'VAULT_ROLE_ID': '', 'VAULT_SECRET_ID': ''},
+        {'username': keycloak_database['user'], 'password': keycloak_database['password']},
+        secret_type='kubernetes.io/basic-auth',
+        labels=cnpg_labels,
     ),
-    config_map(
-        'vault-cluster-info',
+    secret(
+        'temporal-db-user',
         core_namespace,
+        {'username': temporal_database['user'], 'password': temporal_database['password']},
+        secret_type='kubernetes.io/basic-auth',
+        labels=cnpg_labels,
+    ),
+    secret(
+        'db-creds',
+        rest_namespace,
+        {'password': rest_database['password']},
+        labels=rest_labels,
+    ),
+    secret(
+        'keycloak-client-secret',
+        rest_namespace,
+        {'keycloak-client-secret': local_config['keycloak']['clientSecret']},
+        labels=rest_labels,
+    ),
+    secret(
+        'temporal-encryption-key',
+        rest_namespace,
+        {'temporal-encryption-key': local_config['temporal']['encryptionKey']},
+        labels=rest_labels,
+    ),
+    {
+        'apiVersion': 'v1',
+        'kind': 'Secret',
+        'metadata': merged(
+            object_metadata('image-pull-secret', rest_namespace),
+            {'labels': rest_labels},
+        ),
+        'type': 'kubernetes.io/dockerconfigjson',
+        'data': {'.dockerconfigjson': 'eyJhdXRocyI6e319'},
+    },
+    secret(
+        'site-registration',
+        rest_namespace,
         {
-            'VAULT_SERVICE': local_config['vault']['service'],
-            'NICO_VAULT_MOUNT': local_config['vault']['mount'],
-            'NICO_VAULT_PKI_MOUNT': local_config['vault']['pkiMount'],
+            'site-uuid': local_config['site']['id'],
+            'otp': 'local-dev-otp-token',
+            'creds-url': 'https://nico-rest-site-manager:8100/v1/sitecreds',
+            'cacert': local_ca_certificate,
         },
     ),
-    config_map(
-        'nico-system-nico-database-config',
-        core_namespace,
-        {
-            'DB_HOST': database_config['host'],
-            'DB_PORT': str(database_config['port']),
-            'DB_NAME': database_config['name'],
-        },
+    secret(
+        'db-creds',
+        temporal_namespace,
+        {'password': temporal_database['password']},
+        labels={'app.kubernetes.io/part-of': 'temporal'},
     ),
 ]
 
-if enable_rest:
-    local_objects.extend([
-        secret(
-            'ca-signing-secret',
-            'cert-manager',
-            {'tls.crt': local_ca_certificate, 'tls.key': local_ca_key},
-            secret_type='kubernetes.io/tls',
-        ),
-        secret(
-            'ca-signing-secret',
-            rest_namespace,
-            {'tls.crt': local_ca_certificate, 'tls.key': local_ca_key},
-            secret_type='kubernetes.io/tls',
-        ),
-        {
-            'apiVersion': 'cert-manager.io/v1',
-            'kind': 'ClusterIssuer',
-            'metadata': object_metadata('nico-rest-ca-issuer'),
-            'spec': {'ca': {'secretName': 'ca-signing-secret'}},
-        },
-        secret(
-            'nico-rest-db-user',
-            core_namespace,
-            {'username': rest_database['user'], 'password': rest_database['password']},
-            secret_type='kubernetes.io/basic-auth',
-            labels=cnpg_labels,
-        ),
-        secret(
-            'keycloak-db-user',
-            core_namespace,
-            {'username': keycloak_database['user'], 'password': keycloak_database['password']},
-            secret_type='kubernetes.io/basic-auth',
-            labels=cnpg_labels,
-        ),
-        secret(
-            'temporal-db-user',
-            core_namespace,
-            {'username': temporal_database['user'], 'password': temporal_database['password']},
-            secret_type='kubernetes.io/basic-auth',
-            labels=cnpg_labels,
-        ),
-        secret(
-            'db-creds',
-            rest_namespace,
-            {'password': rest_database['password']},
-            labels=rest_labels,
-        ),
-        secret(
-            'keycloak-client-secret',
-            rest_namespace,
-            {'keycloak-client-secret': local_config['keycloak']['clientSecret']},
-            labels=rest_labels,
-        ),
-        secret(
-            'temporal-encryption-key',
-            rest_namespace,
-            {'temporal-encryption-key': local_config['temporal']['encryptionKey']},
-            labels=rest_labels,
-        ),
-        {
-            'apiVersion': 'v1',
-            'kind': 'Secret',
-            'metadata': merged(
-                object_metadata('image-pull-secret', rest_namespace),
-                {'labels': rest_labels},
-            ),
-            'type': 'kubernetes.io/dockerconfigjson',
-            'data': {'.dockerconfigjson': 'eyJhdXRocyI6e319'},
-        },
-        secret(
-            'site-registration',
-            rest_namespace,
-            {
-                'site-uuid': local_config['site']['id'],
-                'otp': 'local-dev-otp-token',
-                'creds-url': 'https://nico-rest-site-manager:8100/v1/sitecreds',
-                'cacert': local_ca_certificate,
-            },
-        ),
-        secret(
-            'db-creds',
-            temporal_namespace,
-            {'password': temporal_database['password']},
-            labels={'app.kubernetes.io/part-of': 'temporal'},
-        ),
-    ])
-
 for obj in local_objects:
     k8s_yaml(encode_yaml(obj))
-
-local_config_dependencies = ['cert-manager', 'cnpg-operator', 'vault']
-if enable_rest:
-    local_config_dependencies.append('nico-local-namespaces')
-
 k8s_resource(
     new_name='nico-local-config',
     objects=[object_selector(obj) for obj in local_objects],
-    resource_deps=local_config_dependencies,
+    resource_deps=['nico-core-prereqs', 'cnpg-operator', 'nico-local-namespaces'],
     labels=['infrastructure'],
     pod_readiness='ignore',
 )
@@ -612,7 +564,7 @@ prerequisite(
     version='0.8.1',
     values=postgres_values,
     repo='repo-cnpg',
-    resource_deps=['cnpg-operator', 'nico-local-config'],
+    resource_deps=['cnpg-operator', 'nico-core-prereqs'] + (['nico-local-config'] if enable_rest else []),
 )
 
 k8s_kind(
@@ -629,9 +581,9 @@ k8s_resource(
 if enable_observability:
     exporter_values = observability_values['postgresExporter']
     exporter_values['enabled'] = True
-    exporter_values['database']['host'] = database_config['host']
-    exporter_values['database']['port'] = database_config['port']
-    exporter_values['database']['name'] = database_config['name']
+    exporter_values['database']['host'] = prereqs_values['postgresql']['host']
+    exporter_values['database']['port'] = prereqs_values['postgresql']['port']
+    exporter_values['database']['name'] = prereqs_values['postgresql']['database']
     exporter_values['grafanaDashboards']['namespace'] = observability_namespace
     helm_resource(
         name='nico-postgres-exporter',
@@ -639,7 +591,7 @@ if enable_observability:
         release_name='nico-postgres-exporter',
         namespace=core_namespace,
         deps=[os.path.join(core_charts, 'nico-postgres-exporter'), values_file],
-        resource_deps=['prometheus', 'nico-postgres', 'nico-local-config'],
+        resource_deps=['prometheus', 'nico-postgres', 'nico-core-prereqs'],
         image_deps=['nico-postgres-exporter'],
         image_keys=[('image.repository', 'image.tag')],
         labels=['observability'],
@@ -967,7 +919,7 @@ rest_image(
 
 core_global = all_values['global']
 nico_api_values = component_values(core_global, all_values['nico-api'])
-nico_api_dependencies = ['nico-local-config', 'nico-postgres', 'vault-admin-ca']
+nico_api_dependencies = ['nico-core-prereqs', 'nico-postgres', 'vault-admin-ca']
 
 if enable_dsx_exchange:
     helm_repo(
@@ -1228,7 +1180,7 @@ enabled_resources = [
     'cert-manager',
     'cnpg-operator',
     'vault',
-    'nico-local-config',
+    'nico-core-prereqs',
     'nico-postgres',
     'nico-api',
     'nico-bmc-proxy',
@@ -1252,6 +1204,7 @@ if enable_observability:
 if enable_rest:
     enabled_resources.extend([
         'nico-local-namespaces',
+        'nico-local-config',
         'rest-databases',
         'rest-databases-ready',
         'temporal-certificates',
