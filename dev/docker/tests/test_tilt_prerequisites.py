@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Render local Core prerequisites independently of the development frontend."""
+"""Check Tilt prerequisite inputs against the shared Helm chart contract."""
 
 import ast
 import os
@@ -16,12 +16,11 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class LocalPrerequisitesTest(unittest.TestCase):
     def test_profile_preserves_core_contract_without_site_bootstrap_writers(self):
-        profile = ROOT / "helm-prereqs/values/local-development.yaml"
         ca = ROOT / "dev/certs/localhost/ca.crt"
         key = ROOT / "dev/certs/localhost/ca.key"
         ssh_key = ROOT / "crates/ssh-console/tests/fixtures/ssh_host_ed25519_key"
-        # Evaluate only the actual prerequisite Helm call, using the same inputs
-        # as Tilt. Rendering its file flags catches frontend/chart key drift.
+        # Evaluate the prerequisite configuration and Helm call without running
+        # Tilt. Actual Helm rendering catches frontend/chart input drift.
         tree = ast.parse((ROOT / "dev/deployment/tilt/Tiltfile").read_text())
         calls = [node for node in tree.body if isinstance(node, ast.Expr)
                  and isinstance(node.value, ast.Call)
@@ -30,17 +29,21 @@ class LocalPrerequisitesTest(unittest.TestCase):
             k.arg == "name" and isinstance(k.value, ast.Constant)
             and k.value.value == "nico-core-prereqs" for k in node.value.keywords
         ))
+        configuration = [node for node in tree.body if isinstance(node, ast.Assign)
+                         and any(isinstance(target, ast.Name) and target.id in (
+                             "prereqs_values_file", "prereqs_values", "core_namespace",
+                         ) for target in node.targets)]
         captured = []
-        exec(compile(ast.Module(body=[call], type_ignores=[]), "Tiltfile", "exec"), {
+        exec(compile(ast.Module(body=[*configuration, call], type_ignores=[]), "Tiltfile", "exec"), {
             "helm_resource": lambda **kwargs: captured.append(kwargs),
-            "os": os, "repo_root": str(ROOT), "prereqs_values_file": str(profile),
-            "core_namespace": yaml.safe_load(profile.read_text())["namespace"],
+            "os": os, "repo_root": str(ROOT),
+            "read_yaml": lambda path: yaml.safe_load(Path(path).read_text()),
         })
         resource = captured[0]
-        render_flags = []
-        for index, flag in enumerate(resource["flags"]):
-            if flag in ("--values", "--set-file"):
-                render_flags.extend(resource["flags"][index:index + 2])
+        # Remove only installation controls; preserve all value-affecting flags.
+        render_flags = [flag for flag in resource["flags"]
+                        if flag not in ("--create-namespace", "--wait")
+                        and not flag.startswith("--timeout=")]
         result = subprocess.run(
             ["helm", "template", resource["release_name"], resource["chart"],
              "--namespace", resource["namespace"], *render_flags],
