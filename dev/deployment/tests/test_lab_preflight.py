@@ -100,6 +100,26 @@ class PreflightTest(unittest.TestCase):
             self.assertEqual(document['requested'], {'memory_mib': 8193, 'cpus': 5, 'disk_gib': 49})
             self.assertEqual(len(document['errors']), 3)
 
+    def test_host_read_failure_omits_all_capacity_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            loop = root / 'loop'
+            loop.symlink_to(loop)
+            for path in (root / 'missing', loop):
+                with self.subTest(path=path.name), \
+                        patch.object(PREFLIGHT.platform, 'system', return_value='Linux'), \
+                        patch.object(PREFLIGHT.platform, 'machine', return_value='x86_64'), \
+                        patch.object(PREFLIGHT, 'check_kvm', return_value=12), \
+                        patch.object(PREFLIGHT.sys, 'stdout') as output:
+                    status = PREFLIGHT.main(['host', '--storage-path', str(path),
+                                             '--memory-mib', '1', '--cpus', '1', '--disk-gib', '1'])
+                    document = json.loads(''.join(call.args[0] for call in output.write.call_args_list))
+                    self.assertEqual(status, 1)
+                    self.assertFalse(document['ready'])
+                    self.assertTrue(document['errors'])
+                    self.assertEqual(document['kvm_api_version'], 12)
+                    self.assertFalse({'storage_path', 'requested', 'available'} & document.keys())
+
     def test_unsupported_host_and_missing_storage_fail_closed(self):
         with patch.object(PREFLIGHT.platform, 'system', return_value='Darwin'), \
                 patch.object(PREFLIGHT, 'check_kvm') as kvm, patch.object(PREFLIGHT.sys, 'stdout'):

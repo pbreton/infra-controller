@@ -90,9 +90,14 @@ def main(argv=None):
         report['architecture'] = ARCHITECTURES[platform.machine()]
         report['kvm_api_version'] = check_kvm(report['architecture'])
         if args.scope == 'host':
-            report['storage_path'] = str(args.storage_path.resolve())
-            report['requested'] = {key: getattr(args, key) for key in ('memory_mib', 'cpus', 'disk_gib')}
-            report['available'] = host_capacity(args.storage_path)
+            try:
+                storage_path = args.storage_path.resolve(strict=True)
+            except RuntimeError as error:
+                # Python before 3.13 reports a symlink loop as RuntimeError.
+                raise ValueError(str(error)) from error
+            available = host_capacity(storage_path)
+            report.update(storage_path=str(storage_path), available=available,
+                          requested={key: getattr(args, key) for key in ('memory_mib', 'cpus', 'disk_gib')})
             report['errors'].extend(capacity_errors(report['available'], report['requested']))
     except (OSError, ValueError) as error:
         report['errors'].append(str(error))

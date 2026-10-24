@@ -8,7 +8,7 @@ macOS client reports an unsupported platform.
 
 ## Host budget
 
-Python 3 and a Linux AMD64 or ARM64 host are required. Run as the identity that
+Python 3.9 or newer and a Linux AMD64 or ARM64 host are required. Run as the identity that
 will access KVM. The tool does not change device permissions or invoke `sudo`.
 All budget flags below are required, positive integers with no defaults:
 
@@ -61,8 +61,9 @@ single-target topology validation tracked in
 
 Both commands print one JSON object with `scope`, `architecture`, `ready` and
 `errors`. A successful KVM probe also includes `kvm_api_version`. Host checks
-include `storage_path`, `requested` and `available` once those checks succeed;
-the first probe/read error stops further checks. A budget failure reports all
+include `storage_path`, `requested` and `available` together only after path
+resolution and capacity reads succeed; none of those fields appears on a
+probe/read failure. The first probe/read error stops further checks. A budget failure reports all
 insufficient resources. Exit status is 0 for a pass and 1 for a probe, platform,
 path or capacity failure. Invalid or missing arguments exit 2 with argparse usage
 on stderr; `--help` exits 0 with help text instead of JSON. Neither command
