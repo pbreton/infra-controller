@@ -130,6 +130,7 @@ class GuestSshTest(unittest.TestCase):
                          '--identity', '/tmp/key', '--known-hosts', '/tmp/known_hosts']
             arguments[arguments.index(option) + 1] = value
             with self.subTest(option=option), patch.object(sys, 'argv', arguments), \
+                    patch.object(Path, 'is_file', return_value=True), \
                     patch.object(SSH.subprocess, 'check_output') as command, \
                     patch.object(SSH, 'prepare_known_hosts') as prepare, \
                     contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:

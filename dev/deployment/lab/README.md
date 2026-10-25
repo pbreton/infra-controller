@@ -337,8 +337,8 @@ access. Required flags have no defaults: `--context`, `--address` (IPv4),
 `--identity` (existing private key file) and `--known-hosts` (a writable file or
 new path in an existing directory). Both resolved file paths must exclude
 whitespace, quotes, `%`, `$` and backslashes, which OpenSSH can interpret as
-configuration syntax or expansions. This shared rule is deliberately conservative
-for identity files, which OpenSSH passes without config-line tokenization.
+configuration syntax or expansions. The whitespace, quote and backslash restrictions are deliberately conservative
+for identity paths; the token-expansion restrictions apply to both arguments.
 The defaults are `--namespace bmc-lab`,
 `--release target-one` and `--user lab`. Repeated options use the last value.
 Put an optional remote command after `--`; omitting it opens the guest shell.
