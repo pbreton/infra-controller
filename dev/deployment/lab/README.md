@@ -70,3 +70,66 @@ insufficient resources. Exit status is 0 for a pass and 1 for a probe, platform,
 path or capacity failure. Invalid or missing arguments exit 2 with argparse usage
 on stderr; `--help` exits 0 with help text instead of JSON. Neither command
 reserves resources, changes Kubernetes state nor modifies persistent lab data.
+
+## Scout boot artifacts
+
+The native no-DPU lab uses real Scout userspace with Ubuntu's virtual kernel in
+both the loader and root filesystem. This avoids GPU/DPU driver installation and
+the ARM64 hardware profile's 64 KiB kernel requirement. The builder stages copies
+of the hardware profiles; it does not modify them. These artifacts are for
+isolated development: the inherited profiles include a known root password.
+They are not production hardware images.
+
+Run the commands below from the repository root on the native Linux runtime
+with Docker and Python 3.9 or newer. The Docker daemon must run on that same
+host, because the mkosi build uses bind mounts. On macOS, run this step inside
+the Linux VM. Building does not require KVM; boot validation does.
+
+```bash
+git submodule update --init pxe/mkosi
+make images-dev DEV_TARGET=scout-package DEV_IMAGE=nico-scout-package:local
+make images-dev DEV_TARGET=scout-builder DEV_IMAGE=nico-scout-builder:local
+mkdir -p /tmp/nico-scout-artifacts
+package_container=$(docker create nico-scout-package:local /not-started)
+docker cp "$package_container:/scout.deb" /tmp/nico-scout-artifacts/scout.deb
+docker rm "$package_container"
+docker run --rm --privileged \
+  --mount "type=bind,src=$PWD,dst=/src,readonly" \
+  --mount type=bind,src=/tmp/nico-scout-artifacts,dst=/state \
+  --workdir /src nico-scout-builder:local \
+  python3 dev/deployment/lab/build-scout.py \
+    --scout-package /state/scout.deb --output /state/boot
+```
+
+`scout-package` builds native debug binaries for Scout and its firmware
+supervisor, then invokes the repository's existing package task. Its package
+version is `0.0.0-dev`. The image contains `/scout.deb` and has no runnable
+entrypoint. `scout-builder` contains build tools; it does not contain Scout or
+fetch a package implicitly. Both use the shared `make images-dev` architecture
+selection and local image naming controls.
+
+`build-scout.py` requires `--scout-package` and `--output`, with no defaults.
+It runs as root on native ARM64 or AMD64 Linux with the pinned mkosi submodule
+initialized. The `.deb` must match the runtime architecture. Output must be new
+or empty; an existing artifact directory is rejected. A failed build leaves its
+workspace for diagnosis and requires a different empty output directory to retry.
+No cleanup or cluster operation is performed by this helper.
+
+Successful output contains `aarch64/scout.efi` and `aarch64/scout.squashfs`, or
+`x86_64/scout.efi` and `x86_64/scout.squashfs`. `build/` retains the staged profiles,
+mkosi output and downloaded package cache. `build-info.json` records the native
+architecture, package version, requested virtual-kernel package and SHA-256
+hashes of the input package and both payloads. The manifest is written only after
+both build stages succeed. Distribution packages are resolved during each build;
+these development builds are not promised to be byte-for-byte reproducible.
+Output is root-owned when built in the container. `.dockerignore` excludes the
+retained build workspace if the output directory is later used as an image context.
+
+The root filesystem retains the real Scout service, network handoff helper,
+module loader and current pre-start script. Its build checks both executables
+and their dynamic-library dependencies. GPU package sources and hardware-driver
+post-installation are omitted. No iPXE, OS imager, DHCP service, artifact web
+server, site credential or expected-machine registration is produced here.
+Those are separate boot/admission integration inputs tracked by
+[the Tilt migration](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
+A successful build alone does not establish NICo discovery or instance readiness.

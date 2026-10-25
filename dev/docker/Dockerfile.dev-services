@@ -185,3 +185,32 @@ COPY --from=bmc-mock-builder /out/bmc-mock /usr/local/bin/bmc-mock
 COPY crates/bmc-mock/tls.crt crates/bmc-mock/tls.key /opt/carbide/
 COPY dev/deployment/lab/preflight.py dev/deployment/lab/target.py dev/deployment/lab/network.py /opt/nico-lab/
 ENTRYPOINT ["/usr/bin/tini", "--", "python3", "-B", "/opt/nico-lab/target.py"]
+
+
+FROM source AS scout-package-builder
+
+RUN --mount=type=cache,id=nico-dev-cargo-home-${TARGETARCH},target=/cargo-home,sharing=locked \
+    --mount=type=cache,id=nico-dev-cargo-target-${TARGETARCH},target=/cargo-target,sharing=locked \
+    arch="$(uname -m)" && ln -s /cargo-target /workspace/target && \
+    cargo build --locked --target "${arch}-unknown-linux-gnu" \
+      -p carbide-scout --bin forge-scout -p carbide-libmlx --bin mlx-firmware-supervisor && \
+    VERSION=0.0.0-dev cargo make --makefile Makefile-package.toml \
+      --env CARBIDE_ARCH="${arch}" --env CARBIDE_PROFILE=debug \
+      --env CARBIDE_CRATE=carbide-scout --env CARBIDE_CRATE_DIR=/workspace/crates/scout \
+      --env CARBIDE_PACKAGE=scout package-component && \
+    mkdir -p /out && \
+    cp "/workspace/target/debs/forge-scout_0.0.0-dev_$(dpkg --print-architecture).deb" /out/scout.deb
+
+FROM scratch AS scout-package
+COPY --from=scout-package-builder /out/scout.deb /scout.deb
+
+FROM ${BMC_TARGET_BASE} AS scout-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pefile systemd-container systemd-ukify bubblewrap debootstrap \
+    debian-archive-keyring ubuntu-keyring apt-utils dosfstools mtools squashfs-tools \
+    erofs-utils tar cpio zstd xz-utils btrfs-progs e2fsprogs xfsprogs qemu-utils \
+    uidmap build-essential binutils git ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/*

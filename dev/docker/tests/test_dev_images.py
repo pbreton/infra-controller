@@ -106,6 +106,14 @@ class DevImagesTest(unittest.TestCase):
                 self.assertEqual(calls[-1][calls[-1].index("--target") + 1], "bmc-target")
                 self.assertEqual(calls[-1][calls[-1].index("--platform") + 1], platform)
 
+    def test_scout_artifact_targets_use_the_shared_entrypoint(self):
+        for target in ('scout-package', 'scout-builder'):
+            with self.subTest(target=target):
+                result, calls = self.run_make(arguments=(f'DEV_TARGET={target}',))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(calls[-1][calls[-1].index('--target') + 1], target)
+                self.assertEqual(calls[-1][calls[-1].index('--platform') + 1], 'linux/arm64')
+
     def test_unsupported_platforms_stop_before_building(self):
         for platform in ("linux/ppc64le", "windows/amd64", ""):
             with self.subTest(platform=platform):
