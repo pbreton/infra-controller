@@ -656,6 +656,7 @@ changed PVC identity, or an incompatible mount. Credentials travel through
 stdin and captured output. If initialization succeeds but saving the keys
 Secret fails, it reports a mode-0600 local recovery file containing those keys;
 retain that file securely until the matching Secret has been recovered.
+The helper prints the recovery-file path before starting initialization.
 Initialization output streams directly into that file, so received output
 survives a helper interruption or transport error. The system temporary
 directory can be cleared on reboot; move a needed recovery file to secure,

@@ -105,7 +105,7 @@ class VaultBootstrapTest(unittest.TestCase):
         keys = json.dumps({"root_token": "test-token", "unseal_keys_b64": ["test-key"]})
         for response in (result(keys, code=1),
                          subprocess.TimeoutExpired("kubectl", 90, output=keys.encode()),
-                         result(code=1)):
+                         KeyboardInterrupt(), OSError("transport interrupted"), result(code=1)):
             with self.subTest(response=response), tempfile.TemporaryDirectory() as directory, \
                  patch.object(vault.tempfile, "tempdir", directory), \
                  patch.object(self.bootstrap, "check_mode"), \
@@ -114,7 +114,7 @@ class VaultBootstrapTest(unittest.TestCase):
                  patch.object(self.bootstrap, "status", return_value={"initialized": False, "sealed": True}), \
                  patch.object(self.bootstrap, "vault") as command, \
                  patch.object(self.bootstrap, "create_secret") as create:
-                if isinstance(response, Exception):
+                if isinstance(response, BaseException):
                     command.side_effect = streamed_init(keys, error=response)
                 else:
                     command.side_effect = streamed_init(response.stdout, code=response.returncode)
@@ -122,7 +122,7 @@ class VaultBootstrapTest(unittest.TestCase):
                     self.bootstrap.bootstrap()
                 create.assert_not_called()
                 files = list(Path(directory).iterdir())
-                if isinstance(response, Exception) or response.stdout:
+                if isinstance(response, BaseException) or response.stdout:
                     self.assertEqual(len(files), 1)
                     self.assertEqual(files[0].read_text(), keys)
                     self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
