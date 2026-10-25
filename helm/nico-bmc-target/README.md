@@ -175,7 +175,9 @@ This uses the directional interfaces supported by
 [ISC relay](https://kb.isc.org/docs/isc-dhcp-44-manual-pages-dhcrelay).
 
 Rules carry the target UUID and are removed on graceful shutdown or reconciled
-on the next start of the same target identity. Cleanup failures are logged;
+on the next start of the same target identity and retained guest subnet.
+An owned rule with a different subnet or an unrecognized shape fails startup
+instead of being deleted. Cleanup failures are logged;
 bridge cleanup is still attempted. After uninstall or forceful termination with
 no restart, leftover rules can remain. A different release identity does not
 clean them up. Deleting the disposable kind cluster removes its node network
