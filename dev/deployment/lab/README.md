@@ -448,3 +448,86 @@ the target's `/dev/vda` is outside those paths. Do not infer tenant data erasure
 at release from a successful reprovisioning test. Virtio inventory, hardware
 sanitize coverage and tenant IPv6 remain separate acceptance boundaries in
 [the migration issue](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
+
+## Two-instance IPv4 connectivity
+
+Use two targets on the same node of the dedicated single-node kind cluster.
+The target pods use `hostNetwork`: their separate bridges share that node's
+network namespace. Connected routes and the existing provisioning forwarding
+rules provide the peer path. Packets leave through the peer bridge, not the
+uplink masquerade rule, so guest source addresses should remain unchanged.
+This topology is an isolated flat lab, not a DPU overlay or tenant-isolation test.
+
+Create a separate PVC and values file for each target using the
+[BMC target chart procedure](../../../helm/nico-bmc-target/README.md).
+Keep the same cluster UID, node, architecture, image and provisioning settings,
+with these distinct values:
+
+| Value | `target-one` | `target-two` |
+| --- | --- | --- |
+| `storage.existingClaim` | `target-one-data` | `target-two-data` |
+| `target.instanceIndex` | `1` | `2` |
+| `network.bridgeAddress` | `10.84.40.1/24` | `10.84.41.1/24` |
+| `service.clusterIP` | `10.96.40.10` | `10.96.40.11` |
+| `service.targetPort` | `2443` | `2444` |
+| Host MAC | `02:00:00:01:00:02` | `02:00:00:02:00:02` |
+| BMC MAC | `02:00:00:01:00:01` | `02:00:00:02:00:01` |
+| Chassis serial | `020000010001` | `020000020001` |
+
+The release, PVC and identity must remain distinct. Budget for both guests and
+runtime overhead before deploying them. Register a HostInband segment for each
+bridge subnet, using its bridge address as gateway and reserving the first ten
+addresses. The existing `10.96.40.8/29` underlay segment contains both BMC Service
+addresses. Register each expected machine with its own identity, BMC address and
+metadata name. Admit both through real Scout, then allocate one disk-installed
+instance per machine in the same flat VPC using the preceding lifecycle
+procedure. Check the Core-assigned addresses; do not assume these examples were
+allocated. Wait for both installed operating systems and cloud-init to finish.
+
+The checker needs a Linux or macOS client with Python 3.9+, OpenSSH and kubectl,
+Python 3 and
+SSH access inside both guests, and guest firewall permission for TCP connections
+to ephemeral ports. Use the SSH key installed in both guests' cloud-init data:
+
+```bash
+python3 dev/deployment/lab/check-connectivity.py \
+  --context kind-nico-tilt \
+  --first-address 10.84.40.10 --second-address 10.84.41.10 \
+  --identity /tmp/nico-instance-key \
+  --first-known-hosts /tmp/nico-first-known-hosts \
+  --second-known-hosts /tmp/nico-second-known-hosts
+```
+
+Required options have no defaults: `--context`, `--first-address`,
+`--second-address` (both IPv4), `--identity`, `--first-known-hosts` and
+`--second-known-hosts`. Defaults are `--namespace bmc-lab`, `--user lab`,
+`--first-release target-one` and `--second-release target-two`. Repeated options
+use the last value. The addresses and release names must be distinct; the
+context must start with `kind-`. Each connection uses the
+[SSH helper's validation and host-key rules](#ssh-to-an-installed-guest).
+Use separate host-key files for newly provisioned instances.
+
+The check runs both directions sequentially. In each direction the receiver
+binds its guest address and an OS-selected TCP port, while the sender binds its
+own guest address. The receiver verifies the peer source address and a random
+32-byte payload, then echoes the payload for the sender to verify. SSH only
+starts these programs; the test payload travels directly between the guests.
+No guest files, persistent services, firewall rules or routes are changed.
+The receiver accepts one connection, waits at most 30 seconds for it, and uses
+10-second socket timeouts for data. It expires if the client is interrupted.
+Client-side waits for listener startup and the sender are each bounded to 30
+seconds, followed by at most 15 seconds for the receiver's result. Local SSH
+and relay process groups are stopped when a probe ends or is interrupted.
+
+Success prints one JSON object with `directions`, containing the verified
+`source`, `destination` and payload `bytes` for each direction, and exits 0.
+A failed probe prints an error to stderr and exits 1 without a success object;
+invalid arguments exit 2. `--help` prints usage and exits 0. A failed second
+direction does not erase the fact that the first connection was attempted.
+The check neither allocates nor releases instances and leaves their disks intact.
+
+Repeat after rebooting one instance through Core, verifying that the other
+instance's boot ID stays unchanged. Release one instance and confirm the other
+remains reachable before releasing it too. Keep both targets, Core database and
+Vault together until release completes; then discard the dedicated cluster.
+IPv6, Internet access, DPU routing and secure erase require separate validation.
