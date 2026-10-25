@@ -49,8 +49,8 @@ class ScoutArtifactsTest(unittest.TestCase):
                 SCOUT.vm_config(config)
 
     def test_invalid_package_or_existing_output_does_not_start_a_build(self):
-        for package_arch, existing in [('amd64', False), ('arm64', True)]:
-            with self.subTest(package_arch=package_arch, existing=existing), tempfile.TemporaryDirectory() as directory:
+        for package_arch, existing, initialized in [('amd64', False, True), ('arm64', True, True), ('arm64', False, False)]:
+            with self.subTest(package_arch=package_arch, existing=existing, initialized=initialized), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 package = root / 'scout.deb'
                 package.touch()
@@ -60,7 +60,8 @@ class ScoutArtifactsTest(unittest.TestCase):
                     (output / 'keep').write_text('retained artifact')
                 mkosi = root / 'pxe/mkosi/bin/mkosi'
                 mkosi.parent.mkdir(parents=True)
-                mkosi.touch()
+                if initialized:
+                    mkosi.touch()
                 with patch.object(SCOUT, 'REPO', root), patch.object(SCOUT.platform, 'machine', return_value='aarch64'), \
                         patch.object(SCOUT.platform, 'system', return_value='Linux'), patch.object(SCOUT.os, 'geteuid', return_value=0), \
                         patch.object(SCOUT.subprocess, 'check_output', side_effect=[package_arch, '0.0.0-test']), \
@@ -75,6 +76,21 @@ class ScoutArtifactsTest(unittest.TestCase):
                     self.assertEqual((output / 'keep').read_text(), 'retained artifact')
                 else:
                     self.assertFalse(output.exists())
+
+    def test_unsupported_runtime_is_rejected_before_package_inspection(self):
+        cases = [('armv7l', 'Linux', 0), ('aarch64', 'Darwin', 0), ('x86_64', 'Linux', 1000)]
+        for architecture, system, uid in cases:
+            with self.subTest(architecture=architecture, system=system, uid=uid), \
+                    patch.object(SCOUT.platform, 'machine', return_value=architecture), \
+                    patch.object(SCOUT.platform, 'system', return_value=system), \
+                    patch.object(SCOUT.os, 'geteuid', return_value=uid), \
+                    patch.object(SCOUT.subprocess, 'check_output') as inspect, \
+                    patch.object(sys, 'argv', ['build-scout', '--scout-package', '/missing.deb', '--output', '/unused']), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    SCOUT.main()
+                self.assertEqual(error.exception.code, 2)
+                inspect.assert_not_called()
 
     def test_failed_mkosi_build_does_not_publish_a_manifest_or_payload(self):
         with tempfile.TemporaryDirectory() as directory:
