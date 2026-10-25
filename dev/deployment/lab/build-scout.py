@@ -53,6 +53,13 @@ def stage_profiles(repo, work, package, architecture):
         config = destination / "mkosi.conf"
         config.write_text(vm_config(config.read_text()))
         extra = destination / "mkosi.extra"
+        # systemd-resolved otherwise reserves .local for multicast DNS. These
+        # VM images use the dedicated kind cluster's Service DNS in both stages.
+        resolved = extra / "etc/systemd/resolved.conf.d"
+        resolved.mkdir(parents=True, exist_ok=True)
+        (resolved / "90-nico-lab.conf").write_text(
+            "[Resolve]\nDNS=10.96.0.10\nDomains=~cluster.local\n"
+        )
         (extra / "opt/forge").mkdir(parents=True, exist_ok=True)
         shutil.copy2(pxe / "common_files/forge-scout-network.sh", extra / "opt/forge")
         if profile == f"scout-loader-{architecture}":

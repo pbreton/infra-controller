@@ -177,7 +177,8 @@ Docker runtime.
 The VM Scout loader's default rootfs URL points to
 `http://nico-pxe.nico-system.svc.cluster.local/public/blobs/internal/ARCH/scout.squashfs`.
 An explicit `newrootfs=` kernel argument still takes precedence. Hardware source
-profiles retain their original fallback. Rebuild Scout artifacts using the
+profiles retain their original fallback. Both VM stages route `cluster.local`
+lookups to kind DNS at `10.96.0.10`, rather than multicast DNS. Rebuild Scout artifacts using the
 preceding instructions to get this VM-specific default.
 
 After creating the cluster using the [Tilt setup instructions](../tilt/README.md):

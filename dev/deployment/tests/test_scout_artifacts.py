@@ -30,6 +30,8 @@ class ScoutArtifactsTest(unittest.TestCase):
                 for profile, original in originals.items():
                     self.assertEqual((ROOT / 'pxe/mkosi.profiles' / profile / 'mkosi.conf').read_bytes(), original)
                     staged = work / 'mkosi.profiles' / profile
+                    self.assertEqual((staged / 'mkosi.extra/etc/systemd/resolved.conf.d/90-nico-lab.conf').read_text(),
+                                     '[Resolve]\nDNS=10.96.0.10\nDomains=~cluster.local\n')
                     lines = [line.strip() for line in (staged / 'mkosi.conf').read_text().splitlines()]
                     self.assertEqual([line for line in lines if line.startswith('linux-image-')], ['linux-image-virtual'])
                     self.assertFalse(any(line.startswith(('linux-headers-', 'linux-modules-', 'linux-firmware')) for line in lines))
