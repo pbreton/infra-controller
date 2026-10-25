@@ -81,8 +81,9 @@ isolated development: the inherited profiles include a known root password.
 They are not production hardware images.
 
 Run the commands below from the repository root on the native Linux runtime
-with Docker and Python 3.9 or newer. The Docker daemon must run on that same
-host, because the mkosi build uses bind mounts. On macOS, run this step inside
+with Docker, Git and Make. The builder container supplies Python and the mkosi
+prerequisites. The Docker daemon must run on that same host, because the mkosi
+build uses bind mounts. On macOS, run this step inside
 the Linux VM. Building does not require KVM; boot validation does.
 
 ```bash
