@@ -7,6 +7,8 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import socket
+import time
 import sys
 import unittest
 from unittest.mock import patch
@@ -47,6 +49,28 @@ class GuestConnectivityTest(unittest.TestCase):
         self.assertEqual(len(processes), 2)
         self.assertTrue(all(process.poll() is not None for process in processes))
         self.assertTrue(all(process.stdout.closed for process in processes))
+
+    def test_listener_startup_handles_partial_output_and_early_exit(self):
+        for code, error in [("import time; print('{',end='',flush=True); time.sleep(10)", 'timed out'),
+                            ('raise SystemExit(7)', 'exited before reporting')]:
+            with self.subTest(code=code), CHECK.guest_process([sys.executable, '-u', '-c', code]) as process:
+                with self.assertRaisesRegex(RuntimeError, error):
+                    CHECK.listener_port(process, timeout=0.2)
+
+    def test_cleanup_stops_descendant_after_direct_child_exits(self):
+        child = "import socket,time; s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(); print(s.getsockname()[1],flush=True); time.sleep(10)"
+        parent = 'import subprocess,sys; subprocess.Popen([sys.executable,"-u","-c",sys.argv[1]])'
+        with CHECK.guest_process([sys.executable, '-u', '-c', parent, child]) as process:
+            port = int(process.stdout.readline())
+            process.wait(timeout=3)
+        for attempt in range(20):
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=0.1):
+                    pass
+            except OSError:
+                return
+            time.sleep(0.05)
+        self.fail('descendant listener survived process-group cleanup')
 
     def test_receiver_rejects_translated_source_or_wrong_payload(self):
         for expected_source, payload in [('127.0.0.2', 'expected'), ('127.0.0.1', 'wrong')]:

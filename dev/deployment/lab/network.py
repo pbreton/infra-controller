@@ -73,9 +73,12 @@ class Network:
         yield 'filter', 'FORWARD', ['-o', bridge, '-d', subnet, '-m', 'conntrack',
                                     '--ctstate', 'RELATED,ESTABLISHED', *tag, '-j', 'ACCEPT']
         yield 'nat', 'POSTROUTING', ['-s', subnet, '-o', self.uplink, *tag, '-j', 'MASQUERADE']
-        # Insert last, ahead of masquerade and kube-proxy's POSTROUTING jump.
+        # Insert exemptions after masquerade so they precede it in POSTROUTING.
         # DNAT has already selected the pod; Scout must retain the guest source.
         yield 'nat', 'POSTROUTING', ['-s', subnet, '-d', str(self.pod_cidr), *tag, '-j', 'ACCEPT']
+        # kindnet also masquerades non-pod destinations. Preserve peer sources
+        # only when the node delivers traffic into this target's own bridge.
+        yield 'nat', 'POSTROUTING', ['-d', subnet, '-o', bridge, *tag, '-j', 'ACCEPT']
 
     def upstreams(self):
         # kindnet gives each pod-facing veth an address from the node pod CIDR.

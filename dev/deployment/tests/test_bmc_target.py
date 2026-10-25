@@ -247,11 +247,12 @@ class ProvisioningNetworkTest(unittest.TestCase):
         with patch('network.subprocess.Popen') as spawn:
             network.start()
         insertions = [call for call in calls if call[0] == 'iptables']
-        self.assertEqual(len(insertions), 4)
+        self.assertEqual(len(insertions), 5)
         nat = [call for call in insertions if call[4] == 'nat']
-        self.assertEqual([call[-1] for call in nat], ['MASQUERADE', 'ACCEPT'])
+        self.assertEqual([call[-1] for call in nat], ['MASQUERADE', 'ACCEPT', 'ACCEPT'])
         self.assertTrue(all(call[7] == '1' for call in nat))
-        self.assertIn('10.244.0.0/24', nat[-1])
+        self.assertIn('10.244.0.0/24', nat[-2])
+        self.assertEqual(nat[-1][8:12], ('-d', '10.84.40.0/24', '-o', network.config['bridge']))
         self.assertTrue(all(network.owner in call for call in insertions))
         self.assertEqual(spawn.call_args.args[0][-5:], ['-id', network.config['bridge'], '-iu', 'eth0', '10.96.40.20'])
 
@@ -259,13 +260,14 @@ class ProvisioningNetworkTest(unittest.TestCase):
         network = self.network()
         tag = network.owner
         own = f'-A FORWARD -s 10.84.40.0/24 -m comment --comment "{tag}" -j ACCEPT'
+        incoming = f'-A POSTROUTING -d 10.84.40.0/24 -o {network.config["bridge"]} -m comment --comment "{tag}" -j ACCEPT'
         foreign = '-A FORWARD -s 10.84.41.0/24 -m comment --comment other-target -j ACCEPT'
         for bad in ('', f'-A OTHER -s 10.84.40.0/24 -m comment --comment "{tag}" -j DROP'):
             with self.subTest(bad=bad):
                 commands = []
                 def run(*args):
                     commands.append(args)
-                    return '\n'.join([own, foreign, bad]) if args == ('iptables-save', '-t', 'filter') else ''
+                    return '\n'.join([own, foreign, bad]) if args == ('iptables-save', '-t', 'filter') else incoming
                 network.run = run
                 if bad:
                     with self.assertRaises(ValueError):
@@ -274,7 +276,8 @@ class ProvisioningNetworkTest(unittest.TestCase):
                 else:
                     network.start()  # Disabled mode cleans an earlier interrupted enabled run.
                     deletes = [command for command in commands if command[0] == 'iptables']
-                    self.assertEqual(len(deletes), 1)
+                    self.assertEqual(len(deletes), 2)
+                    self.assertIn('-d', deletes[1])
                     self.assertIn('-D', deletes[0])
                     self.assertIn(tag, deletes[0])
                     self.assertNotIn('other-target', deletes[0])

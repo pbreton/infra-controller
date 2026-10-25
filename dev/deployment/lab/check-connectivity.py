@@ -15,6 +15,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import time
 
 # These programs run in the installed guests, not in the relay pods. Each
 # listener accepts one connection and expires even if the controlling SSH dies.
@@ -64,6 +65,9 @@ def guest_process(command):
     try:
         yield process
     finally:
+        # Reap an exited leader before signaling: macOS may return EPERM for
+        # a process group containing only its unreaped zombie.
+        process.poll()
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -72,16 +76,30 @@ def guest_process(command):
         process.stdout.close()
 
 
+def listener_port(process, timeout=30):
+    deadline = time.monotonic() + timeout
+    line = bytearray()
+    while len(line) < 1024:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([process.stdout], [], [], remaining)[0]:
+            raise RuntimeError('timed out waiting for guest listener')
+        value = os.read(process.stdout.fileno(), 1)
+        if not value:
+            raise RuntimeError('guest listener exited before reporting a port')
+        if value == b'\n':
+            port = json.loads(line)['port']
+            if type(port) is not int or not 1 <= port <= 65535:
+                raise RuntimeError('guest listener returned an invalid port')
+            return port
+        line.extend(value)
+    raise RuntimeError('guest listener returned an oversized startup message')
+
+
 def probe(args, source, destination):
     token = secrets.token_hex(16)
     command = ssh_command(args, destination, SERVER, destination['address'], source['address'], token)
     with guest_process(command) as server:
-        if not select.select([server.stdout], [], [], 30)[0]:
-            raise RuntimeError('timed out waiting for guest listener')
-        ready = json.loads(server.stdout.readline())
-        port = ready['port']
-        if type(port) is not int or not 1 <= port <= 65535:
-            raise RuntimeError('guest listener returned an invalid port')
+        port = listener_port(server)
         client_command = ssh_command(args, source, CLIENT, source['address'], destination['address'], port, token)
         with guest_process(client_command) as client:
             client.communicate(timeout=30)

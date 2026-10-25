@@ -166,6 +166,11 @@ keeps its source address, including after Service DNAT; this is needed by
 services that identify the provisioning host from its source IP. Traffic leaving
 through the uplink is masqueraded to the node address. This enables access
 through existing upstream routing; it does not establish Internet reachability.
+Packets destined for this target's subnet and exiting its bridge are exempt from
+NAT before kindnet's catch-all masquerade rule, preserving peer guest sources.
+This exemption does not add inbound forwarding permission or modify peer rules.
+See [two-instance checks](../../dev/deployment/lab/README.md#two-instance-ipv4-connectivity)
+for the supported same-node topology.
 This isolated lab network is not a tenant security boundary.
 
 The relay accepts requests only from its guest bridge and replies from the

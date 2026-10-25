@@ -454,8 +454,9 @@ sanitize coverage and tenant IPv6 remain separate acceptance boundaries in
 Use two targets on the same node of the dedicated single-node kind cluster.
 The target pods use `hostNetwork`: their separate bridges share that node's
 network namespace. Connected routes and the existing provisioning forwarding
-rules provide the peer path. Packets leave through the peer bridge, not the
-uplink masquerade rule, so guest source addresses should remain unchanged.
+rules provide the peer path. Each target exempts packets destined for its own
+subnet and exiting through its bridge from NAT before kindnet's catch-all
+masquerade rule. This preserves guest source addresses on the peer path.
 This topology is an isolated flat lab, not a DPU overlay or tenant-isolation test.
 
 Create a separate PVC and values file for each target using the
@@ -517,7 +518,8 @@ The receiver accepts one connection, waits at most 30 seconds for it, and uses
 10-second socket timeouts for data. It expires if the client is interrupted.
 Client-side waits for listener startup and the sender are each bounded to 30
 seconds, followed by at most 15 seconds for the receiver's result. Local SSH
-and relay process groups are stopped when a probe ends or is interrupted.
+and relay process groups are stopped on completion, Python exceptions or Ctrl-C.
+SIGTERM, SIGHUP and forced termination do not guarantee local process cleanup.
 
 Success prints one JSON object with `directions`, containing the verified
 `source`, `destination` and payload `bytes` for each direction, and exits 0.
