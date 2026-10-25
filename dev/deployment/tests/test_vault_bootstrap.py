@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import base64
 import importlib.util
+import os
+import signal
+import sys
+import time
 import json
 from pathlib import Path
 import subprocess
@@ -13,6 +18,16 @@ SCRIPT = Path(__file__).resolve().parents[1] / "tilt/vault-bootstrap.py"
 spec = importlib.util.spec_from_file_location("vault_bootstrap", SCRIPT)
 vault = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(vault)
+
+
+def streamed_init(payload, code=0, error=None):
+    def run(*args, **kwargs):
+        kwargs["stdout"].write(payload)
+        kwargs["stdout"].flush()
+        if error:
+            raise error
+        return result(code=code)
+    return run
 
 
 def result(output="", error="", code=0):
@@ -77,7 +92,7 @@ class VaultBootstrapTest(unittest.TestCase):
              patch.object(self.bootstrap, "get", return_value={"metadata": {"uid": "pvc"}, "status": {"phase": "Bound"}}), \
              patch.object(self.bootstrap, "owned_secret", return_value=None), \
              patch.object(self.bootstrap, "status", return_value={"initialized": False, "sealed": True}), \
-             patch.object(self.bootstrap, "vault", return_value=result(keys)), \
+             patch.object(self.bootstrap, "vault", side_effect=streamed_init(keys)), \
              patch.object(self.bootstrap, "create_secret", side_effect=vault.VaultError("unavailable")):
             with self.assertRaisesRegex(vault.VaultError, "Initialization keys need recovery"):
                 self.bootstrap.bootstrap()
@@ -100,9 +115,9 @@ class VaultBootstrapTest(unittest.TestCase):
                  patch.object(self.bootstrap, "vault") as command, \
                  patch.object(self.bootstrap, "create_secret") as create:
                 if isinstance(response, Exception):
-                    command.side_effect = response
+                    command.side_effect = streamed_init(keys, error=response)
                 else:
-                    command.return_value = response
+                    command.side_effect = streamed_init(response.stdout, code=response.returncode)
                 with self.assertRaises(vault.VaultError):
                     self.bootstrap.bootstrap()
                 create.assert_not_called()
@@ -157,6 +172,89 @@ class VaultBootstrapTest(unittest.TestCase):
                 self.assertEqual(any("certs/root/generate/internal" in call.args
                                      for call in command.call_args_list), created)
 
+    def test_initialize_then_restart_round_trips_the_secret_write_contract(self):
+        keys = {"root_token": "test-token", "unseal_keys_b64": ["test-key"]}
+        objects = {}
+        created = []
+        def get(kind, name):
+            if kind == "statefulset":
+                return {"spec": {"template": {"spec": {"containers": [{"name": "vault"}]}}}}
+            if kind == "pvc":
+                return {"metadata": {"uid": "pvc"}, "status": {"phase": "Bound"}}
+            return objects.get(name)
+        def kube(*args, data=None):
+            self.assertEqual(args, ("create", "-f", "-"))
+            obj = json.loads(data)
+            self.assertEqual((obj["apiVersion"], obj["kind"], obj["type"]), ("v1", "Secret", "Opaque"))
+            self.assertEqual(obj["metadata"]["namespace"], "nico-system")
+            self.assertTrue(obj["immutable"])
+            name = obj["metadata"]["name"]
+            self.assertNotIn(name, objects)
+            obj["data"] = {k: base64.b64encode(v.encode()).decode() for k, v in obj.pop("stringData").items()}
+            objects[name] = obj
+            created.append(name)
+            return ""
+        with tempfile.TemporaryDirectory() as directory, patch.object(vault.tempfile, "tempdir", directory):
+            for initialized in (False, True):
+                bootstrap = vault.Bootstrap("kind-test", "nico-system")
+                created.clear()
+                def command(*args, **kwargs):
+                    if args[:2] == ("operator", "init"):
+                        self.assertFalse(initialized)
+                        return streamed_init(json.dumps(keys))(*args, **kwargs)
+                    self.assertEqual(args, ("write", "sys/unseal", "-"))
+                    self.assertEqual(bootstrap.token, "test-token")
+                    self.assertEqual(json.loads(kwargs["data"]), {"key": "test-key"})
+                    return result()
+                with patch.object(bootstrap, "get", side_effect=get), \
+                     patch.object(bootstrap, "kube", side_effect=kube), \
+                     patch.object(bootstrap, "vault", side_effect=command), \
+                     patch.object(bootstrap, "configure"), \
+                     patch.object(bootstrap, "status", side_effect=[
+                         {"initialized": initialized, "sealed": True}, {"sealed": False}]):
+                    bootstrap.bootstrap()
+                self.assertEqual(created, [] if initialized else [vault.KEYS, vault.TOKEN])
+                self.assertEqual(json.loads(base64.b64decode(objects[vault.KEYS]["data"]["keys.json"])), keys)
+                self.assertEqual(base64.b64decode(objects[vault.TOKEN]["data"]["token"]), b"test-token")
+                self.assertEqual(list(Path(directory).iterdir()), [])
+            objects[vault.TOKEN]["data"]["token"] = base64.b64encode(b"different").decode()
+            with patch.object(bootstrap, "get", side_effect=get), \
+                 patch.object(bootstrap, "status", return_value={"initialized": True, "sealed": True}), \
+                 patch.object(bootstrap, "vault") as command, patch.object(bootstrap, "kube") as write:
+                with self.assertRaisesRegex(vault.VaultError, "Core token differs"):
+                    bootstrap.bootstrap()
+                command.assert_not_called()
+                write.assert_not_called()
+
+    def test_init_output_reaches_file_before_transport_returns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "kubectl"
+            executable.write_text(f"#!{sys.executable}\nimport os,time\nos.write(1, b'captured-init-output')\ntime.sleep(30)\n")
+            executable.chmod(0o755)
+            output = root / "recovery"
+            code = f"""import importlib.util
+s=importlib.util.spec_from_file_location('bootstrap', {str(SCRIPT)!r})
+m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+with open({str(output)!r}, 'w') as f:
+ m.Bootstrap('kind-test', 'nico-system').vault('operator', 'init', stdout=f)
+"""
+            process = subprocess.Popen([sys.executable, "-c", code], start_new_session=True,
+                                       env={**os.environ, "PATH": str(root)}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and (not output.exists() or not output.stat().st_size):
+                    time.sleep(0.02)
+                self.assertIsNone(process.poll(), "Transport must still be running")
+                self.assertEqual(output.read_text(), "captured-init-output")
+            finally:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                process.communicate(timeout=5)
+            self.assertEqual(output.read_text(), "captured-init-output")
+
     def test_transport_keeps_token_and_payload_out_of_argv(self):
         self.bootstrap.token = "test-token"
         with patch.object(vault.subprocess, "run", return_value=result()) as run:
@@ -165,7 +263,8 @@ class VaultBootstrapTest(unittest.TestCase):
         self.assertNotIn("test-token", " ".join(args[0]))
         self.assertNotIn("test-key", " ".join(args[0]))
         self.assertEqual(kwargs["input"], 'test-token\n{"key":"test-key"}')
-        self.assertTrue(kwargs["capture_output"])
+        self.assertEqual(kwargs["stdout"], subprocess.PIPE)
+        self.assertEqual(kwargs["stderr"], subprocess.PIPE)
 
 
 if __name__ == "__main__":

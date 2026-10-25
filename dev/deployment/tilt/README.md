@@ -656,8 +656,10 @@ changed PVC identity, or an incompatible mount. Credentials travel through
 stdin and captured output. If initialization succeeds but saving the keys
 Secret fails, it reports a mode-0600 local recovery file containing those keys;
 retain that file securely until the matching Secret has been recovered.
-Captured initialization output is also retained on a transport error if any
-arrived. Empty output cannot recover keys; bootstrap never reinitializes an
+Initialization output streams directly into that file, so received output
+survives a helper interruption or transport error. The system temporary
+directory can be cleared on reboot; move a needed recovery file to secure,
+durable storage promptly. Empty output cannot recover keys; bootstrap never reinitializes an
 already initialized Vault.
 
 To recover a complete initialization JSON file into a missing keys Secret, first

@@ -74,13 +74,14 @@ class Bootstrap:
             "stringData": values,
         }))
 
-    def vault(self, *args, data=None, allow_failure=False):
+    def vault(self, *args, data=None, allow_failure=False, stdout=None):
         # Token and JSON payload travel on stdin, never argv or Tilt output.
         command = self.kubectl + ["exec", "-i", "statefulset/nico-vault", "--", "sh", "-ec",
                                   'read -r VAULT_TOKEN; export VAULT_TOKEN; '
                                   'export VAULT_ADDR=http://127.0.0.1:8200; exec vault "$@"', "vault"]
         result = subprocess.run(command + list(args), input=self.token + "\n" + (data or ""),
-                                text=True, capture_output=True, timeout=90)
+                                text=True, stdout=stdout if stdout is not None else subprocess.PIPE,
+                                stderr=subprocess.PIPE, timeout=90)
         if result.returncode and not allow_failure:
             raise VaultError("Vault operation failed: " + args[0])
         return result
@@ -105,30 +106,25 @@ class Bootstrap:
                 raise VaultError("Vault is empty but retained credentials exist; restore its original data")
             # Keep a mode-0600 recovery file if Kubernetes cannot retain the keys.
             fd, recovery = tempfile.mkstemp(prefix="nico-vault-init-", suffix=".json")
-            try:
-                result = self.vault("operator", "init", "-key-shares=1", "-key-threshold=1",
-                                    "-format=json", allow_failure=True)
-            except subprocess.TimeoutExpired as error:
-                captured = error.stdout or ""
-                if isinstance(captured, bytes):
-                    captured = captured.decode("utf-8", errors="replace")
-                result = subprocess.CompletedProcess([], 1, captured, "")
-            except OSError:
-                os.close(fd)
-                os.unlink(recovery)
-                raise
-            with os.fdopen(fd, "w") as output:
-                output.write(result.stdout)
-                output.flush()
-                os.fsync(output.fileno())
-            if not result.stdout.strip():
+            with os.fdopen(fd, "w+") as output:
+                try:
+                    result = self.vault("operator", "init", "-key-shares=1", "-key-threshold=1",
+                                        "-format=json", allow_failure=True, stdout=output)
+                except (subprocess.TimeoutExpired, KeyboardInterrupt, OSError):
+                    result = subprocess.CompletedProcess([], 1)
+                finally:
+                    output.flush()
+                    os.fsync(output.fileno())
+                output.seek(0)
+                captured = output.read()
+            if not captured.strip():
                 os.unlink(recovery)
                 raise VaultError("No initialization keys returned; inspect Vault state before retrying")
             if result.returncode:
                 raise VaultError("Initialization transport failed; captured output needs recovery from " + recovery)
             try:
-                keys = json.loads(result.stdout)
-                self.create_secret(KEYS, {"keys.json": result.stdout})
+                keys = json.loads(captured)
+                self.create_secret(KEYS, {"keys.json": captured})
             except Exception as error:
                 raise VaultError("Initialization keys need recovery from " + recovery) from error
             os.unlink(recovery)
