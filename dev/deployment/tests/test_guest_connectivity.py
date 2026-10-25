@@ -5,6 +5,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import select
 from pathlib import Path
 import subprocess
 import socket
@@ -54,6 +55,8 @@ class GuestConnectivityTest(unittest.TestCase):
         for code, error, timeout in [("import time; print('{',end='',flush=True); time.sleep(10)", 'timed out', 0.2),
                                      ('raise SystemExit(7)', 'exited before reporting', 5)]:
             with self.subTest(code=code), CHECK.guest_process([sys.executable, '-u', '-c', code]) as process:
+                if error == 'timed out':
+                    self.assertTrue(select.select([process.stdout], [], [], 5)[0])
                 with self.assertRaisesRegex(RuntimeError, error):
                     CHECK.listener_port(process, timeout=timeout)
 
