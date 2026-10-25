@@ -123,3 +123,17 @@ class GuestSshTest(unittest.TestCase):
                 with self.subTest(name=name), self.assertRaises(ValueError):
                     SSH.prepare_known_hosts(path)
                 self.assertFalse(path.exists())
+
+    def test_reinterpreted_paths_rejected_before_cluster_access(self):
+        for option, value in [('--identity', '/tmp/key%u'), ('--known-hosts', '/tmp/known hosts')]:
+            arguments = ['ssh-guest', '--context', 'kind-lab', '--address', '10.84.40.10',
+                         '--identity', '/tmp/key', '--known-hosts', '/tmp/known_hosts']
+            arguments[arguments.index(option) + 1] = value
+            with self.subTest(option=option), patch.object(sys, 'argv', arguments), \
+                    patch.object(SSH.subprocess, 'check_output') as command, \
+                    patch.object(SSH, 'prepare_known_hosts') as prepare, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                SSH.main()
+            self.assertEqual(error.exception.code, 2)
+            command.assert_not_called()
+            prepare.assert_not_called()
