@@ -56,9 +56,14 @@ def stage_profiles(repo, work, package, architecture):
         (extra / "opt/forge").mkdir(parents=True, exist_ok=True)
         shutil.copy2(pxe / "common_files/forge-scout-network.sh", extra / "opt/forge")
         if profile == f"scout-loader-{architecture}":
-            shutil.copy2(
-                pxe / "common_files/scout-loader-rclocal", extra / "etc/rc.local"
-            )
+            loader = (pxe / "common_files/scout-loader-rclocal").read_text()
+            legacy = 'http://carbide-static-pxe.forge/public/blobs/internal/'
+            if loader.count(legacy) != 1:
+                raise ValueError("Scout loader no longer has the expected rootfs fallback")
+            (extra / "etc/rc.local").write_text(loader.replace(
+                legacy, 'http://nico-pxe.nico-system.svc.cluster.local/public/blobs/internal/'
+            ))
+            (extra / "etc/rc.local").chmod(0o755)
         else:
             # GPU driver repositories and post-install actions do not apply to
             # these virtual targets. Preserve the real Scout service and agent.
@@ -149,6 +154,8 @@ def main():
     payload.mkdir()
     shutil.copy2(built / "loader.efi", payload / "scout.efi")
     shutil.copy2(built / "scout.squashfs", payload / "scout.squashfs")
+    for artifact in payload.iterdir():
+        artifact.chmod(0o644)
     (output / "build-info.json").write_text(
         json.dumps(
             {

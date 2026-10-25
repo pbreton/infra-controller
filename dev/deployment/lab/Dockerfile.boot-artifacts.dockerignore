@@ -1,0 +1,9 @@
+**
+!aarch64
+!aarch64/ipxe.efi
+!aarch64/scout.efi
+!aarch64/scout.squashfs
+!x86_64
+!x86_64/ipxe.efi
+!x86_64/scout.efi
+!x86_64/scout.squashfs

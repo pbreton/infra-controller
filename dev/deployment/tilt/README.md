@@ -730,3 +730,12 @@ access and an explicit host budget. Then use the standalone
 [native BMC target workflow](../../../helm/nico-bmc-target/README.md)
 to build and exercise one guest through its dedicated Tilt entrypoint.
 The default machine-a-tron workflow does not require this check.
+
+## Native BMC-backed Scout lab
+
+The opt-in `--bmc-lab` profile connects Core, DHCP and PXE to real Scout running
+in native KVM guests. It requires persistent Vault and a supplied boot-artifact
+image on a fresh kind cluster. Follow the
+[Scout admission workflow](../lab/README.md#connect-scout-to-the-tilt-stack)
+for image builds, target registration, retained-state boundaries and the live
+Scout check. Ordinary Tilt development continues to use MAT by default.

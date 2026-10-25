@@ -236,7 +236,7 @@ class FrontendTest(unittest.TestCase):
             raise ValueError(message)
         for pod_name in ("mat-test", "missing"):
             with self.subTest(pod_name=pod_name):
-                scope = {"tilt_values": {"machineATronDhcp": {"podName": pod_name}},
+                scope = {"bmc_lab": False, "tilt_values": {"machineATronDhcp": {"podName": pod_name}},
                          "all_values": {"nico-machine-a-tron": {"pods": {
                              "mat-test": {"machines": {"compute": {"hostCount": 1}}}}}},
                          "fail": fail}

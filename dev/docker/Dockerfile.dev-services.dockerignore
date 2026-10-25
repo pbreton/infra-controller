@@ -38,3 +38,6 @@
 !Makefile-build.toml
 !scripts
 !scripts/check-aarch64-pagesize.sh
+
+!pxe/scout-firmware-scripts
+!pxe/scout-firmware-scripts/**

@@ -1,0 +1,117 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+import ast
+import os
+from pathlib import Path
+import subprocess
+import unittest
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[3]
+TILT = ROOT / 'dev/deployment/tilt/Tiltfile'
+
+
+class ScoutWiringTest(unittest.TestCase):
+    def profile(self, bmc, arch='aarch64'):
+        tree = ast.parse(TILT.read_text())
+        calls = []
+        values = yaml.safe_load((TILT.parent / 'values.yaml').read_text())
+        selected = [n for n in tree.body if isinstance(n, ast.If)
+                    and isinstance(n.test, ast.Name) and n.test.id == 'bmc_lab'
+                    and any(isinstance(x, ast.Call) and getattr(x.func, 'id', '') == 'helm_chart'
+                            for x in ast.walk(n))]
+        env = dict(bmc_lab=bmc, nico_api_values=values['nico-api'], all_values=values,
+                   core_global=values['global'], core_namespace='nico-system',
+                   core_charts=str(ROOT / 'helm/charts'), tilt_dir=str(TILT.parent), os=os,
+                   read_file=lambda p: Path(p).read_text(), compiler_arch=arch,
+                   boot_artifact_image='native-artifacts:test',
+                   component_values=lambda a, b: dict(global_values=a, **b),
+                   helm_chart=lambda **kw: calls.append(kw))
+        exec(compile(ast.Module(body=selected, type_ignores=[]), 'Tiltfile', 'exec'), env)
+        return calls, values
+
+    def test_real_scout_profile_renders_firmware_and_metadata_endpoints(self):
+        for arch in ('aarch64', 'x86_64'):
+            with self.subTest(arch=arch):
+                calls, values = self.profile(True, arch)
+                pxe = calls[0]
+                self.assertEqual(pxe['resource_deps'], ['nico-api'])
+                self.assertEqual(pxe['image_deps'], ['nico-pxe'])
+                settings = pxe['values']
+                settings['global'] = values['global']
+                result = subprocess.run(['helm', 'template', 'nico-pxe', str(ROOT / 'helm/charts/nico-pxe'),
+                                         '-n', 'nico-system', '-f', '-'], input=yaml.safe_dump(settings),
+                                        capture_output=True, text=True, check=True, timeout=30)
+                resources = list(yaml.safe_load_all(result.stdout))
+                service = next(x for x in resources if x['kind'] == 'Service' and x['metadata']['name'] == 'nico-pxe')
+                dhcp = values['nico-dhcp']['config']['kea']['hookParameters']
+                self.assertEqual(service['spec']['clusterIP'], dhcp['provisioningServer'])
+                self.assertEqual([p['port'] for p in service['spec']['ports']], [8080, 80])
+                config = next(x for x in resources if x['kind'] == 'ConfigMap')['data']
+                self.assertEqual(config['CARBIDE_API_URL'], 'https://nico-api.nico-system.svc.cluster.local:1079')
+                deployment = next(x for x in resources if x['kind'] == 'Deployment')
+                init = deployment['spec']['template']['spec']['initContainers'][0]
+                self.assertEqual(init['image'], 'native-artifacts:test')
+                self.assertIn('/' + arch, init['command'][-1])
+                core = values['nico-api']
+                self.assertEqual(core['extraEnv'], [])
+                self.assertIn('permissive_mode = false', core['siteConfig']['nicoApiSiteConfig'])
+                self.assertIn('allow_machineatron_scout_stream = false', core['siteConfig']['nicoApiSiteConfig'])
+
+    def test_default_mat_configuration_is_preserved(self):
+        calls, values = self.profile(False)
+        self.assertEqual(calls, [])
+        self.assertEqual(values['nico-api']['extraEnv'][0]['value'], '1')
+        self.assertEqual(values['nico-dhcp']['config']['kea']['hookParameters']['provisioningServer'], '127.0.0.1')
+
+    def test_incomplete_bmc_mode_rejected_before_deployment(self):
+        tree = ast.parse(TILT.read_text())
+        guards = [n for n in tree.body if isinstance(n, ast.If)
+                  and any(isinstance(x, ast.Constant) and isinstance(x.value, str)
+                          and 'requires --' in x.value and ('bmc-lab' in x.value or 'boot-artifact' in x.value)
+                          for x in ast.walk(n))]
+        def fail(message):
+            raise ValueError(message)
+        for bmc, vault, artifact in [(True, False, 'image'), (True, True, ''), (False, True, 'image')]:
+            with self.subTest(bmc=bmc, vault=vault, artifact=artifact), self.assertRaises(ValueError):
+                exec(compile(ast.Module(body=guards, type_ignores=[]), 'Tiltfile', 'exec'),
+                     dict(bmc_lab=bmc, persistent_vault=vault, boot_artifact_image=artifact, fail=fail))
+
+    def test_bmc_mode_does_not_enable_mat_or_its_readiness_resource(self):
+        tree = ast.parse(TILT.read_text())
+        assignments = [n for n in tree.body if isinstance(n, ast.Assign)
+                       and any(isinstance(t, ast.Name) and t.id == 'enabled_resources' for t in n.targets)]
+        filtering = [n for n in tree.body if isinstance(n, ast.If)
+                     and isinstance(n.test, ast.Name) and n.test.id == 'bmc_lab'
+                     and any(isinstance(x, ast.Name) and x.id == 'enabled_resources' for x in ast.walk(n))]
+        for bmc in (False, True):
+            with self.subTest(bmc=bmc):
+                env = dict(bmc_lab=bmc)
+                exec(compile(ast.Module(body=assignments + filtering, type_ignores=[]), 'Tiltfile', 'exec'), env)
+                names = env['enabled_resources']
+                self.assertEqual('nico-pxe' in names, bmc)
+                for name in ('nico-machine-a-tron', 'nico-ssh-console-rs', 'stack-ready'):
+                    self.assertEqual(name in names, not bmc)
+
+    def test_opposite_mode_release_blocks_configuration_changes(self):
+        tree = ast.parse(TILT.read_text())
+        nodes = [n for n in tree.body if (
+            isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'conflicting_release' for t in n.targets)
+        ) or (
+            isinstance(n, ast.If) and any(isinstance(x, ast.Constant) and isinstance(x.value, str)
+                                        and 'Cannot change between MAT and BMC' in x.value for x in ast.walk(n))
+        )]
+        def fail(message):
+            raise ValueError(message)
+        for bmc in (False, True):
+            calls = []
+            def local(command, **kwargs):
+                calls.append(command)
+                return 'existing-release'
+            with self.subTest(bmc=bmc), self.assertRaisesRegex(ValueError, 'Cannot change'):
+                exec(compile(ast.Module(body=nodes, type_ignores=[]), 'Tiltfile', 'exec'), dict(
+                    bmc_lab=bmc, cluster_context='kind-test', core_namespace='nico-system', local=local, fail=fail))
+            self.assertIn('^nico-machine-a-tron$' if bmc else '^nico-pxe$', calls[0])
+            self.assertIn('kind-test', calls[0])

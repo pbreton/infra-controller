@@ -35,6 +35,12 @@ class ScoutArtifactsTest(unittest.TestCase):
                     self.assertFalse(any(line.startswith(('linux-headers-', 'linux-modules-', 'linux-firmware')) for line in lines))
                     self.assertEqual((staged / 'mkosi.extra/opt/forge/forge-scout-network.sh').read_bytes(),
                                      (ROOT / 'pxe/common_files/forge-scout-network.sh').read_bytes())
+                loader = work / 'mkosi.profiles' / f'scout-loader-{arch}' / 'mkosi.extra/etc/rc.local'
+                original = (ROOT / 'pxe/common_files/scout-loader-rclocal').read_text()
+                self.assertEqual(loader.read_text(), original.replace(
+                    'http://carbide-static-pxe.forge/public/blobs/internal/',
+                    'http://nico-pxe.nico-system.svc.cluster.local/public/blobs/internal/'))
+                self.assertTrue(loader.stat().st_mode & 0o111)
                 rootfs = work / 'mkosi.profiles' / f'scout-oss-{arch}'
                 self.assertEqual((rootfs / 'mkosi.extra/build-output/forge-scout.deb').read_bytes(), package.read_bytes())
                 self.assertEqual((rootfs / 'mkosi.extra/etc/systemd/system/forge-scout.service').read_bytes(),

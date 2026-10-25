@@ -99,7 +99,8 @@ docker run --rm --privileged \
   --mount type=bind,src=/tmp/nico-scout-artifacts,dst=/state \
   --workdir /src nico-scout-builder:local \
   python3 dev/deployment/lab/build-scout.py \
-    --scout-package /state/scout.deb --output /state/boot
+  \
+  --scout-package /state/scout.deb --output /state/boot
 ```
 
 `scout-package` builds native debug binaries for Scout and its firmware
@@ -134,3 +135,116 @@ server, site credential or expected-machine registration is produced here.
 Those are separate boot/admission integration inputs tracked by
 [the Tilt migration](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 A successful build alone does not establish NICo discovery or instance readiness.
+
+## Connect Scout to the Tilt stack
+
+This path uses a fresh, dedicated single-node kind cluster on the native Linux
+runtime. It supports ARM64 and AMD64 with the same IPv4 provisioning workflow.
+It uses the default kind Service CIDR and the `nico-system` Core namespace.
+It does not convert an existing MAT deployment or adopt its database/credentials.
+Keep the target PVC, Core database and persistent Vault together for recovery.
+
+Build iPXE after initializing its pinned submodule. The helper stages a copy,
+uses NICo's embedded boot script and HTTP IPv6 source patch, and builds native
+`snponly.efi`. Vendor-specific BlueField patches are unnecessary for virtio guests.
+The builder image from the previous section supplies the build tools.
+
+```bash
+git submodule update --init pxe/ipxe/upstream
+docker run --rm \
+  --mount "type=bind,src=$PWD,dst=/src,readonly" \
+  --mount type=bind,src=/tmp/nico-scout-artifacts,dst=/state \
+  --workdir /src nico-scout-builder:local \
+  python3 dev/deployment/lab/build-ipxe.py --output /state/ipxe
+mkdir -p "/tmp/nico-boot-image/$(uname -m)"
+cp "/tmp/nico-scout-artifacts/ipxe/$(uname -m)/ipxe.efi" \
+  "/tmp/nico-boot-image/$(uname -m)/"
+cp "/tmp/nico-scout-artifacts/boot/$(uname -m)/scout.efi" \
+  "/tmp/nico-scout-artifacts/boot/$(uname -m)/scout.squashfs" \
+  "/tmp/nico-boot-image/$(uname -m)/"
+docker build -f dev/deployment/lab/Dockerfile.boot-artifacts \
+  -t nico-boot-artifacts:local /tmp/nico-boot-image
+```
+
+`build-ipxe.py` requires `--output`, a new or empty directory, with no default.
+It rejects unsupported host architectures and preserves failed builds for
+inspection. Successful output contains `ARCH/ipxe.efi` and a `build/` workspace.
+The artifact image includes only the native architecture's nonempty `ipxe.efi`,
+`scout.efi` and `scout.squashfs`; missing payloads fail the image build. It does
+not publish the image to a registry. Build and load it on the cluster's native
+Docker runtime.
+
+The VM Scout loader's default rootfs URL points to
+`http://nico-pxe.nico-system.svc.cluster.local/public/blobs/internal/ARCH/scout.squashfs`.
+An explicit `newrootfs=` kernel argument still takes precedence. Hardware source
+profiles retain their original fallback. Rebuild Scout artifacts using the
+preceding instructions to get this VM-specific default.
+
+After creating the cluster using the [Tilt setup instructions](../tilt/README.md):
+
+```bash
+kind load docker-image nico-boot-artifacts:local --name nico-tilt
+tilt up -f dev/deployment/tilt/Tiltfile -- \
+  --bmc-lab --persistent-vault --boot-artifact-image nico-boot-artifacts:local
+```
+
+`--bmc-lab` defaults to false and requires both `--persistent-vault` and a
+nonempty `--boot-artifact-image`. Supplying the image without BMC mode is an
+error. The image must already be available to the cluster. BMC mode deploys
+Core, BMC proxy, DHCP and PXE, with real Scout authentication and hardware polling.
+It disables MAT, MAT's readiness check and the MAT-specific SSH console resource.
+Tilt service readiness therefore does **not** establish guest admission or
+instance readiness. The checks below establish Scout connectivity separately.
+An existing opposite-mode Helm release makes Tilt refuse the mode change;
+manually removing a release does not migrate retained site data.
+
+PXE uses Service address `10.96.0.30`: firmware downloads iPXE on port 8080;
+iPXE requests boot metadata on port 80. Both ports reach the same PXE server.
+Kea at `10.96.0.20` allocates addresses through Core and advertises cluster DNS
+at `10.96.0.10`. No NTP server is deployed by this profile.
+
+Deploy a target using the [BMC target chart](../../../helm/nico-bmc-target/README.md),
+with provisioning enabled, `network.provisioning.dhcpServer=10.96.0.20` and the
+selected node's pod CIDR. The example below assumes target index 1, BMC Service
+`10.96.40.10`, and guest bridge `10.84.40.1/24`. These must match the target values.
+It reserves a separate underlay prefix containing that fixed BMC Service address;
+Core does not allocate the BMC Service itself.
+
+From the repository root, register the fresh target through the admin API:
+
+```bash
+export LOCAL_DEV_KUBE_CONTEXT=kind-nico-tilt
+export FORGE_CLIENT_REQUEST_TIMEOUT_SECS=30
+admin() { bash dev/deployment/core-admin.sh "$@"; }
+domain=$(admin -f json domain show | jq -er '.domains[] | select(.name=="local.nico") | .id')
+admin --cloud-unsafe-op 'Initialize local host provisioning' network-segment create \
+  --name lab-host --segment-type host-inband --prefix 10.84.40.0/24 \
+  --gateway 10.84.40.1 --reserve-first 10 --subdomain-id "$domain"
+admin --cloud-unsafe-op 'Initialize local BMC Service addresses' network-segment create \
+  --name lab-bmc --segment-type underlay --prefix 10.96.40.8/29
+admin em add --bmc-mac-address 02:00:00:01:00:01 \
+  --bmc-username root --bmc-password factory_password \
+  --chassis-serial-number 020000010001 --bmc-ip-address 10.96.40.10 \
+  --dpu-policy ignore --dpf-enabled false --meta-name native-target-one \
+  --interfaces '[{"mac_address":"02:00:00:01:00:02","role":"host","primary":true,"network_segment_type":3}]'
+admin -f json site-explorer get-report all
+admin -f json machine show
+```
+
+These create commands are for a new site and target, not a reset procedure.
+Do not repeat registration over an existing expected machine or overwrite its
+rotated credentials. Core rotates the initial BMC password, performs normal
+preingestion and powers on the guest. Firmware may try PXEv4 and PXEv6 before
+HTTPv4; those initial failures do not by themselves establish a failed HTTP boot.
+
+Once `machine show` reports the target's Core machine ID, verify the live stream:
+
+```bash
+admin scout-stream ping MACHINE_ID
+```
+
+Use the ID from the target whose metadata name is `native-target-one`.
+A successful ping proves a live real-Scout response through Core. It does not
+prove OS installation, instance assignment, release, or tenant IPv6 connectivity;
+those remain separate milestones in
+[issue 8124](https://github.com/dsx-ai-factory/infra-controller/issues/8124).

@@ -36,8 +36,16 @@ config.define_bool('mcp')
 config.define_bool('dsx-exchange')
 config.define_bool('observability')
 config.define_bool('persistent-vault')
+config.define_bool('bmc-lab')
+config.define_string('boot-artifact-image')
 options = config.parse()
 persistent_vault = options.get('persistent-vault', False)
+bmc_lab = options.get('bmc-lab', False)
+boot_artifact_image = options.get('boot-artifact-image', '')
+if bmc_lab and (not persistent_vault or not boot_artifact_image):
+    fail('--bmc-lab requires --persistent-vault and --boot-artifact-image')
+if boot_artifact_image and not bmc_lab:
+    fail('--boot-artifact-image requires --bmc-lab')
 enable_mcp = options.get('mcp', profiles['mcp'])
 enable_rest = options.get('rest', profiles['rest']) or enable_mcp
 enable_dsx_exchange = options.get('dsx-exchange', profiles['dsxExchange'])
@@ -51,6 +59,11 @@ if enable_rest and (rest_global['certificate']['issuerRef'].get('kind') != 'Clus
 prereqs_values_file = os.path.join(repo_root, 'helm-prereqs/values/local-development.yaml')
 prereqs_values = read_yaml(prereqs_values_file)
 core_namespace = prereqs_values['namespace']
+# Disabling a Tilt resource does not remove its Helm release or retained data.
+conflicting_release = 'nico-machine-a-tron' if bmc_lab else 'nico-pxe'
+if str(local(['helm', 'list', '--kube-context', cluster_context, '--namespace', core_namespace,
+              '--filter', '^%s$' % conflicting_release, '--short', '--all'], quiet=True)).strip():
+    fail('Cannot change between MAT and BMC lab modes in this cluster; use a new kind cluster')
 vault_bootstrap = os.path.join(tilt_dir, 'vault-bootstrap.py')
 vault_command = ['python3', vault_bootstrap, '--context', cluster_context, '--namespace', core_namespace]
 local(vault_command + ['check-mode', '--mode', 'persistent' if persistent_vault else 'ephemeral'], quiet=True)
@@ -63,7 +76,7 @@ observability_namespace = local_config['observabilityNamespace']
 machine_a_tron_dhcp_pod = tilt_values['machineATronDhcp']['podName']
 machine_a_tron_values = all_values['nico-machine-a-tron']
 selected_mat_pod = machine_a_tron_values.get('pods', {}).get(machine_a_tron_dhcp_pod)
-if not selected_mat_pod or not (selected_mat_pod.get('machines') or selected_mat_pod.get('racks')):
+if not bmc_lab and (not selected_mat_pod or not (selected_mat_pod.get('machines') or selected_mat_pod.get('racks'))):
     fail('MAT readiness requires a configured pod: %s' % machine_a_tron_dhcp_pod)
 enable_mat_gateway = machine_a_tron_values.get('mat-k8s-controller', {}).get('gateway', {}).get('enabled', False)
 
@@ -778,6 +791,8 @@ core_images = [
     ('machine-a-tron', 'machine-a-tron'),
     ('nico-ssh-console', 'ssh-console'),
 ]
+if bmc_lab:
+    core_images.append(('nico-pxe', 'pxe'))
 if enable_mat_gateway:
     core_images.append(('mat-protocol-gateway', 'mat-protocol-gateway'))
 if enable_observability:
@@ -874,6 +889,40 @@ rest_image(
 core_global = all_values['global']
 nico_api_values = component_values(core_global, all_values['nico-api'])
 nico_api_dependencies = ['nico-core-prereqs', 'nico-postgres', 'vault-admin-ca']
+if bmc_lab:
+    # A separate site configuration keeps simulated hardware shortcuts out of
+    # real Scout admission. This mode is for a fresh, dedicated kind cluster.
+    nico_api_values['siteConfig'] = {
+        'enabled': True,
+        'nicoApiSiteConfig': str(read_file(os.path.join(tilt_dir, 'bmc-lab.toml'))),
+    }
+    nico_api_values['extraEnv'] = []
+    all_values['nico-dhcp']['config']['kea']['hookParameters'] = {
+        'nameservers': '10.96.0.10',
+        'ntpServer': '127.0.0.1',
+        'provisioningServer': '10.96.0.30',
+    }
+    helm_chart(
+        name='nico-pxe',
+        chart=os.path.join(core_charts, 'nico-pxe'),
+        namespace=core_namespace,
+        values=component_values(core_global, {
+            'legacyAlias': {'enabled': False},
+            'service': {'clusterIP': '10.96.0.30', 'port': 8080, 'bootPort': 80},
+            'config': {'extraEnvData': {
+                'CARBIDE_API_URL': 'https://nico-api.%s.svc.cluster.local:1079' % core_namespace,
+                'CARBIDE_PXE_URL': 'http://nico-pxe.%s.svc.cluster.local' % core_namespace,
+            }},
+            'bootArtifactContainers': [{
+                'name': 'scout-artifacts', 'image': boot_artifact_image,
+                'command': ['sh', '-ec', 'cp -r /%s /forge-boot-artifacts/blobs/internal/' % compiler_arch],
+            }],
+        }),
+        resource_deps=['nico-api'],
+        image_deps=['nico-pxe'],
+        image_keys=[('image.repository', 'image.tag')],
+        manual=True,
+    )
 
 if enable_dsx_exchange:
     helm_repo(
@@ -1140,6 +1189,10 @@ enabled_resources = [
     'nico-machine-a-tron',
     'nico-ssh-console-rs',
 ]
+if bmc_lab:
+    enabled_resources = [name for name in enabled_resources if name not in [
+        'stack-ready', 'nico-machine-a-tron', 'nico-ssh-console-rs',
+    ]] + ['nico-pxe']
 if persistent_vault:
     enabled_resources.append('vault-bootstrap')
 if enable_observability:

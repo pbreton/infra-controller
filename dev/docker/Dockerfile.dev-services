@@ -32,6 +32,13 @@ RUN --mount=type=cache,id=nico-dev-cargo-home-${TARGETARCH},target=/cargo-home,s
     && cp /cargo-target/debug/carbide-api /out/carbide-api \
     && cp /cargo-target/debug/nico-admin-cli /out/nico-admin-cli
 
+FROM source AS pxe-builder
+
+RUN --mount=type=cache,id=nico-dev-cargo-home-${TARGETARCH},target=/cargo-home,sharing=locked \
+    --mount=type=cache,id=nico-dev-cargo-target-${TARGETARCH},target=/cargo-target,sharing=locked \
+    cargo build --locked -p carbide-pxe --bin carbide \
+    && mkdir -p /out && cp /cargo-target/debug/carbide /out/carbide
+
 FROM source AS bmc-proxy-builder
 
 RUN --mount=type=cache,id=nico-dev-cargo-home-${TARGETARCH},target=/cargo-home,sharing=locked \
@@ -120,6 +127,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /usr/lib/kea/hooks /var/lib/kea /var/run/kea
 
 COPY --from=dhcp-builder /out/libdhcp.so /usr/lib/kea/hooks/libdhcp.so
+
+FROM ${CONTAINER_RUNTIME} AS pxe
+
+RUN groupadd --gid 10001 nico \
+    && useradd --uid 10001 --gid nico --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nico \
+    && install -d -o nico -g nico /opt/carbide/pxe/templates /opt/carbide/scout-firmware-scripts /forge-boot-artifacts/blobs
+COPY --chown=nico:nico --from=pxe-builder /out/carbide /opt/carbide/carbide
+COPY --chown=nico:nico pxe/templates/ /opt/carbide/pxe/templates/
+COPY --chown=nico:nico pxe/scout-firmware-scripts/ /opt/carbide/scout-firmware-scripts/
+USER 10001:10001
 
 FROM ${CONTAINER_RUNTIME} AS machine-a-tron
 
