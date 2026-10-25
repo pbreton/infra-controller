@@ -335,7 +335,9 @@ Supply a private key whose public key was installed through the instance's
 cloud-init data. The helper does not create keys, allocate an instance or grant
 access. Required flags have no defaults: `--context`, `--address` (IPv4),
 `--identity` (existing private key file) and `--known-hosts` (a writable file or
-new path in an existing directory). The defaults are `--namespace bmc-lab`,
+new path in an existing directory). Both resolved file paths must exclude
+whitespace, quotes, `%`, `$` and backslashes, which OpenSSH can interpret as
+configuration syntax or expansions. The defaults are `--namespace bmc-lab`,
 `--release target-one` and `--user lab`. Repeated options use the last value.
 Put an optional remote command after `--`; omitting it opens the guest shell.
 OpenSSH's remote-shell command semantics apply.

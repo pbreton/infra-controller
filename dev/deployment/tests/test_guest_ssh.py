@@ -50,8 +50,8 @@ class GuestSshTest(unittest.TestCase):
         self.assertEqual(result.stdout, response)
 
     def test_proxy_keeps_key_on_client_and_preserves_argument_boundaries(self):
-        args = argparse.Namespace(release='target-one', identity=Path('/tmp/key with spaces'),
-                                  known_hosts=Path('/tmp/known hosts'), user='lab', command=['uname -m'])
+        args = argparse.Namespace(release='target-one', identity=Path('/tmp/key'),
+                                  known_hosts=Path('/tmp/known_hosts'), user='lab', command=['uname -m'])
         kube = ['kubectl', '--context', 'kind-lab', '-n', 'bmc-lab']
         command = SSH.ssh_command(args, kube, ipaddress.IPv4Address('10.84.40.10'))
         proxy = shlex.split(next(value.removeprefix('ProxyCommand=') for value in command if value.startswith('ProxyCommand=')))
@@ -115,3 +115,11 @@ class GuestSshTest(unittest.TestCase):
             self.assertEqual(error.exception.code, 7)
             self.assertEqual(connect.call_args.args[0][-3:], ['--', 'lab@10.84.40.10', 'exit 7'])
             self.assertTrue(known.is_file())
+
+    def test_ssh_config_path_transformations_rejected_before_file_creation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ('with spaces', 'token%u', 'env${USER}', 'quote"', 'back\\slash'):
+                path = Path(directory) / name
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    SSH.prepare_known_hosts(path)
+                self.assertFalse(path.exists())

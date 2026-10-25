@@ -31,11 +31,18 @@ with socket.create_connection((sys.argv[1],int(sys.argv[2])),timeout=10) as conn
 '''
 
 
+def literal_ssh_path(path):
+    value = str(path.resolve())
+    if any(character.isspace() or character in '\"\'%$\\' for character in value):
+        raise ValueError('SSH file paths must not contain whitespace, quotes, %, $ or backslashes')
+    return value
+
+
 def ssh_command(args, kube, address):
     proxy = kube + ['exec', '-i', 'deployment/' + args.release, '--', 'python3', '-c', RELAY, str(address), '22']
-    return ['ssh', '-F', '/dev/null', '-i', str(args.identity.resolve()), '-o', 'IdentitiesOnly=yes',
+    return ['ssh', '-F', '/dev/null', '-i', literal_ssh_path(args.identity), '-o', 'IdentitiesOnly=yes',
             '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
-            '-o', 'UserKnownHostsFile=' + str(args.known_hosts.resolve()),
+            '-o', 'UserKnownHostsFile=' + literal_ssh_path(args.known_hosts),
             '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=15', '-o', 'ProxyCommand=' + shlex.join(proxy),
             '--', args.user + '@' + str(address)] + args.command
 
@@ -43,7 +50,7 @@ def ssh_command(args, kube, address):
 def prepare_known_hosts(path):
     # Open without truncation to prove that pinning can persist. OpenSSH only
     # warns on a failed host-key write and can otherwise keep accepting new keys.
-    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    descriptor = os.open(literal_ssh_path(path), os.O_RDWR | os.O_CREAT, 0o600)
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise ValueError('--known-hosts must be a regular writable file')
@@ -64,6 +71,11 @@ def main():
     args = parser.parse_args()
     if not args.context.startswith('kind-'):
         parser.error('select an explicit kind context')
+    try:
+        literal_ssh_path(args.identity)
+        literal_ssh_path(args.known_hosts)
+    except ValueError as error:
+        parser.error(str(error))
     if not args.identity.is_file():
         parser.error('--identity must be an existing private key file')
     kube = ['kubectl', '--context', args.context, '-n', args.namespace]
