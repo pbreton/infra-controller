@@ -410,8 +410,10 @@ different SSH host keys; do not enroll Scout's key as the tenant's key.
 
 Validate the real disk root with `findmnt -no SOURCE /`, native architecture
 with `uname -m`, completed cloud-init with `sudo cloud-init status --wait`, and
-the generation marker. Then create a test file on the installed root disk and
-record `/proc/sys/kernel/random/boot_id`. Reboot through Core:
+the generation marker. Then create and verify a test file on the installed root disk, run `sudo sync`
+and record `/proc/sys/kernel/random/boot_id`. Flush the write before testing
+persistence: the Core reboot path can force a reset without an OS shutdown.
+Reboot through Core:
 
 ```bash
 bash dev/deployment/core-admin.sh --cloud-unsafe-op 'Local instance validation' \
