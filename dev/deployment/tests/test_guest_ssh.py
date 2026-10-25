@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import threading
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -84,3 +85,33 @@ class GuestSshTest(unittest.TestCase):
                 SSH.main()
             self.assertEqual(error.exception.code, 2)
             connect.assert_not_called()
+
+    def test_known_hosts_creation_retention_and_invalid_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'known_hosts'
+            SSH.prepare_known_hosts(path)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            path.write_text('existing pinned key\n')
+            SSH.prepare_known_hosts(path)
+            self.assertEqual(path.read_text(), 'existing pinned key\n')
+            for invalid in (root, root / 'missing/known_hosts', Path('/dev/null')):
+                with self.subTest(path=invalid), self.assertRaises((OSError, ValueError)):
+                    SSH.prepare_known_hosts(invalid)
+
+    def test_main_passes_remote_command_and_exit_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            key = Path(directory) / 'key'
+            key.touch()
+            known = Path(directory) / 'known_hosts'
+            with patch.object(sys, 'argv', ['ssh-guest', '--context', 'kind-lab', '--address', '10.84.40.10',
+                                           '--identity', str(key), '--known-hosts', str(known), '--', 'exit 7']), \
+                    patch.object(SSH.subprocess, 'check_output', side_effect=[
+                        b'{"metadata":{"labels":{"app.kubernetes.io/name":"nico-bmc-target"}}}',
+                        b'{"bridgeAddress":"10.84.40.1/24"}']), \
+                    patch.object(SSH.subprocess, 'call', return_value=7) as connect, \
+                    self.assertRaises(SystemExit) as error:
+                SSH.main()
+            self.assertEqual(error.exception.code, 7)
+            self.assertEqual(connect.call_args.args[0][-3:], ['--', 'lab@10.84.40.10', 'exit 7'])
+            self.assertTrue(known.is_file())

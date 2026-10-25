@@ -751,4 +751,7 @@ image on a fresh kind cluster. Follow the
 [Scout admission workflow](../lab/README.md#connect-scout-to-the-tilt-stack)
 for image builds, target registration, BMC-specific stop/restart and full-discard
 instructions, retained-state boundaries and the live
-Scout check. Ordinary Tilt development continues to use MAT by default.
+Scout check. For disk-installed instances, add the
+[native imager](../lab/README.md#native-disk-imager) and follow the
+[instance lifecycle checks](../lab/README.md#allocate-and-recycle-an-instance).
+Ordinary Tilt development continues to use MAT by default.

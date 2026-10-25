@@ -6,9 +6,11 @@
 import argparse
 import ipaddress
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
+import stat
 
 # kubectl's stdin/stdout carry SSH bytes. A write-side EOF must still allow the
 # guest to send its final response; no SSH client or private key enters the pod.
@@ -31,11 +33,22 @@ with socket.create_connection((sys.argv[1],int(sys.argv[2])),timeout=10) as conn
 
 def ssh_command(args, kube, address):
     proxy = kube + ['exec', '-i', 'deployment/' + args.release, '--', 'python3', '-c', RELAY, str(address), '22']
-    return ['ssh', '-i', str(args.identity.resolve()), '-o', 'IdentitiesOnly=yes',
+    return ['ssh', '-F', '/dev/null', '-i', str(args.identity.resolve()), '-o', 'IdentitiesOnly=yes',
             '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
             '-o', 'UserKnownHostsFile=' + str(args.known_hosts.resolve()),
-            '-o', 'ConnectTimeout=15', '-o', 'ProxyCommand=' + shlex.join(proxy),
-            args.user + '@' + str(address)] + args.command
+            '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=15', '-o', 'ProxyCommand=' + shlex.join(proxy),
+            '--', args.user + '@' + str(address)] + args.command
+
+
+def prepare_known_hosts(path):
+    # Open without truncation to prove that pinning can persist. OpenSSH only
+    # warns on a failed host-key write and can otherwise keep accepting new keys.
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError('--known-hosts must be a regular writable file')
+    finally:
+        os.close(descriptor)
 
 
 def main():
@@ -63,6 +76,10 @@ def main():
     if args.address not in bridge.network or args.address in (bridge.ip, bridge.network.network_address,
                                                              bridge.network.broadcast_address):
         parser.error('--address must be a guest address in the selected target bridge subnet')
+    try:
+        prepare_known_hosts(args.known_hosts)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
     if args.command[:1] == ['--']:
         args.command = args.command[1:]
     raise SystemExit(subprocess.call(ssh_command(args, kube, args.address)))

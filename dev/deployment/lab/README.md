@@ -250,8 +250,9 @@ admin scout-stream ping MACHINE_ID
 
 Use the ID from the target whose metadata name is `native-target-one`.
 A successful ping proves a live real-Scout response through Core. It does not
-prove OS installation, instance assignment, release, or tenant IPv6 connectivity;
-those remain separate milestones in
+prove OS installation, instance assignment, release, or tenant IPv6 connectivity.
+Continue with the [instance lifecycle checks](#allocate-and-recycle-an-instance);
+tenant IPv6 remains a separate milestone in
 [issue 8124](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 ### Stop, restart and discard the BMC lab
@@ -342,7 +343,11 @@ OpenSSH's remote-shell command semantics apply.
 The helper rejects non-kind contexts, deployments without the native target
 label, and addresses outside the target bridge subnet or equal to its gateway,
 network or broadcast address. It does not discover the guest's lease; use the
-address reported by Core. First use accepts and saves the guest host key;
+address reported by Core. The helper opens the known-hosts file without truncation before SSH, creating
+it with mode 0600 when absent and rejecting nonregular or unwritable files.
+It ignores SSH configuration files and the global known-hosts file to keep
+the selected identity, proxy and host-key file authoritative. First use accepts
+and saves the guest host key;
 subsequent key changes fail. Use a separate known-hosts file for each newly
 provisioned instance. SSH uses batch authentication, only the selected identity,
 and a 15-second connection timeout; an established interactive session has no
@@ -357,7 +362,13 @@ Run Core commands through `dev/deployment/core-admin.sh` with
 path bypasses the REST database; use it only in this isolated lab. The
 `--cloud-unsafe-op` argument is required for VPC and instance mutations.
 
-Register a native cloud image with `os-image create`: supply a unique UUID, the
+The exercised image boundary is a native Ubuntu 24.04 cloud image with root
+filesystem label `cloudimg-rootfs`, the installer default. Other images need
+explicit filesystem identification (`--rootfs-label` or `--rootfs-id`) and
+separate validation: without a matching root filesystem, the installer cannot
+seed cloud-init or install the SSH key.
+
+Register the image with `os-image create`: supply a unique UUID, the
 image download URL, its SHA-256 as 64 hexadecimal characters, the tenant
 organization and `--boot-disk /dev/vda`. The virtual target's whole disk is
 replaced during installation. Match the image architecture to the target and
