@@ -51,11 +51,11 @@ class GuestConnectivityTest(unittest.TestCase):
         self.assertTrue(all(process.stdout.closed for process in processes))
 
     def test_listener_startup_handles_partial_output_and_early_exit(self):
-        for code, error in [("import time; print('{',end='',flush=True); time.sleep(10)", 'timed out'),
-                            ('raise SystemExit(7)', 'exited before reporting')]:
+        for code, error, timeout in [("import time; print('{',end='',flush=True); time.sleep(10)", 'timed out', 0.2),
+                                     ('raise SystemExit(7)', 'exited before reporting', 5)]:
             with self.subTest(code=code), CHECK.guest_process([sys.executable, '-u', '-c', code]) as process:
                 with self.assertRaisesRegex(RuntimeError, error):
-                    CHECK.listener_port(process, timeout=0.2)
+                    CHECK.listener_port(process, timeout=timeout)
 
     def test_cleanup_stops_descendant_after_direct_child_exits(self):
         child = "import socket,time; s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(); print(s.getsockname()[1],flush=True); time.sleep(10)"
@@ -108,11 +108,12 @@ class GuestConnectivityTest(unittest.TestCase):
                 self.assertEqual(first.args[2]['address'], second.args[1]['address'])
 
     def test_same_guest_rejected_before_starting_probe(self):
-        argv = ['check-connectivity', '--context', 'kind-test', '--first-address', '10.84.40.10',
-                '--second-address', '10.84.40.10', '--identity', '/tmp/key',
-                '--first-known-hosts', '/tmp/one', '--second-known-hosts', '/tmp/two']
-        with patch.object(sys, 'argv', argv), patch.object(CHECK, 'probe') as probe, \
-                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
-            CHECK.main()
-        self.assertEqual(error.exception.code, 2)
-        probe.assert_not_called()
+        for option, value in [('--second-address', '10.84.40.10'), ('--second-release', 'target-one')]:
+            argv = ['check-connectivity', '--context', 'kind-test', '--first-address', '10.84.40.10',
+                    '--second-address', '10.84.41.10', '--identity', '/tmp/key',
+                    '--first-known-hosts', '/tmp/one', '--second-known-hosts', '/tmp/two', option, value]
+            with self.subTest(option=option), patch.object(sys, 'argv', argv), patch.object(CHECK, 'probe') as probe, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                CHECK.main()
+            self.assertEqual(error.exception.code, 2)
+            probe.assert_not_called()

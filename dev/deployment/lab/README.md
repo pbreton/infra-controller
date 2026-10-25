@@ -524,7 +524,10 @@ SIGTERM, SIGHUP and forced termination do not guarantee local process cleanup.
 Success prints one JSON object with `directions`, containing the verified
 `source`, `destination` and payload `bytes` for each direction, and exits 0.
 A failed probe prints an error to stderr and exits 1 without a success object;
-invalid arguments exit 2. `--help` prints usage and exits 0. A failed second
+argument parsing errors, non-kind contexts and duplicate addresses/releases exit 2.
+Validation failures inside the SSH helper (such as a missing key, invalid path
+or address outside the target subnet) instead fail the probe with exit 1.
+`--help` prints usage and exits 0. A failed second
 direction does not erase the fact that the first connection was attempted.
 The check neither allocates nor releases instances and leaves their disks intact.
 
