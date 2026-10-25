@@ -5,10 +5,14 @@ import ast
 import os
 from pathlib import Path
 import subprocess
-import tomllib
 import unittest
 
 import yaml
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
 TILT = ROOT / 'dev/deployment/tilt/Tiltfile'
