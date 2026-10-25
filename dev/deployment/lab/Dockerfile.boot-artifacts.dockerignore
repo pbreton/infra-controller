@@ -7,3 +7,5 @@
 !x86_64/ipxe.efi
 !x86_64/scout.efi
 !x86_64/scout.squashfs
+!aarch64/qcow-imager.efi
+!x86_64/qcow-imager.efi

@@ -168,8 +168,9 @@ docker build -f dev/deployment/lab/Dockerfile.boot-artifacts \
 `build-ipxe.py` requires `--output`, a new or empty directory, with no default.
 It rejects unsupported host architectures and preserves failed builds for
 inspection. Successful output contains `ARCH/ipxe.efi` and a `build/` workspace.
-The artifact image includes only the native architecture's nonempty `ipxe.efi`,
-`scout.efi` and `scout.squashfs`; missing payloads fail the image build. It does
+The artifact image requires the native architecture's nonempty `ipxe.efi`,
+`scout.efi` and `scout.squashfs`; missing payloads fail the image build. It also
+accepts the optional [disk imager](#native-disk-imager). It does
 not publish the image to a registry. Build and load it on the cluster's native
 Docker runtime.
 
@@ -275,3 +276,158 @@ kind delete cluster --name nico-tilt
 Never reuse target disks or Vault credentials from a discarded site with a new
 empty database. This slice provides stop/restart and full discard, not partial
 site recovery or migration between clusters.
+
+## Native disk imager
+
+Disk-installed instances need an additional `qcow-imager.efi` in the boot artifact
+image. Scout admission alone does not need it. Build on the same native Linux
+runtime as the preceding artifacts, using the initialized mkosi submodule and
+Scout builder image:
+
+```bash
+docker run --rm --privileged \
+  --mount "type=bind,src=$PWD,dst=/src,readonly" \
+  --mount type=bind,src=/tmp/nico-scout-artifacts,dst=/state \
+  --workdir /src nico-scout-builder:local \
+  python3 dev/deployment/lab/build-imager.py --output /state/imager
+cp "/tmp/nico-scout-artifacts/imager/$(uname -m)/qcow-imager.efi" \
+  "/tmp/nico-boot-image/$(uname -m)/"
+docker build -f dev/deployment/lab/Dockerfile.boot-artifacts \
+  -t nico-boot-artifacts:imager /tmp/nico-boot-image
+kind load docker-image nico-boot-artifacts:imager --name nico-tilt
+```
+
+Restart Tilt with `--boot-artifact-image nico-boot-artifacts:imager` and the same
+BMC mode flags. Use a new image tag after rebuilding any payload.
+
+`build-imager.py` requires `--output` with no default. It accepts a new or empty
+directory and requires root on native Linux ARM64 or AMD64. It copies the
+production `qcow-imager-aarch64` or `qcow-imager` profile and the real
+`disk_imaging.sh` without changing their source. Both profiles already use the
+virtual kernel. The staged profile adds the same kind DNS routing as Scout.
+No OS image, tenant credentials or cloud-init data is embedded in this artifact.
+
+Successful output is `ARCH/qcow-imager.efi`, with staged sources and caches in
+`build/`. `build-info.json` records the architecture, selected profile, payload
+SHA-256 and installer SHA-256. Failure leaves the build workspace for diagnosis;
+retry with a new or empty output directory. The helper never cleans an existing
+directory or changes a cluster. Distribution package resolution happens during
+the build, so these artifacts are not promised to be byte-for-byte reproducible.
+The artifact image includes the imager when present and rejects an empty one;
+it still requires all three Scout/iPXE payloads.
+
+## SSH to an installed guest
+
+The guest address is on the target pod's private bridge. Use the helper below
+from a client with Python 3.9+, OpenSSH and `kubectl` access to the selected kind
+cluster. It relays TCP port 22 through `kubectl exec`; it does not install an SSH
+client or copy a private key into the target pod.
+
+```bash
+python3 dev/deployment/lab/ssh-guest.py \
+  --context kind-nico-tilt --address 10.84.40.10 \
+  --identity /tmp/nico-instance-key --known-hosts /tmp/nico-instance-known-hosts \
+  -- 'uname -m; findmnt -no SOURCE /; cloud-init status'
+```
+
+Supply a private key whose public key was installed through the instance's
+cloud-init data. The helper does not create keys, allocate an instance or grant
+access. Required flags have no defaults: `--context`, `--address` (IPv4),
+`--identity` (existing private key file) and `--known-hosts` (a writable file or
+new path in an existing directory). The defaults are `--namespace bmc-lab`,
+`--release target-one` and `--user lab`. Repeated options use the last value.
+Put an optional remote command after `--`; omitting it opens the guest shell.
+OpenSSH's remote-shell command semantics apply.
+
+The helper rejects non-kind contexts, deployments without the native target
+label, and addresses outside the target bridge subnet or equal to its gateway,
+network or broadcast address. It does not discover the guest's lease; use the
+address reported by Core. First use accepts and saves the guest host key;
+subsequent key changes fail. Use a separate known-hosts file for each newly
+provisioned instance. SSH uses batch authentication, only the selected identity,
+and a 15-second connection timeout; an established interactive session has no
+overall timeout. The helper returns the SSH exit status and reports validation
+or Kubernetes errors before connecting.
+
+## Allocate and recycle an instance
+
+Use a fresh lab target that has completed the preceding Scout admission checks.
+Run Core commands through `dev/deployment/core-admin.sh` with
+`LOCAL_DEV_KUBE_CONTEXT` set to the lab's explicit kind context. The Core admin
+path bypasses the REST database; use it only in this isolated lab. The
+`--cloud-unsafe-op` argument is required for VPC and instance mutations.
+
+Register a native cloud image with `os-image create`: supply a unique UUID, the
+image download URL, its SHA-256 as 64 hexadecimal characters, the tenant
+organization and `--boot-disk /dev/vda`. The virtual target's whole disk is
+replaced during installation. Match the image architecture to the target and
+verify the digest against the image publisher. Keep the chosen URL and digest
+in the validation record. The imager fetches the OS at provisioning time;
+container build success does not prove download or disk installation.
+
+Create a `flat` VPC for that same tenant using
+`vpc create --name NAME --org-id ORG --virtualization-type flat` and save the
+returned VPC ID. Flat instances use the admitted host's `HostInband` segment.
+They do not require a DPU or tenant overlay. Put an OS configuration in a private
+JSON file, substituting the registered image UUID and your public SSH key:
+
+```json
+{
+  "phone_home_enabled": false,
+  "run_provisioning_instructions_on_every_boot": false,
+  "user_data": "#cloud-config\nusers:\n  - name: lab\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    shell: /bin/bash\n    ssh_authorized_keys:\n      - REPLACE_WITH_PUBLIC_KEY\nwrite_files:\n  - path: /etc/nico-lab-generation\n    content: generation-1\n",
+  "variant": {"OsImageId": {"value": "REPLACE_WITH_IMAGE_UUID"}}
+}
+```
+
+With `machine_id`, `vpc_id` and `os_config` set to the selected host ID, VPC ID
+and JSON file path:
+
+```bash
+bash dev/deployment/core-admin.sh --cloud-unsafe-op 'Local instance validation' \
+  instance allocate --prefix-name native-lifecycle \
+  --machine-id "$machine_id" --flat-vpc-id "$vpc_id" --os "$(cat "$os_config")"
+bash dev/deployment/core-admin.sh -f json instance show "$machine_id"
+```
+
+Save the created instance ID. Check the API response even if allocation exits
+zero: the nontransactional CLI can log an allocation failure without a nonzero
+exit status. API tenant `Ready` does not prove the OS has booted. Follow the
+selected target's `/data/logs/console.log` through imager completion and the
+installed OS boot before using the SSH helper. Scout and the installed OS have
+different SSH host keys; do not enroll Scout's key as the tenant's key.
+
+Validate the real disk root with `findmnt -no SOURCE /`, native architecture
+with `uname -m`, completed cloud-init with `sudo cloud-init status --wait`, and
+the generation marker. Then create a test file on the installed root disk and
+record `/proc/sys/kernel/random/boot_id`. Reboot through Core:
+
+```bash
+bash dev/deployment/core-admin.sh --cloud-unsafe-op 'Local instance validation' \
+  instance reboot --instance "$instance_id"
+```
+
+After SSH returns, require a different boot ID and the retained test file.
+Release through Core and wait for the old instance to disappear and the host to
+return to `Ready` with a successful Scout ping:
+
+```bash
+bash dev/deployment/core-admin.sh --cloud-unsafe-op 'Local instance validation' \
+  instance release --instance "$instance_id"
+bash dev/deployment/core-admin.sh -f json instance show "$machine_id"
+bash dev/deployment/core-admin.sh -f json machine show "$machine_id"
+bash dev/deployment/core-admin.sh scout-stream ping "$machine_id"
+```
+
+Reallocate with `generation-2` in the cloud-init data and a new known-hosts file.
+Require a new instance ID, the new generation marker and absence of the old test
+file. Finally release the replacement instance before removing the disposable
+cluster and target PVC. Keep the database, Vault and target storage together
+until that lifecycle has finished.
+
+This proves installation and replacement of a virtual disk image, not hardware
+secure erase. Scout's hardware cleanup discovers NVMe and `/dev/sd*` devices;
+the target's `/dev/vda` is outside those paths. Do not infer tenant data erasure
+at release from a successful reprovisioning test. Virtio inventory, hardware
+sanitize coverage and tenant IPv6 remain separate acceptance boundaries in
+[the migration issue](https://github.com/dsx-ai-factory/infra-controller/issues/8124).

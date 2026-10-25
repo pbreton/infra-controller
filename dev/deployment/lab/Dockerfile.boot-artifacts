@@ -6,4 +6,5 @@ COPY . /payload/
 RUN set -eu; \
     case "$TARGETARCH" in arm64) arch=aarch64;; amd64) arch=x86_64;; *) exit 1;; esac; \
     for name in ipxe.efi scout.efi scout.squashfs; do test -s "/payload/$arch/$name"; done; \
+    if [ -e "/payload/$arch/qcow-imager.efi" ]; then test -s "/payload/$arch/qcow-imager.efi"; fi; \
     mv "/payload/$arch" "/$arch"; rm -rf /payload
