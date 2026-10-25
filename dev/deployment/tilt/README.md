@@ -715,10 +715,12 @@ helm uninstall nico -n nico-system
 ```
 
 Tilt retains the selected MAT or BMC mode in a `kube-system` ConfigMap before
-Core starts. An older cluster with a matching MAT/PXE Helm release can acquire
-that marker automatically. If an unmarked cluster has Core but neither release,
-its mode is ambiguous and startup is rejected. Use a separate new kind cluster
-for this workflow while preserving the older cluster for inspection or recovery.
+Core starts. An older cluster can acquire that marker automatically when its
+matching MAT/PXE Helm release exists and the opposite-mode release is absent.
+An opposite-mode release, or Core without either release, rejects startup on an
+unmarked cluster. If startup is rejected, use a separate new kind cluster while
+preserving the older cluster for inspection or recovery. An unmarked cluster
+without Core or either release is treated as new.
 Removing a marker or release does not convert retained site data between modes.
 
 ## Stop and remove
