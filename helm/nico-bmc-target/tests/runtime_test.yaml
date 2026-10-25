@@ -156,3 +156,29 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: provisioning podCIDR must match the selected node
+  - it: accepts a single matching live node and cluster identity
+    template: deployment.yaml
+    set:
+      network.provisioning.enabled: true
+      network.provisioning.dhcpServer: 10.96.40.20
+      network.provisioning.podCIDR: 10.244.0.0/24
+    kubernetesProvider:
+      scheme:
+        v1/Node:
+          gvr: {version: v1, resource: nodes}
+          namespaced: false
+        v1/Namespace:
+          gvr: {version: v1, resource: namespaces}
+          namespaced: false
+      objects:
+        - apiVersion: v1
+          kind: Node
+          metadata: {name: lab-control-plane}
+          spec: {podCIDR: 10.244.0.0/24}
+        - apiVersion: v1
+          kind: Namespace
+          metadata: {name: kube-system, uid: cluster-identity}
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [--config, /etc/nico-target/config.json, --dhcp-server, 10.96.40.20, --pod-cidr, 10.244.0.0/24, --uplink, eth0]

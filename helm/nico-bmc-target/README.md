@@ -175,8 +175,11 @@ This uses the directional interfaces supported by
 [ISC relay](https://kb.isc.org/docs/isc-dhcp-44-manual-pages-dhcrelay).
 
 Rules carry the target UUID and are removed on graceful shutdown or reconciled
-on the next start. Cleanup failures are logged and retried on the next start;
-bridge cleanup is still attempted. Even disabled mode needs working image-side
+on the next start of the same target identity. Cleanup failures are logged;
+bridge cleanup is still attempted. After uninstall or forceful termination with
+no restart, leftover rules can remain. A different release identity does not
+clean them up. Deleting the disposable kind cluster removes its node network
+state when retiring such a lab. Even disabled mode needs working image-side
 netfilter tools to remove any stale rules from an earlier enabled run. Other targets' rules and kube-proxy chains are not modified.
 A stopped relay makes the target runtime fail and removes readiness. Provisioning
 values are operational settings, separate from retained guest identity: changing
