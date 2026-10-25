@@ -99,6 +99,7 @@ class ScoutWiringTest(unittest.TestCase):
                 exec(compile(ast.Module(body=assignments + filtering, type_ignores=[]), 'Tiltfile', 'exec'), env)
                 names = env['enabled_resources']
                 self.assertEqual('nico-pxe' in names, bmc)
+                self.assertIn('local-site-mode', names)
                 for name in ('nico-machine-a-tron', 'nico-ssh-console-rs', 'stack-ready'):
                     self.assertEqual(name in names, not bmc)
 
@@ -107,5 +108,16 @@ class ScoutWiringTest(unittest.TestCase):
         deps = next(n.value for n in tree.body if isinstance(n, ast.Assign)
                     and any(isinstance(t, ast.Name) and t.id == 'nico_api_dependencies' for t in n.targets))
         self.assertIn('local-site-mode', ast.literal_eval(deps))
-        self.assertIn("site_mode_command + ['check']", TILT.read_text())
-        self.assertIn("site_mode_command + ['claim']", TILT.read_text())
+        start = next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Assign)
+                     and any(isinstance(t, ast.Name) and t.id == 'site_mode' for t in node.targets))
+        for bmc in (False, True):
+            calls, resources = [], []
+            with self.subTest(bmc=bmc):
+                exec(compile(ast.Module(body=tree.body[start:start + 4], type_ignores=[]), 'Tiltfile', 'exec'), dict(
+                    os=os, tilt_dir='/tilt', cluster_context='kind-test', core_namespace='nico-system',
+                    bmc_lab=bmc, local=lambda command, **kw: calls.append(command),
+                    local_resource=lambda name, command, **kw: resources.append((name, command))))
+                expected = ['python3', '/tilt/site-mode.py', '--context', 'kind-test',
+                            '--namespace', 'nico-system', '--mode', 'bmc' if bmc else 'mat']
+                self.assertEqual(calls, [expected + ['check']])
+                self.assertEqual(resources, [('local-site-mode', expected + ['claim'])])

@@ -55,10 +55,13 @@ class SiteModeTest(unittest.TestCase):
         self.assertEqual(site.writes, [])
 
     def test_legacy_release_adoption_and_interrupted_core_boundary(self):
-        for releases, core, accepted in [('', False, True), ('nico-pxe\n', True, True),
-                                          ('', True, False), ('nico-machine-a-tron\n', True, False)]:
-            with self.subTest(releases=releases, core=core):
-                site = FakeSite(releases=releases, core=core)
+        for mode, releases, core, accepted in [
+            ('bmc', '', False, True), ('bmc', 'nico-pxe\n', True, True),
+            ('bmc', '', True, False), ('bmc', 'nico-machine-a-tron\n', True, False),
+            ('mat', 'nico-machine-a-tron\n', True, True), ('mat', 'nico-pxe\n', True, False),
+        ]:
+            with self.subTest(mode=mode, releases=releases, core=core):
+                site = FakeSite(mode=mode, releases=releases, core=core)
                 if accepted:
                     site.claim()
                     self.assertEqual(len(site.writes), 1)

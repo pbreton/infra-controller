@@ -714,7 +714,17 @@ An earlier draft of this Tilt setup deployed Core as one Helm release named
 helm uninstall nico -n nico-system
 ```
 
+Tilt retains the selected MAT or BMC mode in a `kube-system` ConfigMap before
+Core starts. An older cluster with a matching MAT/PXE Helm release can acquire
+that marker automatically. If an unmarked cluster has Core but neither release,
+its mode is ambiguous and startup is rejected. Use a separate new kind cluster
+for this workflow while preserving the older cluster for inspection or recovery.
+Removing a marker or release does not convert retained site data between modes.
+
 ## Stop and remove
+
+For BMC-backed labs, follow the [BMC lifecycle instructions](../lab/README.md#stop-restart-and-discard-the-bmc-lab).
+The resource removal command below applies to the default MAT workflow.
 
 Stopping `tilt up` leaves the stack running. Remove Tilt-managed resources with:
 
