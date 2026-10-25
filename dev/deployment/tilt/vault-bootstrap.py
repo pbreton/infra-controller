@@ -106,9 +106,9 @@ class Bootstrap:
                 raise VaultError("Vault is empty but retained credentials exist; restore its original data")
             # Keep a mode-0600 recovery file if Kubernetes cannot retain the keys.
             fd, recovery = tempfile.mkstemp(prefix="nico-vault-init-", suffix=".json")
-            print("Vault initialization recovery file: " + recovery, file=sys.stderr, flush=True)
             with os.fdopen(fd, "w+") as output:
                 try:
+                    print("Vault initialization recovery file: " + recovery, file=sys.stderr, flush=True)
                     result = self.vault("operator", "init", "-key-shares=1", "-key-threshold=1",
                                         "-format=json", allow_failure=True, stdout=output)
                 except (subprocess.TimeoutExpired, KeyboardInterrupt, OSError):

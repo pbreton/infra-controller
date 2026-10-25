@@ -3,14 +3,15 @@
 
 import base64
 import importlib.util
-import os
-import signal
-import sys
-import time
+import io
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -113,11 +114,15 @@ class VaultBootstrapTest(unittest.TestCase):
                  patch.object(self.bootstrap, "owned_secret", return_value=None), \
                  patch.object(self.bootstrap, "status", return_value={"initialized": False, "sealed": True}), \
                  patch.object(self.bootstrap, "vault") as command, \
-                 patch.object(self.bootstrap, "create_secret") as create:
-                if isinstance(response, BaseException):
-                    command.side_effect = streamed_init(keys, error=response)
-                else:
-                    command.side_effect = streamed_init(response.stdout, code=response.returncode)
+                 patch.object(self.bootstrap, "create_secret") as create, \
+                 patch.object(sys, "stderr", new_callable=io.StringIO) as stderr:
+                def initialize(*args, **kwargs):
+                    recovery = next(Path(directory).iterdir())
+                    self.assertEqual(stderr.getvalue(), "Vault initialization recovery file: " + str(recovery) + "\n")
+                    if isinstance(response, BaseException):
+                        return streamed_init(keys, error=response)(*args, **kwargs)
+                    return streamed_init(response.stdout, code=response.returncode)(*args, **kwargs)
+                command.side_effect = initialize
                 with self.assertRaises(vault.VaultError):
                     self.bootstrap.bootstrap()
                 create.assert_not_called()
@@ -128,6 +133,20 @@ class VaultBootstrapTest(unittest.TestCase):
                     self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
                 else:
                     self.assertEqual(files, [])
+
+    def test_broken_recovery_log_aborts_before_init_without_leaving_a_file(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(vault.tempfile, "tempdir", directory), \
+             patch.object(self.bootstrap, "check_mode"), \
+             patch.object(self.bootstrap, "get", return_value={"metadata": {"uid": "pvc"}, "status": {"phase": "Bound"}}), \
+             patch.object(self.bootstrap, "owned_secret", return_value=None), \
+             patch.object(self.bootstrap, "status", return_value={"initialized": False, "sealed": True}), \
+             patch.object(self.bootstrap, "vault") as command, \
+             patch.object(sys.stderr, "write", side_effect=BrokenPipeError):
+            with self.assertRaisesRegex(vault.VaultError, "No initialization keys returned"):
+                self.bootstrap.bootstrap()
+            command.assert_not_called()
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_configure_preserves_ca_and_rotated_credentials_but_propagates_other_failures(self):
         for fixture_error, fails in (("check-and-set parameter did not match the current version", False),
