@@ -107,6 +107,49 @@ class LocalPrerequisitesTest(unittest.TestCase):
 
 
 
+    def test_persistent_vault_graph_orders_bootstrap_and_public_ca_export(self):
+        tree = ast.parse((ROOT / "dev/deployment/tilt/Tiltfile").read_text())
+        assignments = {"persistent_vault", "vault_bootstrap", "vault_command", "vault_values", "vault_ready",
+                       "vault_admin_values", "vault_ca_exporter", "enabled_resources"}
+        nodes = []
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in assignments for t in node.targets):
+                nodes.append(node)
+            elif isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "persistent_vault":
+                nodes.append(node)
+            elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                name = getattr(node.value.func, "id", None)
+                if (name == "local" and any(isinstance(v, ast.Constant) and v.value == "check-mode" for v in ast.walk(node))) or (
+                    name == "local_resource" and isinstance(node.value.args[0], ast.Constant)
+                    and node.value.args[0].value == "vault-admin-ca"
+                ):
+                    nodes.append(node)
+        for persistent in (False, True):
+            with self.subTest(persistent=persistent):
+                resources, commands = {}, []
+                def resource(name, cmd, **kwargs):
+                    resources[name] = {"cmd": cmd, **kwargs}
+                environment = {
+                    "options": {"persistent-vault": persistent}, "os": os,
+                    "tilt_dir": str(ROOT / "dev/deployment/tilt"),
+                    "cluster_context": "kind-test", "core_namespace": "nico-system",
+                    "prereqs_values": {"vault": {"pkiMount": "certs"}},
+                    "tilt_values": yaml.safe_load((ROOT / "dev/deployment/tilt/values.yaml").read_text())["tilt"],
+                    "read_yaml": lambda path: yaml.safe_load(Path(path).read_text()),
+                    "local": lambda cmd, **kwargs: commands.append(cmd), "local_resource": resource,
+                }
+                exec(compile(ast.Module(body=nodes, type_ignores=[]), "Tiltfile", "exec"), environment)
+                expected = "vault-bootstrap" if persistent else "vault"
+                self.assertEqual(resources["vault-admin-ca"]["resource_deps"], [expected])
+                self.assertEqual(commands, [environment["vault_command"] + [
+                    "check-mode", "--mode", "persistent" if persistent else "ephemeral"]])
+                self.assertEqual("vault-bootstrap" in environment["enabled_resources"], persistent)
+                self.assertEqual("vault-bootstrap" in resources, persistent)
+                self.assertEqual(environment["vault_values"]["server"]["dev"]["enabled"], not persistent)
+                if persistent:
+                    self.assertEqual(resources["vault-bootstrap"]["resource_deps"], ["vault"])
+                    self.assertEqual(resources["vault-bootstrap"]["cmd"], environment["vault_command"] + ["bootstrap"])
+
     def test_rest_trust_rejects_incompatible_issuer_references_at_load(self):
         tree = ast.parse((ROOT / "dev/deployment/tilt/Tiltfile").read_text())
         guards = [node for node in tree.body if isinstance(node, ast.If)

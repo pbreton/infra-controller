@@ -105,11 +105,27 @@ class Bootstrap:
                 raise VaultError("Vault is empty but retained credentials exist; restore its original data")
             # Keep a mode-0600 recovery file if Kubernetes cannot retain the keys.
             fd, recovery = tempfile.mkstemp(prefix="nico-vault-init-", suffix=".json")
+            try:
+                result = self.vault("operator", "init", "-key-shares=1", "-key-threshold=1",
+                                    "-format=json", allow_failure=True)
+            except subprocess.TimeoutExpired as error:
+                captured = error.stdout or ""
+                if isinstance(captured, bytes):
+                    captured = captured.decode("utf-8", errors="replace")
+                result = subprocess.CompletedProcess([], 1, captured, "")
+            except OSError:
+                os.close(fd)
+                os.unlink(recovery)
+                raise
             with os.fdopen(fd, "w") as output:
-                result = self.vault("operator", "init", "-key-shares=1", "-key-threshold=1", "-format=json")
                 output.write(result.stdout)
                 output.flush()
                 os.fsync(output.fileno())
+            if not result.stdout.strip():
+                os.unlink(recovery)
+                raise VaultError("No initialization keys returned; inspect Vault state before retrying")
+            if result.returncode:
+                raise VaultError("Initialization transport failed; captured output needs recovery from " + recovery)
             try:
                 keys = json.loads(result.stdout)
                 self.create_secret(KEYS, {"keys.json": result.stdout})
@@ -142,6 +158,7 @@ class Bootstrap:
             else:
                 options = ["-version=2"] if kind == "kv" else []
                 self.vault("secrets", "enable", "-path=" + mount, *options, kind)
+        self.vault("secrets", "tune", "-max-lease-ttl=87600h", "certs")
         issuers = self.vault("list", "-format=json", "certs/issuers", allow_failure=True)
         if issuers.returncode == 2 and issuers.stdout.strip() == "{}":
             self.vault("write", "certs/root/generate/internal", "common_name=local-vault-ca", "ttl=87600h")

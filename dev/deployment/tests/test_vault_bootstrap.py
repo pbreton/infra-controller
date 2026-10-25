@@ -86,6 +86,34 @@ class VaultBootstrapTest(unittest.TestCase):
             self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
             self.assertEqual(files[0].read_text(), keys)
 
+    def test_initialization_transport_errors_preserve_received_keys_without_empty_files(self):
+        keys = json.dumps({"root_token": "test-token", "unseal_keys_b64": ["test-key"]})
+        for response in (result(keys, code=1),
+                         subprocess.TimeoutExpired("kubectl", 90, output=keys.encode()),
+                         result(code=1)):
+            with self.subTest(response=response), tempfile.TemporaryDirectory() as directory, \
+                 patch.object(vault.tempfile, "tempdir", directory), \
+                 patch.object(self.bootstrap, "check_mode"), \
+                 patch.object(self.bootstrap, "get", return_value={"metadata": {"uid": "pvc"}, "status": {"phase": "Bound"}}), \
+                 patch.object(self.bootstrap, "owned_secret", return_value=None), \
+                 patch.object(self.bootstrap, "status", return_value={"initialized": False, "sealed": True}), \
+                 patch.object(self.bootstrap, "vault") as command, \
+                 patch.object(self.bootstrap, "create_secret") as create:
+                if isinstance(response, Exception):
+                    command.side_effect = response
+                else:
+                    command.return_value = response
+                with self.assertRaises(vault.VaultError):
+                    self.bootstrap.bootstrap()
+                create.assert_not_called()
+                files = list(Path(directory).iterdir())
+                if isinstance(response, Exception) or response.stdout:
+                    self.assertEqual(len(files), 1)
+                    self.assertEqual(files[0].read_text(), keys)
+                    self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+                else:
+                    self.assertEqual(files, [])
+
     def test_configure_preserves_ca_and_rotated_credentials_but_propagates_other_failures(self):
         for fixture_error, fails in (("check-and-set parameter did not match the current version", False),
                                      ("permission denied", True)):
@@ -125,6 +153,7 @@ class VaultBootstrapTest(unittest.TestCase):
                         self.bootstrap.configure()
                 else:
                     self.bootstrap.configure()
+                command.assert_any_call("secrets", "tune", "-max-lease-ttl=87600h", "certs")
                 self.assertEqual(any("certs/root/generate/internal" in call.args
                                      for call in command.call_args_list), created)
 

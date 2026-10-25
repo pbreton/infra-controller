@@ -632,8 +632,9 @@ stores it and the root token in the immutable `nico-vault-local-keys` Secret,
 and creates the immutable `nico-vault-token` Secret consumed by Core. Both live
 in `nico-system` and are tied to the data PVC's UID. The prerequisite chart
 leaves that token Secret under bootstrap ownership in persistent mode.
-Bootstrap preserves the existing CA and seeds default BMC/UEFI credentials only
-when no version exists; rerunning it never resets a rotated or deleted value.
+Bootstrap sets the PKI mount maximum TTL to ten years before generating its
+first CA. It preserves an existing CA and seeds default BMC/UEFI credentials only
+when no version exists; rerunning it never resets a rotated or soft-deleted value.
 
 Vault starts sealed after a pod restart. While Tilt is running, unseal it with:
 
@@ -655,6 +656,37 @@ changed PVC identity, or an incompatible mount. Credentials travel through
 stdin and captured output. If initialization succeeds but saving the keys
 Secret fails, it reports a mode-0600 local recovery file containing those keys;
 retain that file securely until the matching Secret has been recovered.
+Captured initialization output is also retained on a transport error if any
+arrived. Empty output cannot recover keys; bootstrap never reinitializes an
+already initialized Vault.
+
+To recover a complete initialization JSON file into a missing keys Secret, first
+verify that it belongs to this Vault and that its original data PVC is still
+present. Set the context, namespace and recovery file path, then recreate the
+ownership metadata and immutable Secret:
+
+```bash
+vault_context=kind-nico-tilt
+vault_namespace=nico-system
+vault_keys_file=/path/to/nico-vault-init-recovery.json
+vault_pvc_uid=$(kubectl --context "$vault_context" -n "$vault_namespace" \
+  get pvc data-nico-vault-0 -o jsonpath='{.metadata.uid}')
+kubectl --context "$vault_context" -n "$vault_namespace" create secret generic \
+  nico-vault-local-keys --from-file="keys.json=$vault_keys_file"
+kubectl --context "$vault_context" -n "$vault_namespace" label secret \
+  nico-vault-local-keys app.kubernetes.io/managed-by=nico-local-vault
+kubectl --context "$vault_context" -n "$vault_namespace" annotate secret \
+  nico-vault-local-keys "nico.local/vault-pvc-uid=$vault_pvc_uid"
+kubectl --context "$vault_context" -n "$vault_namespace" patch secret \
+  nico-vault-local-keys --type=merge -p '{"immutable":true}'
+python3 dev/deployment/tilt/vault-bootstrap.py --context "$vault_context" \
+  --namespace "$vault_namespace" bootstrap
+```
+
+Do not overwrite an existing Secret or attach another Vault's keys. After
+successful recovery, remove the local recovery file. A changed mount TTL does
+not extend an existing CA's expiration; bootstrap deliberately does not replace
+an existing CA.
 
 Removing the release retains its PVC and bootstrap Secrets. Reinstall into the
 same cluster and namespace with the persistent option to recover them. To remove
