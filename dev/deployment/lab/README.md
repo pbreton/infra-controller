@@ -99,7 +99,6 @@ docker run --rm --privileged \
   --mount type=bind,src=/tmp/nico-scout-artifacts,dst=/state \
   --workdir /src nico-scout-builder:local \
   python3 dev/deployment/lab/build-scout.py \
-  \
   --scout-package /state/scout.deb --output /state/boot
 ```
 
@@ -191,13 +190,16 @@ tilt up -f dev/deployment/tilt/Tiltfile -- \
 
 `--bmc-lab` defaults to false and requires both `--persistent-vault` and a
 nonempty `--boot-artifact-image`. Supplying the image without BMC mode is an
-error. The image must already be available to the cluster. BMC mode deploys
+error. The image uses `IfNotPresent`; load it on the cluster or use a pullable image.
+Use a new tag for changed payloads to avoid reusing a cached image. BMC mode deploys
 Core, BMC proxy, DHCP and PXE, with real Scout authentication and hardware polling.
 It disables MAT, MAT's readiness check and the MAT-specific SSH console resource.
 Tilt service readiness therefore does **not** establish guest admission or
 instance readiness. The checks below establish Scout connectivity separately.
-An existing opposite-mode Helm release makes Tilt refuse the mode change;
-manually removing a release does not migrate retained site data.
+A mode marker in `kube-system` is claimed before Core starts and survives release
+removal. It rejects mode changes even after a partial deployment. An unmarked
+partial Core deployment is rejected unless a matching MAT/PXE release identifies
+its mode. Removing the marker is not a supported migration procedure.
 
 PXE uses Service address `10.96.0.30`: firmware downloads iPXE on port 8080;
 iPXE requests boot metadata on port 80. Both ports reach the same PXE server.
@@ -249,3 +251,26 @@ A successful ping proves a live real-Scout response through Core. It does not
 prove OS installation, instance assignment, release, or tenant IPv6 connectivity;
 those remain separate milestones in
 [issue 8124](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
+
+### Stop, restart and discard the BMC lab
+
+Stop the Tilt process with Ctrl-C to stop watching while retaining the running
+stack, Core database, Vault and target state. Restart using the same context,
+BMC flags, image reference and target configuration. Do **not** use `tilt down`
+for a resumable BMC lab: uninstalling PostgreSQL can delete its PVC while Vault
+and target PVCs survive, leaving an inconsistent site. The generic Tilt teardown
+instructions do not apply to retained BMC labs.
+
+For a full discard, first stop both Tilt processes (stack and target), then
+remove the dedicated cluster. With the default kind/local-path storage used by
+this workflow, this removes its database, Vault, target PVC and mode marker
+together. This destroys the disposable guest and all site data; it is not a
+backup or restore operation.
+
+```bash
+kind delete cluster --name nico-tilt
+```
+
+Never reuse target disks or Vault credentials from a discarded site with a new
+empty database. This slice provides stop/restart and full discard, not partial
+site recovery or migration between clusters.

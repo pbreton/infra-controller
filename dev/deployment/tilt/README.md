@@ -737,5 +737,6 @@ The opt-in `--bmc-lab` profile connects Core, DHCP and PXE to real Scout running
 in native KVM guests. It requires persistent Vault and a supplied boot-artifact
 image on a fresh kind cluster. Follow the
 [Scout admission workflow](../lab/README.md#connect-scout-to-the-tilt-stack)
-for image builds, target registration, retained-state boundaries and the live
+for image builds, target registration, BMC-specific stop/restart and full-discard
+instructions, retained-state boundaries and the live
 Scout check. Ordinary Tilt development continues to use MAT by default.

@@ -8,7 +8,6 @@ tpm_required = false
 initial_domain_name = "local.nico"
 initial_dpu_agent_upgrade_policy = "off"
 allow_insecure_discovery = false
-allow_machineatron_scout_stream = false
 max_database_connections = 64
 
 [pools.lo-ip]
@@ -32,6 +31,7 @@ type = "integer"
 ranges = [{ start = "1000", end = "10000" }]
 
 [auth]
+allow_machineatron_scout_stream = false
 permissive_mode = false
 
 [auth.trust]

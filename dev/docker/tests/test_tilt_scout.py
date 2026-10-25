@@ -5,6 +5,7 @@ import ast
 import os
 from pathlib import Path
 import subprocess
+import tomllib
 import unittest
 
 import yaml
@@ -57,8 +58,10 @@ class ScoutWiringTest(unittest.TestCase):
                 self.assertIn('/' + arch, init['command'][-1])
                 core = values['nico-api']
                 self.assertEqual(core['extraEnv'], [])
-                self.assertIn('permissive_mode = false', core['siteConfig']['nicoApiSiteConfig'])
-                self.assertIn('allow_machineatron_scout_stream = false', core['siteConfig']['nicoApiSiteConfig'])
+                auth = tomllib.loads(core['siteConfig']['nicoApiSiteConfig'])['auth']
+                self.assertFalse(auth['permissive_mode'])
+                self.assertFalse(auth['allow_machineatron_scout_stream'])
+                self.assertEqual(init['imagePullPolicy'], 'IfNotPresent')
 
     def test_default_mat_configuration_is_preserved(self):
         calls, values = self.profile(False)
@@ -95,23 +98,10 @@ class ScoutWiringTest(unittest.TestCase):
                 for name in ('nico-machine-a-tron', 'nico-ssh-console-rs', 'stack-ready'):
                     self.assertEqual(name in names, not bmc)
 
-    def test_opposite_mode_release_blocks_configuration_changes(self):
+    def test_mode_is_claimed_before_core_starts(self):
         tree = ast.parse(TILT.read_text())
-        nodes = [n for n in tree.body if (
-            isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'conflicting_release' for t in n.targets)
-        ) or (
-            isinstance(n, ast.If) and any(isinstance(x, ast.Constant) and isinstance(x.value, str)
-                                        and 'Cannot change between MAT and BMC' in x.value for x in ast.walk(n))
-        )]
-        def fail(message):
-            raise ValueError(message)
-        for bmc in (False, True):
-            calls = []
-            def local(command, **kwargs):
-                calls.append(command)
-                return 'existing-release'
-            with self.subTest(bmc=bmc), self.assertRaisesRegex(ValueError, 'Cannot change'):
-                exec(compile(ast.Module(body=nodes, type_ignores=[]), 'Tiltfile', 'exec'), dict(
-                    bmc_lab=bmc, cluster_context='kind-test', core_namespace='nico-system', local=local, fail=fail))
-            self.assertIn('^nico-machine-a-tron$' if bmc else '^nico-pxe$', calls[0])
-            self.assertIn('kind-test', calls[0])
+        deps = next(n.value for n in tree.body if isinstance(n, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == 'nico_api_dependencies' for t in n.targets))
+        self.assertIn('local-site-mode', ast.literal_eval(deps))
+        self.assertIn("site_mode_command + ['check']", TILT.read_text())
+        self.assertIn("site_mode_command + ['claim']", TILT.read_text())

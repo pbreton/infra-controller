@@ -59,11 +59,11 @@ if enable_rest and (rest_global['certificate']['issuerRef'].get('kind') != 'Clus
 prereqs_values_file = os.path.join(repo_root, 'helm-prereqs/values/local-development.yaml')
 prereqs_values = read_yaml(prereqs_values_file)
 core_namespace = prereqs_values['namespace']
-# Disabling a Tilt resource does not remove its Helm release or retained data.
-conflicting_release = 'nico-machine-a-tron' if bmc_lab else 'nico-pxe'
-if str(local(['helm', 'list', '--kube-context', cluster_context, '--namespace', core_namespace,
-              '--filter', '^%s$' % conflicting_release, '--short', '--all'], quiet=True)).strip():
-    fail('Cannot change between MAT and BMC lab modes in this cluster; use a new kind cluster')
+site_mode = os.path.join(tilt_dir, 'site-mode.py')
+site_mode_command = ['python3', site_mode, '--context', cluster_context, '--namespace', core_namespace,
+                     '--mode', 'bmc' if bmc_lab else 'mat']
+local(site_mode_command + ['check'], quiet=True)
+local_resource('local-site-mode', site_mode_command + ['claim'], deps=[site_mode], labels=['infrastructure'])
 vault_bootstrap = os.path.join(tilt_dir, 'vault-bootstrap.py')
 vault_command = ['python3', vault_bootstrap, '--context', cluster_context, '--namespace', core_namespace]
 local(vault_command + ['check-mode', '--mode', 'persistent' if persistent_vault else 'ephemeral'], quiet=True)
@@ -888,7 +888,7 @@ rest_image(
 
 core_global = all_values['global']
 nico_api_values = component_values(core_global, all_values['nico-api'])
-nico_api_dependencies = ['nico-core-prereqs', 'nico-postgres', 'vault-admin-ca']
+nico_api_dependencies = ['local-site-mode', 'nico-core-prereqs', 'nico-postgres', 'vault-admin-ca']
 if bmc_lab:
     # A separate site configuration keeps simulated hardware shortcuts out of
     # real Scout admission. This mode is for a fresh, dedicated kind cluster.
@@ -914,7 +914,7 @@ if bmc_lab:
                 'CARBIDE_PXE_URL': 'http://nico-pxe.%s.svc.cluster.local' % core_namespace,
             }},
             'bootArtifactContainers': [{
-                'name': 'scout-artifacts', 'image': boot_artifact_image,
+                'name': 'scout-artifacts', 'image': boot_artifact_image, 'imagePullPolicy': 'IfNotPresent',
                 'command': ['sh', '-ec', 'cp -r /%s /forge-boot-artifacts/blobs/internal/' % compiler_arch],
             }],
         }),
@@ -1173,6 +1173,7 @@ local_resource(
 )
 
 enabled_resources = [
+    'local-site-mode',
     'stack-ready',
     'vault-admin-ca',
     'repo-jetstack',
