@@ -143,8 +143,9 @@ firmware file, domain or BMC state fails startup and requires restoring the data
 Provisioning is opt-in and does not install or configure a DHCP server. The
 server must serve the guest subnet selected by the relay's gateway address and
 provide the intended boot options. Enable it only in an isolated single-node
-kind cluster with kube-proxy in iptables mode and IPv4 forwarding already
-turned on. The runtime checks those prerequisites without changing global
+kind cluster with kube-proxy in iptables mode using the image's `nf_tables`
+backend, and IPv4 forwarding already turned on. Nodes using the legacy
+iptables backend are outside this chart's supported provisioning topology. The runtime checks those prerequisites without changing global
 sysctls. It does not support a multi-node topology or an IPv6 provisioning path.
 
 With an existing DHCP Service at `10.96.40.20`, enable the relay on an installed
@@ -174,7 +175,9 @@ This uses the directional interfaces supported by
 [ISC relay](https://kb.isc.org/docs/isc-dhcp-44-manual-pages-dhcrelay).
 
 Rules carry the target UUID and are removed on graceful shutdown or reconciled
-on the next start. Other targets' rules and kube-proxy chains are not modified.
+on the next start. Cleanup failures are logged and retried on the next start;
+bridge cleanup is still attempted. Even disabled mode needs working image-side
+netfilter tools to remove any stale rules from an earlier enabled run. Other targets' rules and kube-proxy chains are not modified.
 A stopped relay makes the target runtime fail and removes readiness. Provisioning
 values are operational settings, separate from retained guest identity: changing
 or disabling them restarts the pod but retains the disk and BMC credentials.

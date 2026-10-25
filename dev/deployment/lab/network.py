@@ -24,7 +24,8 @@ class Network:
         self.server = ipaddress.IPv4Address(server)
         self.pod_cidr = ipaddress.IPv4Network(pod_cidr)
         if (self.server.is_unspecified or self.server.is_multicast or self.server.is_loopback
-                or self.server.is_link_local or self.server in self.subnet):
+                or self.server.is_link_local or self.server == ipaddress.IPv4Address('255.255.255.255')
+                or self.server in self.subnet):
             raise ValueError('DHCP server must be a unicast IPv4 address outside the guest subnet')
         if self.pod_cidr.prefixlen == 0 or self.pod_cidr.overlaps(self.subnet):
             raise ValueError('pod CIDR must be non-default and separate from the guest subnet')
@@ -56,7 +57,7 @@ class Network:
         if not links or 'UP' not in links[0].get('flags', []):
             raise ValueError('the provisioning uplink must exist and be up')
         if ':KUBE-POSTROUTING ' not in self.run('iptables-save', '-t', 'nat'):
-            raise ValueError('provisioning requires kube-proxy in iptables mode')
+            raise ValueError("provisioning requires kube-proxy in iptables mode on the image's nf_tables backend")
         self.owned_rules()
 
     def clear(self):

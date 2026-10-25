@@ -1,11 +1,12 @@
-{{- if .Values.network.provisioning.enabled -}}
+{{- $provisioning := .Values.network.provisioning | default dict -}}
+{{- if $provisioning.enabled -}}
 {{- $nodes := lookup "v1" "Node" "" "" -}}
 {{- if $nodes.items -}}
 {{- if ne (len $nodes.items) 1 -}}
 {{- fail "provisioning requires a single-node kind cluster" -}}
 {{- end -}}
 {{- $node := index $nodes.items 0 -}}
-{{- if or (ne $node.metadata.name .Values.nodeName) (ne $node.spec.podCIDR .Values.network.provisioning.podCIDR) -}}
+{{- if or (ne $node.metadata.name .Values.nodeName) (ne $node.spec.podCIDR $provisioning.podCIDR) -}}
 {{- fail "provisioning podCIDR must match the selected node" -}}
 {{- end -}}
 {{- end -}}
@@ -51,13 +52,13 @@ spec:
           args:
             - --config
             - /etc/nico-target/config.json
-            {{- if .Values.network.provisioning.enabled }}
+            {{- if $provisioning.enabled }}
             - --dhcp-server
-            - {{ required "network.provisioning.dhcpServer is required" .Values.network.provisioning.dhcpServer | quote }}
+            - {{ required "network.provisioning.dhcpServer is required" $provisioning.dhcpServer | quote }}
             - --pod-cidr
-            - {{ required "network.provisioning.podCIDR is required" .Values.network.provisioning.podCIDR | quote }}
+            - {{ required "network.provisioning.podCIDR is required" $provisioning.podCIDR | quote }}
             - --uplink
-            - {{ .Values.network.provisioning.uplink | quote }}
+            - {{ $provisioning.uplink | default "eth0" | quote }}
             {{- end }}
           env:
             - name: NODE_NAME

@@ -230,7 +230,7 @@ class ProvisioningNetworkTest(unittest.TestCase):
         return TARGET.Network(TARGET.configuration(CONFIG), run or Mock(), **kwargs)
 
     def test_invalid_network_inputs_fail_without_commands(self):
-        for server, cidr, uplink in [('10.96.40.20', '', 'eth0'), ('', '10.244.0.0/24', 'eth0'),
+        for server, cidr, uplink in [('255.255.255.255', '10.244.0.0/24', 'eth0'), ('10.96.40.20', '', 'eth0'), ('', '10.244.0.0/24', 'eth0'),
                                      ('::1', '10.244.0.0/24', 'eth0'), ('10.84.40.5', '10.244.0.0/24', 'eth0'),
                                      ('10.96.40.20', '10.84.40.0/24', 'eth0'), ('10.96.40.20', '0.0.0.0/0', 'eth0'),
                                      ('10.96.40.20', '10.244.0.0/24', 'invalid/name')]:
@@ -326,7 +326,7 @@ class ProvisioningNetworkTest(unittest.TestCase):
             self.assertEqual(spawn.call_count, 2)
             self.assertEqual(relay.poll(), 1)
 
-    def test_lease_capture_requires_ack_for_the_requested_guest_and_address(self):
+    def test_capture_requires_the_requested_guest_and_optional_lease(self):
         import contextlib
         import io
         spec = importlib.util.spec_from_file_location('test_target_cli', LAB / 'test-target.py')
@@ -349,13 +349,31 @@ class ProvisioningNetworkTest(unittest.TestCase):
                   packet(config['mac'], '10.84.40.101', 5),
                   packet(config['mac'], '10.84.40.100', 2),
                   packet(config['mac'], '10.84.40.100', 5)]
-        capture = Mock()
-        capture.recv.side_effect = frames
-        output = io.StringIO()
-        with patch('socket.AF_PACKET', 17, create=True), patch('socket.socket') as create, patch('pathlib.Path.read_text', return_value=json.dumps(config)), \
-                patch.object(sys, 'argv', ['capture', '10.84.40.100']), contextlib.redirect_stdout(output):
-            create.return_value.__enter__.return_value = capture
-            exec(cli.CAPTURE, {})
-        self.assertEqual(capture.recv.call_count, 4)
-        self.assertEqual(json.loads(output.getvalue().splitlines()[-1]),
-                         {'dhcp_mac': config['mac'], 'lease': '10.84.40.100'})
+        request = bytearray(frames[-1])
+        request[36:38] = (67).to_bytes(2, 'big')
+        request[42] = 1
+        wrong_source = bytes(request)
+        request[6:12] = bytes.fromhex(config['mac'].replace(':', ''))
+        for lease, packets, expected in [
+                ('10.84.40.100', frames, {'dhcp_mac': config['mac'], 'lease': '10.84.40.100'}),
+                ('', [frames[-1], wrong_source, bytes(request)], {'dhcp_mac': config['mac']})]:
+            capture = Mock()
+            capture.recv.side_effect = packets
+            output = io.StringIO()
+            with self.subTest(lease=lease), patch('socket.AF_PACKET', 17, create=True), \
+                    patch('socket.socket') as create, patch('pathlib.Path.read_text', return_value=json.dumps(config)), \
+                    patch.object(sys, 'argv', ['capture', lease]), contextlib.redirect_stdout(output):
+                create.return_value.__enter__.return_value = capture
+                exec(cli.CAPTURE, {})
+            self.assertEqual(capture.recv.call_count, len(packets))
+            self.assertEqual(json.loads(output.getvalue().splitlines()[-1]), expected)
+
+    def test_rule_cleanup_failure_preserves_startup_error_and_attempts_bridge_cleanup(self):
+        network = Mock()
+        network.clear.side_effect = OSError('iptables unavailable')
+        with tempfile.TemporaryDirectory() as directory, patch.object(TARGET, 'READY', Path(directory) / 'ready'), \
+                patch.object(TARGET, 'prepare_storage', side_effect=RuntimeError('original startup failure')), \
+                patch.object(TARGET, 'clear_bridge') as clear_bridge, patch('sys.stderr'):
+            with self.assertRaisesRegex(RuntimeError, 'original startup failure'):
+                TARGET.serve(TARGET.configuration(CONFIG), network)
+            clear_bridge.assert_called_once()

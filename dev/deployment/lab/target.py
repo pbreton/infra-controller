@@ -297,7 +297,10 @@ def serve(config, networking=None):
         for child in reversed(children):
             stop_child(child)
         if networking is not None:
-            networking.clear()
+            try:
+                networking.clear()
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                print(f'network cleanup failed; owned rules will be retried on next start: {error}', file=sys.stderr)
         # Retain a bridge with live TAPs after an unsuccessful guest save.
         clear_bridge(config)
 
