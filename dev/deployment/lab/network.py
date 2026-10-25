@@ -1,0 +1,146 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+"""Owned IPv4 provisioning rules and DHCP relay for one native guest bridge."""
+
+import ipaddress
+import json
+from pathlib import Path
+import re
+import shlex
+import subprocess
+
+
+class Network:
+    def __init__(self, config, run, server='', pod_cidr='', uplink='eth0'):
+        self.config = config
+        self.run = run
+        self.owner = 'nico-target:' + config['uuid']
+        self.subnet = ipaddress.IPv4Interface(config['bridgeAddress']).network
+        self.enabled = bool(server or pod_cidr)
+        self.uplink = uplink
+        self.relay = None
+        if not self.enabled:
+            return
+        self.server = ipaddress.IPv4Address(server)
+        self.pod_cidr = ipaddress.IPv4Network(pod_cidr)
+        if (self.server.is_unspecified or self.server.is_multicast or self.server.is_loopback
+                or self.server.is_link_local or self.server in self.subnet):
+            raise ValueError('DHCP server must be a unicast IPv4 address outside the guest subnet')
+        if self.pod_cidr.prefixlen == 0 or self.pod_cidr.overlaps(self.subnet):
+            raise ValueError('pod CIDR must be non-default and separate from the guest subnet')
+        if not re.fullmatch(r'[a-zA-Z0-9_.:-]{1,15}', uplink) or uplink == config['bridge']:
+            raise ValueError('uplink must name a separate Linux interface')
+
+    def owned_rules(self):
+        result = []
+        for table in ('filter', 'nat'):
+            for line in self.run('iptables-save', '-t', table).splitlines():
+                fields = shlex.split(line)
+                if '--comment' not in fields or fields[fields.index('--comment') + 1] != self.owner:
+                    continue
+                chain = 'FORWARD' if table == 'filter' else 'POSTROUTING'
+                if fields[:2] != ['-A', chain] or '-s' not in fields and '-d' not in fields:
+                    raise ValueError('unrecognized rule uses this target ownership tag')
+                addresses = [fields[i + 1] for i, field in enumerate(fields) if field in ('-s', '-d')]
+                if str(self.subnet) not in addresses:
+                    raise ValueError('owned rule does not match the retained guest subnet')
+                result.append((table, fields[1], fields[2:]))
+        return result
+
+    def preflight(self):
+        if not self.enabled:
+            return
+        if Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':
+            raise ValueError('the node must already enable IPv4 forwarding')
+        links = json.loads(self.run('ip', '-json', 'link', 'show', 'dev', self.uplink))
+        if not links or 'UP' not in links[0].get('flags', []):
+            raise ValueError('the provisioning uplink must exist and be up')
+        if ':KUBE-POSTROUTING ' not in self.run('iptables-save', '-t', 'nat'):
+            raise ValueError('provisioning requires kube-proxy in iptables mode')
+        self.owned_rules()
+
+    def clear(self):
+        # Read and validate the complete owned set before deleting any rule.
+        for table, chain, rule in self.owned_rules():
+            self.run('iptables', '-w', '5', '-t', table, '-D', chain, *rule)
+
+    def rules(self):
+        tag = ['-m', 'comment', '--comment', self.owner]
+        bridge = self.config['bridge']
+        subnet = str(self.subnet)
+        yield 'filter', 'FORWARD', ['-i', bridge, '-s', subnet, *tag, '-j', 'ACCEPT']
+        yield 'filter', 'FORWARD', ['-o', bridge, '-d', subnet, '-m', 'conntrack',
+                                    '--ctstate', 'RELATED,ESTABLISHED', *tag, '-j', 'ACCEPT']
+        yield 'nat', 'POSTROUTING', ['-s', subnet, '-o', self.uplink, *tag, '-j', 'MASQUERADE']
+        # Insert last, ahead of masquerade and kube-proxy's POSTROUTING jump.
+        # DNAT has already selected the pod; Scout must retain the guest source.
+        yield 'nat', 'POSTROUTING', ['-s', subnet, '-d', str(self.pod_cidr), *tag, '-j', 'ACCEPT']
+
+    def upstreams(self):
+        # kindnet gives each pod-facing veth an address from the node pod CIDR.
+        # These links change when pods are replaced; eth0 alone misses replies.
+        links = json.loads(self.run('ip', '-json', 'address', 'show'))
+        return sorted({self.uplink} | {
+            link['ifname'] for link in links if 'UP' in link.get('flags', [])
+            and any(address['family'] == 'inet'
+                    and ipaddress.IPv4Address(address['local']) in self.pod_cidr
+                    for address in link.get('addr_info', []))})
+
+    def refresh(self):
+        if self.relay is not None:
+            self.relay.refresh(self.upstreams())
+
+    def start(self):
+        # Also removes stale owned rules when provisioning is disabled after a crash.
+        self.clear()
+        if not self.enabled:
+            return None
+        try:
+            for table, chain, rule in self.rules():
+                self.run('iptables', '-w', '5', '-t', table, '-I', chain, '1', *rule)
+            self.relay = Relay(self.config['bridge'], str(self.server), self.upstreams())
+            return self.relay
+        except (OSError, subprocess.SubprocessError):
+            self.clear()
+            raise
+
+
+class Relay:
+    """Supervised ISC relay that follows kindnet pod-interface replacement."""
+
+    def __init__(self, bridge, server, upstreams):
+        self.bridge = bridge
+        self.server = server
+        self.upstreams = upstreams
+        self.process = self.start()
+
+    def start(self):
+        arguments = ['dhcrelay', '-4', '-d', '-pf', '/run/nico-dhcrelay.pid', '-id', self.bridge]
+        for interface in self.upstreams:
+            arguments.extend(['-iu', interface])
+        return subprocess.Popen([*arguments, self.server])
+
+    def refresh(self, upstreams):
+        # A real process failure is handled by the target supervisor, not retried.
+        if self.process.poll() is not None or upstreams == self.upstreams:
+            return
+        self.terminate()
+        try:
+            self.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.kill()
+            self.wait(timeout=5)
+        self.upstreams = upstreams
+        self.process = self.start()
+
+    def poll(self):
+        return self.process.poll()
+
+    def terminate(self):
+        self.process.terminate()
+
+    def wait(self, timeout):
+        return self.process.wait(timeout=timeout)
+
+    def kill(self):
+        self.process.kill()

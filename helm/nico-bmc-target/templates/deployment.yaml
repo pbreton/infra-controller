@@ -1,3 +1,15 @@
+{{- if .Values.network.provisioning.enabled -}}
+{{- $nodes := lookup "v1" "Node" "" "" -}}
+{{- if $nodes.items -}}
+{{- if ne (len $nodes.items) 1 -}}
+{{- fail "provisioning requires a single-node kind cluster" -}}
+{{- end -}}
+{{- $node := index $nodes.items 0 -}}
+{{- if or (ne $node.metadata.name .Values.nodeName) (ne $node.spec.podCIDR .Values.network.provisioning.podCIDR) -}}
+{{- fail "provisioning podCIDR must match the selected node" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,7 +48,17 @@ spec:
         - name: target
           image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["--config", "/etc/nico-target/config.json"]
+          args:
+            - --config
+            - /etc/nico-target/config.json
+            {{- if .Values.network.provisioning.enabled }}
+            - --dhcp-server
+            - {{ required "network.provisioning.dhcpServer is required" .Values.network.provisioning.dhcpServer | quote }}
+            - --pod-cidr
+            - {{ required "network.provisioning.podCIDR is required" .Values.network.provisioning.podCIDR | quote }}
+            - --uplink
+            - {{ .Values.network.provisioning.uplink | quote }}
+            {{- end }}
           env:
             - name: NODE_NAME
               valueFrom:

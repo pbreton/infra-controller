@@ -71,3 +71,27 @@ tests:
       - equal:
           path: spec.ports[0].targetPort
           value: redfish
+  - it: keeps provisioning disabled by default
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [--config, /etc/nico-target/config.json]
+  - it: passes the opt-in relay and source-preservation configuration
+    template: deployment.yaml
+    set:
+      network.provisioning.enabled: true
+      network.provisioning.dhcpServer: 10.96.40.20
+      network.provisioning.podCIDR: 10.244.0.0/24
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [--config, /etc/nico-target/config.json, --dhcp-server, 10.96.40.20, --pod-cidr, 10.244.0.0/24, --uplink, eth0]
+  - it: rejects enabled provisioning without a DHCP service
+    template: deployment.yaml
+    set:
+      network.provisioning.enabled: true
+      network.provisioning.podCIDR: 10.244.0.0/24
+    asserts:
+      - failedTemplate:
+          errorMessage: network.provisioning.dhcpServer is required

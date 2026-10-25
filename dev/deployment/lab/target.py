@@ -22,6 +22,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 import preflight
+from network import Network
 
 ROOT = Path('/data')
 READY = Path('/run/nico-target-ready')
@@ -214,16 +215,23 @@ def stop_child(child):
             child.wait(timeout=5)
 
 
-def serve(config):
+def serve(config, networking=None):
     children = []
+    bmc = None
     domain_ready = False
     try:
         prepare_storage(config)
         Path('/run/libvirt').mkdir(exist_ok=True)
         bridge(config)
+        if networking is not None:
+            relay = networking.start()
+            if relay is not None:
+                children.append(relay)
         children.append(subprocess.Popen(['virtlogd']))
         children.append(subprocess.Popen(['libvirtd']))
         for attempt in range(60):
+            if networking is not None:
+                networking.refresh()
             if any(child.poll() is not None for child in children):
                 raise RuntimeError('libvirt runtime exited during startup')
             try:
@@ -247,11 +255,14 @@ def serve(config):
         domain_ready = True
         (ROOT / 'initialized').touch()
         # A new target stays off. Only Redfish controls power-on or saved-state restoration.
-        children.append(subprocess.Popen(['bmc-mock', '--machine-role', 'host', '--hardware-profile', 'generic_ami',
+        bmc = subprocess.Popen(['bmc-mock', '--machine-role', 'host', '--hardware-profile', 'generic_ami',
             '--dpu-count', '0', '--instance-index', str(config['instanceIndex']), '--port', str(config['bmcPort']),
             '--redfish-auth', '--state-backend', 'libvirt', '--libvirt-domain', DOMAIN,
-            '--state-file', str(ROOT / 'bmc.json')]))
+            '--state-file', str(ROOT / 'bmc.json')])
+        children.append(bmc)
         for attempt in range(60):
+            if networking is not None:
+                networking.refresh()
             if STOP or any(child.poll() is not None for child in children):
                 raise RuntimeError('target runtime stopped during BMC startup')
             try:
@@ -266,14 +277,17 @@ def serve(config):
         (ROOT / 'bmc-initialized').touch()
         READY.touch()
         while not STOP:
+            if networking is not None:
+                networking.refresh()
             if any(child.poll() is not None for child in children):
                 raise RuntimeError('target child process exited')
             time.sleep(1)
     finally:
         READY.unlink(missing_ok=True)
         # Stop the BMC writer before saving the guest or stopping libvirt.
-        if len(children) == 3:
-            stop_child(children.pop())
+        if bmc is not None:
+            stop_child(bmc)
+            children.remove(bmc)
         if domain_ready:
             try:
                 if virsh('domstate', DOMAIN) in ('running', 'paused'):
@@ -282,6 +296,8 @@ def serve(config):
                 print(f'guest save failed; memory may be lost: {error}', file=sys.stderr)
         for child in reversed(children):
             stop_child(child)
+        if networking is not None:
+            networking.clear()
         # Retain a bridge with live TAPs after an unsuccessful guest save.
         clear_bridge(config)
 
@@ -289,19 +305,24 @@ def serve(config):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True, type=Path)
+    parser.add_argument('--dhcp-server', default='', help='optional IPv4 DHCP Service address; requires --pod-cidr')
+    parser.add_argument('--pod-cidr', default='', help='selected single-node kind IPv4 pod CIDR; requires --dhcp-server')
+    parser.add_argument('--uplink', default='eth0', help='node uplink used by the relay and Internet masquerade')
     args = parser.parse_args()
     config = configuration(json.loads(args.config.read_text()))
     if preflight.ARCHITECTURES.get(platform.machine()) != config['architecture']:
         raise ValueError('target architecture must match the native runtime')
     if os.environ.get('NODE_NAME') != config['nodeName']:
         raise ValueError('target must run on its configured Kubernetes node')
+    networking = Network(config, run, args.dhcp_server, args.pod_cidr, args.uplink)
     preflight.check_kvm(config['architecture'])
     # Reject fixable host preconditions before binding fresh storage to these values.
     check_network(config)
     check_bmc_port(config)
+    networking.preflight()
     os.umask(0o077)
     with bound_storage(ROOT, config):
-        serve(config)
+        serve(config, networking)
 
 
 def stopping(_signal, _frame):

@@ -8,7 +8,8 @@ workflow inside a Linux VM with nested KVM access.
 This stage of [the Tilt migration](https://github.com/dsx-ai-factory/infra-controller/issues/8124)
 provides guest boot, BMC power control and retained target state. It does not
 install NICo, DHCP, a boot server, Scout or an operating system. It creates an
-isolated IPv4 guest bridge without forwarding or NAT. NICo discovery and tenant
+isolated IPv4 guest bridge by default. Optional provisioning enables a DHCPv4
+relay and forwarding to existing cluster services. NICo discovery and tenant
 IPv6 validation require the later provisioning integration. Ordinary Tilt
 machine-a-tron development remains independent of this chart.
 
@@ -112,6 +113,10 @@ The service is for isolated development only.
 | `target.cpus` | `2` | Integer 1–32; guest vCPUs. |
 | `target.diskGiB` | `24` | Integer 8–1024; initial sparse guest disk size in GiB. |
 | `network.bridgeAddress` | `10.84.40.1/24` | Usable IPv4 gateway with prefix /30 or shorter, without overlap with other node routes. |
+| `network.provisioning.enabled` | `false` | Enable IPv4 relay and forwarding in a single-node kind cluster using kube-proxy iptables mode. |
+| `network.provisioning.dhcpServer` | Empty | Required when enabled: existing unicast IPv4 DHCP Service address outside the guest subnet. |
+| `network.provisioning.podCIDR` | Empty | Required when enabled: selected node's IPv4 pod CIDR, separate from the guest subnet and not `/0`. Checked against live Nodes by Helm; offline templates cannot check it. |
+| `network.provisioning.uplink` | `eth0` | Existing up node interface, separate from the guest bridge; 1–15 letters, digits, underscores, periods, colons or hyphens. |
 | `service.clusterIP` | Empty, required | Unused IPv4 address in the cluster's Service CIDR. |
 | `service.targetPort` | `2443` | Integer 1024–65535; must be unused on the selected node. Service port stays 443. |
 | `resources` | Requests: 2 CPUs, 5 GiB | Kubernetes container resources, independent of guest sizing. No limits by default. |
@@ -133,13 +138,59 @@ saved state. Autostart is rejected. Forced termination can lose guest memory and
 unflushed writes; retained disks are not a backup. A missing initialized disk,
 firmware file, domain or BMC state fails startup and requires restoring the data.
 
+## Connect existing provisioning services
+
+Provisioning is opt-in and does not install or configure a DHCP server. The
+server must serve the guest subnet selected by the relay's gateway address and
+provide the intended boot options. Enable it only in an isolated single-node
+kind cluster with kube-proxy in iptables mode and IPv4 forwarding already
+turned on. The runtime checks those prerequisites without changing global
+sysctls. It does not support a multi-node topology or an IPv6 provisioning path.
+
+With an existing DHCP Service at `10.96.40.20`, enable the relay on an installed
+target with:
+
+```bash
+pod_cidr=$(kubectl get node nico-target-control-plane -o jsonpath='{.spec.podCIDR}')
+helm upgrade target-one helm/nico-bmc-target --namespace bmc-lab --reuse-values \
+  --set network.provisioning.enabled=true \
+  --set network.provisioning.dhcpServer=10.96.40.20 \
+  --set network.provisioning.podCIDR="$pod_cidr" --wait --timeout 5m
+```
+
+For Tilt, put these values in the same target values file used at deployment.
+The relay forwards guest broadcasts to that Service. Forwarding rules allow
+outbound guest traffic and established replies. Traffic to the node's pod CIDR
+keeps its source address, including after Service DNAT; this is needed by
+services that identify the provisioning host from its source IP. Traffic leaving
+through the uplink is masqueraded to the node address. This enables access
+through existing upstream routing; it does not establish Internet reachability.
+This isolated lab network is not a tenant security boundary.
+
+The relay accepts requests only from its guest bridge and replies from the
+uplink and kindnet pod-facing interfaces. It refreshes those upstream listeners
+when pods change; in-flight DHCP exchanges may retry during that brief restart.
+This uses the directional interfaces supported by
+[ISC relay](https://kb.isc.org/docs/isc-dhcp-44-manual-pages-dhcrelay).
+
+Rules carry the target UUID and are removed on graceful shutdown or reconciled
+on the next start. Other targets' rules and kube-proxy chains are not modified.
+A stopped relay makes the target runtime fail and removes readiness. Provisioning
+values are operational settings, separate from retained guest identity: changing
+or disabling them restarts the pod but retains the disk and BMC credentials.
+Each target needs a distinct guest subnet, target index and BMC port/address.
+
 ## Exercise boot and retained state
 
 The smoke test below is **destructive and only for a fresh isolated test disk**:
 it writes a disk marker, rotates the fixture password and boots the guest. It
 compares Redfish serial and network-boot MAC with the libvirt guest identity,
 then captures a real DHCPv4 request on the guest bridge with that MAC.
-It does not provide a DHCP lease, install an OS or establish Scout readiness.
+By default it checks a request only. With a configured DHCP server and relay,
+add `--lease-address 10.84.40.100` to require a DHCP ACK for that IPv4 address
+and guest MAC instead. The default is empty; an invalid IPv4 argument fails
+validation. An ACK observed on the guest bridge does not establish Scout
+readiness or operating-system installation.
 
 ```bash
 python3 dev/deployment/lab/test-target.py prepare \

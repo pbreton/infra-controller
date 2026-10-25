@@ -214,7 +214,148 @@ class TargetTest(unittest.TestCase):
                 patch.object(TARGET.time, 'sleep', side_effect=lambda _: setattr(TARGET, 'STOP', True)), \
                 patch.object(TARGET, 'STOP', False):
             (Path(directory) / 'bmc.json').write_text('{}')
-            TARGET.serve(config)
+            network = Mock()
+            network.start.return_value = Child(['dhcrelay'])
+            network.clear.side_effect = lambda: events.append(('clear', 'network'))
+            TARGET.serve(config, network)
         self.assertLess(events.index(('stop', 'bmc-mock')), events.index(('virsh', 'managedsave')))
         self.assertLess(events.index(('virsh', 'managedsave')), events.index(('stop', 'libvirtd')))
+        self.assertLess(events.index(('stop', 'libvirtd')), events.index(('stop', 'dhcrelay')))
+        self.assertLess(events.index(('stop', 'dhcrelay')), events.index(('clear', 'network')))
         self.assertNotIn(('virsh', 'start'), events)
+
+
+class ProvisioningNetworkTest(unittest.TestCase):
+    def network(self, run=None, **kwargs):
+        return TARGET.Network(TARGET.configuration(CONFIG), run or Mock(), **kwargs)
+
+    def test_invalid_network_inputs_fail_without_commands(self):
+        for server, cidr, uplink in [('10.96.40.20', '', 'eth0'), ('', '10.244.0.0/24', 'eth0'),
+                                     ('::1', '10.244.0.0/24', 'eth0'), ('10.84.40.5', '10.244.0.0/24', 'eth0'),
+                                     ('10.96.40.20', '10.84.40.0/24', 'eth0'), ('10.96.40.20', '0.0.0.0/0', 'eth0'),
+                                     ('10.96.40.20', '10.244.0.0/24', 'invalid/name')]:
+            with self.subTest(server=server, cidr=cidr, uplink=uplink), self.assertRaises(ValueError):
+                self.network(server=server, pod_cidr=cidr, uplink=uplink)
+
+    def test_rules_preserve_pod_sources_before_uplink_masquerade(self):
+        network = self.network(server='10.96.40.20', pod_cidr='10.244.0.0/24')
+        calls = []
+        def run(*args):
+            calls.append(args)
+            return '[]' if args[0] == 'ip' else ''
+        network.run = run
+        with patch('network.subprocess.Popen') as spawn:
+            network.start()
+        insertions = [call for call in calls if call[0] == 'iptables']
+        self.assertEqual(len(insertions), 4)
+        nat = [call for call in insertions if call[4] == 'nat']
+        self.assertEqual([call[-1] for call in nat], ['MASQUERADE', 'ACCEPT'])
+        self.assertTrue(all(call[7] == '1' for call in nat))
+        self.assertIn('10.244.0.0/24', nat[-1])
+        self.assertTrue(all(network.owner in call for call in insertions))
+        self.assertEqual(spawn.call_args.args[0][-5:], ['-id', network.config['bridge'], '-iu', 'eth0', '10.96.40.20'])
+
+    def test_cleanup_removes_only_owned_rules_and_rejects_unknown_owned_shapes_before_deleting(self):
+        network = self.network()
+        tag = network.owner
+        own = f'-A FORWARD -s 10.84.40.0/24 -m comment --comment "{tag}" -j ACCEPT'
+        foreign = '-A FORWARD -s 10.84.41.0/24 -m comment --comment other-target -j ACCEPT'
+        for bad in ('', f'-A OTHER -s 10.84.40.0/24 -m comment --comment "{tag}" -j DROP'):
+            with self.subTest(bad=bad):
+                commands = []
+                def run(*args):
+                    commands.append(args)
+                    return '\n'.join([own, foreign, bad]) if args == ('iptables-save', '-t', 'filter') else ''
+                network.run = run
+                if bad:
+                    with self.assertRaises(ValueError):
+                        network.clear()
+                    self.assertFalse(any(command[0] == 'iptables' for command in commands))
+                else:
+                    network.start()  # Disabled mode cleans an earlier interrupted enabled run.
+                    deletes = [command for command in commands if command[0] == 'iptables']
+                    self.assertEqual(len(deletes), 1)
+                    self.assertIn('-D', deletes[0])
+                    self.assertIn(tag, deletes[0])
+                    self.assertNotIn('other-target', deletes[0])
+
+    def test_partial_install_failure_cleans_owned_rules_without_starting_relay(self):
+        network = self.network(server='10.96.40.20', pod_cidr='10.244.0.0/24')
+        with patch.object(network, 'clear') as clear, \
+                patch.object(network, 'run', side_effect=[None, subprocess.CalledProcessError(4, 'iptables')]), \
+                patch('network.subprocess.Popen') as spawn:
+            with self.assertRaises(subprocess.CalledProcessError):
+                network.start()
+        self.assertEqual(clear.call_count, 2)
+        spawn.assert_not_called()
+
+    def test_preflight_rejects_missing_host_contracts_without_mutation(self):
+        for forwarding, links, nat, message in [
+                ('0', [], '', 'forwarding'),
+                ('1', [{'flags': []}], '', 'uplink'),
+                ('1', [{'flags': ['UP']}], '', 'iptables mode')]:
+            with self.subTest(message=message), patch('network.Path.read_text', return_value=forwarding):
+                run = Mock(side_effect=[json.dumps(links), nat])
+                network = self.network(run, server='10.96.40.20', pod_cidr='10.244.0.0/24')
+                with self.assertRaisesRegex(ValueError, message):
+                    network.preflight()
+                self.assertFalse(any(call.args[0] == 'iptables' for call in run.call_args_list))
+
+    def test_relay_tracks_pod_interfaces_without_restarting_after_process_failure(self):
+        network = self.network(server='10.96.40.20', pod_cidr='10.244.0.0/24')
+        network.run.return_value = json.dumps([
+            {'ifname': 'pod-old', 'flags': ['UP'], 'addr_info': [{'family': 'inet', 'local': '10.244.0.1'}]},
+            {'ifname': 'foreign', 'flags': ['UP'], 'addr_info': [{'family': 'inet', 'local': '10.1.0.1'}]},
+            {'ifname': 'down', 'flags': [], 'addr_info': [{'family': 'inet', 'local': '10.244.0.1'}]}])
+        self.assertEqual(network.upstreams(), ['eth0', 'pod-old'])
+        from network import Relay
+        old, new = Mock(), Mock()
+        old.poll.return_value = None
+        new.poll.return_value = None
+        with patch('network.subprocess.Popen', side_effect=[old, new]) as spawn:
+            relay = Relay(network.config['bridge'], str(network.server), network.upstreams())
+            relay.refresh(['eth0', 'pod-old'])
+            self.assertEqual(spawn.call_count, 1)
+            relay.refresh(['eth0', 'pod-new'])
+            old.terminate.assert_called_once()
+            old.wait.assert_called_once_with(timeout=5)
+            self.assertIn('pod-new', spawn.call_args.args[0])
+            self.assertNotIn('pod-old', spawn.call_args.args[0])
+            new.poll.return_value = 1
+            relay.refresh(['eth0', 'pod-next'])
+            self.assertEqual(spawn.call_count, 2)
+            self.assertEqual(relay.poll(), 1)
+
+    def test_lease_capture_requires_ack_for_the_requested_guest_and_address(self):
+        import contextlib
+        import io
+        spec = importlib.util.spec_from_file_location('test_target_cli', LAB / 'test-target.py')
+        cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli)
+        config = TARGET.configuration(CONFIG)
+        def packet(mac, address, kind):
+            frame = bytearray(342)
+            frame[12:14] = bytes.fromhex('0800')
+            frame[14] = 0x45
+            frame[23] = 17
+            frame[36:38] = (68).to_bytes(2, 'big')
+            frame[42] = 2
+            frame[58:62] = socket.inet_aton(address)
+            frame[70:76] = bytes.fromhex(mac.replace(':', ''))
+            frame[278:282] = bytes.fromhex('63825363')
+            frame[282:286] = bytes([53, 1, kind, 255])
+            return bytes(frame)
+        frames = [packet('02:00:00:02:00:02', '10.84.40.100', 5),
+                  packet(config['mac'], '10.84.40.101', 5),
+                  packet(config['mac'], '10.84.40.100', 2),
+                  packet(config['mac'], '10.84.40.100', 5)]
+        capture = Mock()
+        capture.recv.side_effect = frames
+        output = io.StringIO()
+        with patch('socket.AF_PACKET', 17, create=True), patch('socket.socket') as create, patch('pathlib.Path.read_text', return_value=json.dumps(config)), \
+                patch.object(sys, 'argv', ['capture', '10.84.40.100']), contextlib.redirect_stdout(output):
+            create.return_value.__enter__.return_value = capture
+            exec(cli.CAPTURE, {})
+        self.assertEqual(capture.recv.call_count, 4)
+        self.assertEqual(json.loads(output.getvalue().splitlines()[-1]),
+                         {'dhcp_mac': config['mac'], 'lease': '10.84.40.100'})
