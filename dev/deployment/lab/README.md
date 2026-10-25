@@ -197,9 +197,10 @@ It disables MAT, MAT's readiness check and the MAT-specific SSH console resource
 Tilt service readiness therefore does **not** establish guest admission or
 instance readiness. The checks below establish Scout connectivity separately.
 A mode marker in `kube-system` is claimed before Core starts and survives release
-removal. It rejects mode changes even after a partial deployment. An unmarked
-partial Core deployment is rejected unless a matching MAT/PXE release identifies
-its mode. Removing the marker is not a supported migration procedure.
+removal. It rejects mode changes even after a partial deployment. See the
+[existing-cluster rules](../tilt/README.md#existing-local-clusters) for adoption
+and rejection of unmarked sites. Removing the marker is not a supported migration
+procedure.
 
 PXE uses Service address `10.96.0.30`: firmware downloads iPXE on port 8080;
 iPXE requests boot metadata on port 80. Both ports reach the same PXE server.
