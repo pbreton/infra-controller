@@ -17,6 +17,11 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class LocalPrerequisitesTest(unittest.TestCase):
     def test_profile_preserves_core_contract_without_site_bootstrap_writers(self):
+        for persistent in (False, True):
+            with self.subTest(persistent=persistent):
+                self.check_profile(persistent)
+
+    def check_profile(self, persistent):
         ca = ROOT / "dev/certs/localhost/ca.crt"
         key = ROOT / "dev/certs/localhost/ca.key"
         ssh_key = ROOT / "crates/ssh-console/tests/fixtures/ssh_host_ed25519_key"
@@ -41,7 +46,7 @@ class LocalPrerequisitesTest(unittest.TestCase):
             "helm_resource": lambda **kwargs: captured.append(kwargs),
             "os": os, "repo_root": str(ROOT),
             "values_file": str(ROOT / "dev/deployment/tilt/values.yaml"),
-            "enable_rest": False, "rest_namespace": "nico-rest", "temporal_namespace": "temporal",
+            "persistent_vault": persistent, "vault_ready": "vault-bootstrap" if persistent else "vault", "enable_rest": False, "rest_namespace": "nico-rest", "temporal_namespace": "temporal",
             "rest_global": {"certificate": {"issuerRef": {"name": "nico-rest-ca-issuer"}}},
             "encode_json": json.dumps, "type": lambda value: type(value).__name__,
             "read_yaml": lambda path: yaml.safe_load(Path(path).read_text()),
@@ -60,11 +65,15 @@ class LocalPrerequisitesTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         resources = list(filter(None, yaml.safe_load_all(result.stdout)))
         by_name = {r["metadata"]["name"]: r for r in resources}
-        self.assertEqual(set(by_name), {
+        expected = {
             "nico-local-ca", "nico-roots", "local-ca-issuer",
             "ssh-host-key", "nico-vault-token", "nico-vault-approle-tokens",
             "vault-cluster-info", "nico-system-nico-database-config",
-        })
+        }
+        if persistent:
+            expected.remove("nico-vault-token")
+            self.assertIn("vault-bootstrap", resource["resource_deps"])
+        self.assertEqual(set(by_name), expected)
         self.assertEqual(len(resources), len(by_name))
         for resource in resources:
             self.assertEqual(resource["metadata"]["namespace"], "nico-system")
@@ -86,7 +95,8 @@ class LocalPrerequisitesTest(unittest.TestCase):
             "DB_HOST": "nico-pg-cluster-rw.nico-system.svc.cluster.local",
             "DB_PORT": "5432", "DB_NAME": "nico_system_nico",
         })
-        self.assertEqual(by_name["nico-vault-token"]["stringData"], {"token": "root"})
+        if not persistent:
+            self.assertEqual(by_name["nico-vault-token"]["stringData"], {"token": "root"})
         self.assertEqual(by_name["nico-vault-approle-tokens"]["stringData"], {
             "VAULT_ROLE_ID": "", "VAULT_SECRET_ID": "",
         })
@@ -138,7 +148,7 @@ class LocalPrerequisitesTest(unittest.TestCase):
             "os": os, "repo_root": str(ROOT), "core_namespace": "nico-system",
             "prereqs_values_file": str(ROOT / "helm-prereqs/values/local-development.yaml"),
             "values_file": str(ROOT / "dev/deployment/tilt/values.yaml"),
-            "enable_rest": True, "rest_namespace": "custom-rest", "temporal_namespace": "custom-temporal",
+            "persistent_vault": False, "vault_ready": "vault", "enable_rest": True, "rest_namespace": "custom-rest", "temporal_namespace": "custom-temporal",
             "rest_global": {"certificate": {"issuerRef": {"name": "custom-rest-ca"}}},
             "encode_json": json.dumps, "type": lambda value: type(value).__name__,
         })

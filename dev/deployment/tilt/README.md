@@ -610,6 +610,66 @@ Return to the values-file defaults with:
 tilt args --clear
 ```
 
+## Persistent local Vault
+
+For a lab that needs to retain rotated BMC credentials, select persistent Vault
+when first starting a **new** kind cluster:
+
+```bash
+tilt up -f dev/deployment/tilt/Tiltfile -- --persistent-vault=true
+```
+
+`--persistent-vault` defaults to `false`. The default uses an in-memory Vault
+with fixture credentials. The persistent option uses the same Vault chart with
+a 1 GiB `standard` PVC and file storage, adapted from
+[the kind integration work in #7555](https://github.com/dsx-ai-factory/infra-controller/pull/7555).
+Both modes use local HTTP without TLS and are restricted to kind contexts.
+Changing the mode of an existing Vault, or starting ephemeral Vault over its
+retained storage, is rejected. There is no in-place conversion.
+
+The `vault-bootstrap` resource initializes one unseal share with threshold one,
+stores it and the root token in the immutable `nico-vault-local-keys` Secret,
+and creates the immutable `nico-vault-token` Secret consumed by Core. Both live
+in `nico-system` and are tied to the data PVC's UID. The prerequisite chart
+leaves that token Secret under bootstrap ownership in persistent mode.
+Bootstrap preserves the existing CA and seeds default BMC/UEFI credentials only
+when no version exists; rerunning it never resets a rotated or deleted value.
+
+Vault starts sealed after a pod restart. While Tilt is running, unseal it with:
+
+```bash
+tilt trigger vault-bootstrap
+```
+
+Without a running Tilt session, run the same operation directly (substitute the
+selected kind context):
+
+```bash
+python3 dev/deployment/tilt/vault-bootstrap.py --context kind-nico-tilt bootstrap
+```
+
+The helper accepts `--namespace` before the subcommand, defaulting to
+`nico-system`. `bootstrap` requires an installed Vault and bound data PVC; it
+fails on missing keys for an initialized Vault, foreign Secret ownership,
+changed PVC identity, or an incompatible mount. Credentials travel through
+stdin and captured output. If initialization succeeds but saving the keys
+Secret fails, it reports a mode-0600 local recovery file containing those keys;
+retain that file securely until the matching Secret has been recovered.
+
+Removing the release retains its PVC and bootstrap Secrets. Reinstall into the
+same cluster and namespace with the persistent option to recover them. To remove
+Tilt-managed resources, preserve the selection:
+
+```bash
+tilt down -f dev/deployment/tilt/Tiltfile -- --persistent-vault=true
+```
+
+Deleting the kind cluster destroys this local storage. This option does not
+provide cross-cluster backup/restore or automatic unsealing. Do not discard Vault
+state while retaining guest disks whose credentials it owns. Durable Vault is
+one prerequisite of the native guest lab; it does not enable Scout provisioning
+or complete that lab's lifecycle by itself.
+
 ## Existing local clusters
 
 An earlier draft of this Tilt setup deployed Core as one Helm release named

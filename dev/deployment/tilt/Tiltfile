@@ -35,7 +35,9 @@ config.define_bool('rest')
 config.define_bool('mcp')
 config.define_bool('dsx-exchange')
 config.define_bool('observability')
+config.define_bool('persistent-vault')
 options = config.parse()
+persistent_vault = options.get('persistent-vault', False)
 enable_mcp = options.get('mcp', profiles['mcp'])
 enable_rest = options.get('rest', profiles['rest']) or enable_mcp
 enable_dsx_exchange = options.get('dsx-exchange', profiles['dsxExchange'])
@@ -49,6 +51,11 @@ if enable_rest and (rest_global['certificate']['issuerRef'].get('kind') != 'Clus
 prereqs_values_file = os.path.join(repo_root, 'helm-prereqs/values/local-development.yaml')
 prereqs_values = read_yaml(prereqs_values_file)
 core_namespace = prereqs_values['namespace']
+vault_bootstrap = os.path.join(tilt_dir, 'vault-bootstrap.py')
+vault_command = ['python3', vault_bootstrap, '--context', cluster_context, '--namespace', core_namespace]
+local(vault_command + ['check-mode', '--mode', 'persistent' if persistent_vault else 'ephemeral'], quiet=True)
+vault_values = read_yaml(os.path.join(tilt_dir, 'vault-persistent.yaml')) if persistent_vault else tilt_values['vault']
+vault_ready = 'vault-bootstrap' if persistent_vault else 'vault'
 rest_namespace = local_config['restNamespace']
 temporal_namespace = local_config['temporalNamespace']
 observability_namespace = local_config['observabilityNamespace']
@@ -255,9 +262,18 @@ prerequisite(
     release_name='nico-vault',
     namespace=core_namespace,
     version='0.34.0',
-    values=tilt_values['vault'],
+    values=vault_values,
     repo='repo-hashicorp',
 )
+
+if persistent_vault:
+    local_resource(
+        'vault-bootstrap',
+        vault_command + ['bootstrap'],
+        deps=[vault_bootstrap],
+        resource_deps=['vault'],
+        labels=['infrastructure'],
+    )
 
 # The local Vault has its own PKI. Supply its public CA through Helm before
 # Core starts so the shared admin CLI can keep mutual TLS verification enabled.
@@ -269,7 +285,7 @@ local_resource(
      '--namespace', core_namespace, '--pki-mount', prereqs_values['vault']['pkiMount'],
      '--output', vault_admin_values],
     deps=[vault_ca_exporter],
-    resource_deps=['vault'],
+    resource_deps=[vault_ready],
     labels=['infrastructure'],
 )
 
@@ -430,7 +446,7 @@ helm_resource(
           os.path.join(repo_root, 'dev/certs/localhost/ca.key'),
           os.path.join(repo_root, 'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key'),
           os.path.join(repo_root, 'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key.pub')],
-    resource_deps=['cert-manager', 'vault'] + (['nico-local-namespaces'] if enable_rest else []),
+    resource_deps=['cert-manager', vault_ready] + (['nico-local-namespaces'] if enable_rest else []),
     labels=['infrastructure'],
     flags=[
         '--create-namespace', '--wait', '--timeout=5m',
@@ -439,7 +455,7 @@ helm_resource(
         '--set-file', 'certManager.localCA.privateKey=%s' % os.path.join(repo_root, 'dev/certs/localhost/ca.key'),
         '--set-file', 'sshHostKey.privateKey=%s' % os.path.join(repo_root, 'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key'),
         '--set-file', 'sshHostKey.publicKey=%s' % os.path.join(repo_root, 'crates/ssh-console/tests/fixtures/ssh_host_ed25519_key.pub'),
-    ] + helm_json_flags({'certManager': {'localCA': {'rest': {
+    ] + helm_json_flags({'vault': {'tokenSecret': {'create': not persistent_vault}}}) + helm_json_flags({'certManager': {'localCA': {'rest': {
         'enabled': enable_rest,
         'namespace': rest_namespace,
         'temporalNamespace': temporal_namespace,
@@ -1124,6 +1140,8 @@ enabled_resources = [
     'nico-machine-a-tron',
     'nico-ssh-console-rs',
 ]
+if persistent_vault:
+    enabled_resources.append('vault-bootstrap')
 if enable_observability:
     enabled_resources.extend([
         'repo-grafana-community',
