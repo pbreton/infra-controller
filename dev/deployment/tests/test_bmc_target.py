@@ -325,6 +325,16 @@ class TargetTest(unittest.TestCase):
                         if failure == 'setup-v6':
                             ipv6.close.assert_called_once()
 
+    def test_ipv6_bmc_preflight_checks_local_connectivity(self):
+        listener = Mock()
+        listener.__enter__ = Mock(return_value=listener)
+        listener.__exit__ = Mock(return_value=False)
+        with patch.object(TARGET.socket, 'socket', return_value=listener), \
+                patch.object(TARGET.socket, 'create_connection', side_effect=OSError(errno.ENETUNREACH, 'IPv6 disabled')) as connect:
+            with self.assertRaises(OSError):
+                TARGET.check_bmc_port({**CONFIG, 'bmcAddress': 'fd00:10:96::4010'})
+            connect.assert_called_once_with(('::1', CONFIG['bmcPort']), timeout=1)
+
     def test_ipv6_bmc_cannot_fall_back_to_an_ipv4_listener(self):
         with patch.object(TARGET.socket, 'socket', side_effect=OSError(errno.EAFNOSUPPORT, 'no IPv6')) as create:
             with self.assertRaisesRegex(ValueError, 'requires an IPv6 listener'):

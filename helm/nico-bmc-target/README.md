@@ -80,9 +80,15 @@ YAML
 A fresh target can use an IPv6 `service.clusterIP`, for example
 `fd00:10:96::4010` when that address belongs to the cluster's IPv6 Service CIDR.
 The chart selects a single-stack IPv6 Service and the test client brackets the
-address in Redfish URLs. The selected node and its host-network pod must have
-IPv6 connectivity; startup fails if an IPv6 listener cannot be created.
-Core's BMC proxy must also be able to reach that Service.
+address in Redfish URLs. Use an IPv6 or dual-stack cluster whose selected node reports an IPv6 InternalIP,
+so Kubernetes can give the host-network pod an IPv6 endpoint. Startup checks
+both the IPv6 listener and local IPv6 connectivity before claiming storage.
+Core's BMC proxy must also be able to reach that Service. For Core admission,
+register an underlay network segment covering the chosen IPv6 BMC Service
+addresses and pass that exact Service address as `--bmc-ip-address` when adding
+the expected machine. These replace the IPv4 underlay and BMC address in the
+[Scout admission procedure](../../dev/deployment/lab/README.md#connect-scout-to-the-tilt-stack);
+the expected BMC MAC, chassis serial and host-interface MAC stay unchanged.
 
 The BMC address is part of the retained target identity. Do not change it on
 an existing PVC; use a new target/PVC for a different address or family. This

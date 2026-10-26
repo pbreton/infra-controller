@@ -63,6 +63,12 @@ tests:
       service.targetPort: 2444
     asserts:
       - equal:
+          path: spec.ipFamilies
+          value: [IPv4]
+      - equal:
+          path: spec.ipFamilyPolicy
+          value: SingleStack
+      - equal:
           path: spec.clusterIP
           value: 10.96.40.10
       - equal:

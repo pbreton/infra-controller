@@ -242,6 +242,9 @@ def check_bmc_port(config):
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind((address, config['bmcPort']))
         listener.listen(1)
+        if ipaddress.ip_address(config['bmcAddress']).version == 6:
+            with socket.create_connection(('::1', config['bmcPort']), timeout=1):
+                pass
 
 
 def bridge(config):
