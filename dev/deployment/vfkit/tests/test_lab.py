@@ -134,6 +134,20 @@ class LabTests(unittest.TestCase):
         self.assertEqual(ssh.call_args.kwargs["timeout"], 10)
         sleep.assert_called_once_with(1)
 
+    def test_force_stop_without_gateway_ssh_preserves_state_and_checks_clients(self):
+        self.configure()
+        original = self.lab.config_path.read_bytes()
+        with patch.object(self.lab, 'require_no_clients', side_effect=ValueError('client running')), patch.object(lab_manager, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'client running'):
+                self.lab.stop(force=True)
+            run.assert_not_called()
+        with patch.object(self.lab, 'require_no_clients'), patch.object(self.lab, 'pid', side_effect=[123, None, None]), patch.object(self.lab, 'ssh', side_effect=ValueError('no lease')) as ssh, patch.object(lab_manager, 'run') as run:
+            self.lab.stop(force=True)
+            ssh.assert_not_called()
+            self.assertIn('{"state":"HardStop"}', run.call_args.args[0])
+            self.assertIn(self.lab.runtime / 'gateway.sock', run.call_args.args[0])
+        self.assertEqual(self.lab.config_path.read_bytes(), original)
+
     def test_delete_refuses_unexpected_files_before_stopping(self):
         self.configure()
         disk = self.lab.directory / "root.raw"
@@ -220,7 +234,7 @@ class LabTests(unittest.TestCase):
 
     def test_delete_confirmation_is_required_before_accessing_state(self):
         with patch.object(vm.lab_manager, "Lab") as lab:
-            for arguments in (["lab-delete"], ["--yes", "up"], ["--vm-dir", "/unused", "lab-stop"]):
+            for arguments in (["--force", "lab-delete"], ["--force", "up"], ["lab-delete"], ["--yes", "up"], ["--vm-dir", "/unused", "lab-stop"]):
                 with self.subTest(arguments=arguments), self.assertRaises(ValueError):
                     vm.main(arguments)
             lab.assert_not_called()

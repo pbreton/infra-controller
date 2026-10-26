@@ -199,12 +199,15 @@ class VM:
     def create(self, args):
         if self.config:
             for key in ("cpus", "memory_gib", "disk_gib", "network", "interface", "network_socket",
-                        "data_dir", "data_disk_gib", "lab_id", "lab_root", "lab_uplink", "lab_interface"):
+                        "data_dir", "data_disk_gib", "lab_id", "lab_root", "lab_uplink", "lab_interface",
+                        "image", "image_sha256"):
                 value = getattr(args, key)
-                if key == "data_dir" and value is not None:
+                if key in ("data_dir", "image") and value is not None:
                     value = str(check_volume(value))
                 if key == "lab_root" and value is not None:
                     value = str(check_volume(value))
+                if key == "image_sha256" and value is not None:
+                    value = value.lower()
                 if value is not None and value != self.config.get(key):
                     raise ValueError(f"{key} differs from saved configuration; use a new --vm-dir")
             return
@@ -260,6 +263,8 @@ class VM:
                        "data_dir": str(data_dir) if data_dir else None,
                        "data_disk_gib": args.data_disk_gib or 200,
                        "interface": args.interface, "network_socket": args.network_socket,
+                       "image": str(check_volume(args.image)) if args.image else None,
+                       "image_sha256": args.image_sha256.lower() if args.image_sha256 else None,
                        "mac": "02:" + ":".join(f"{b:02x}" for b in os.urandom(5)),
                        "instance_id": str(uuid.uuid4())}
         if lab:
@@ -290,9 +295,9 @@ class VM:
             raise ValueError("root disk is missing; refusing to replace an initialized VM")
         with tempfile.TemporaryDirectory(prefix="image-", dir=self.directory) as temporary:
             work = Path(temporary)
-            if args.image:
-                source = args.image.resolve()
-                expected = args.image_sha256
+            if self.config.get("image"):
+                source = Path(self.config["image"])
+                expected = self.config["image_sha256"]
                 image_format = "raw"
             else:
                 if not shutil.which("qemu-img"):
@@ -330,7 +335,7 @@ class VM:
             with raw.open("r+b") as stream:
                 stream.truncate(size)
             raw.replace(destination)
-            write_json(self.directory / "image.json", {"source": str(args.image or IMAGE_URL),
+            write_json(self.directory / "image.json", {"source": str(self.config.get("image") or IMAGE_URL),
                                                        "sha256": expected})
 
     def seed(self):
@@ -374,8 +379,8 @@ class VM:
             attachment = "fd=4"
         elif network in ("socket", "lab"):
             socket = self.lab().socket if network == "lab" else Path(config["network_socket"])
-            if not socket.is_socket():
-                raise ValueError(f"gateway socket is not available: {socket}")
+            if not socket.is_socket() or not socket.with_suffix(".control").is_socket():
+                raise ValueError(f"bundled switch data/control sockets are not available: {socket}")
             attachment = f"unixSocketPath={device_path(socket)}"
         else:
             attachment = "nat"
@@ -556,13 +561,14 @@ lab running. Lab configuration is saved on first use; conflicting settings fail.
     result.add_argument("--network", choices=("nat", "bridged", "socket", "lab"),
                         help="nat (default), VMNet bridge, external socket, or managed isolated lab")
     result.add_argument("--interface", help="macOS interface for bridged networking, e.g. en0")
-    result.add_argument("--network-socket", help="absolute path to a running gateway's vfkit-compatible socket")
+    result.add_argument("--network-socket", help="absolute path to the bundled switch socket, with its .control companion")
     result.add_argument("--lab-id", type=lab_id, help="managed lab ID: 1..99 (default: 1); only with lab mode or lab actions")
     result.add_argument("--lab-root", type=Path,
                         help=f"managed lab state/cache root (default: {lab_manager.DEFAULT_ROOT}); must be outside checkout")
     result.add_argument("--lab-uplink", choices=("nat", "bridged"),
                         help="gateway WAN, not guest LAN (default: nat); only with up or lab-up")
     result.add_argument("--lab-interface", help="explicit physical interface required for a bridged lab uplink")
+    result.add_argument("--force", action="store_true", help="force-stop an unused gateway through vfkit; only with lab-stop; retains state")
     result.add_argument("--yes", action="store_true", help="confirm irreversible lab-delete; invalid for other actions")
     result.add_argument("--image", type=Path, help="local raw Ubuntu 24.04 ARM64 EFI cloud image; otherwise download official qcow2")
     result.add_argument("--image-sha256", help="required SHA256 of --image")
@@ -581,6 +587,8 @@ def main(argv=None):
     lab_action = args.action.startswith("lab-")
     if lab_action and any(value.split("=", 1)[0] == "--vm-dir" for value in argv):
         raise ValueError("lab actions use --lab-root and --lab-id, not --vm-dir")
+    if args.force and args.action != "lab-stop":
+        raise ValueError("--force is accepted only with lab-stop")
     if args.yes != (args.action == "lab-delete"):
         raise ValueError("lab-delete requires --yes; --yes is invalid for other actions")
     if (args.action == "exec") != bool(command):
@@ -623,7 +631,7 @@ def main(argv=None):
                 lab.verify()
                 print(json.dumps(lab.status(), indent=2))
             elif args.action == "lab-stop":
-                lab.stop()
+                lab.stop(force=args.force)
                 print("Lab stopped; gateway state and VM disks preserved")
             else:
                 lab.delete()

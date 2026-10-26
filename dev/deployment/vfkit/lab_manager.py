@@ -22,6 +22,7 @@ SOURCE = Path(__file__).resolve().parent / "lab"
 DEFAULT_ROOT = Path.home() / ".nico-lab/gateways"
 OWNER = "nico-vfkit-labs-v1\n"
 ALPINE_VERSION = "3.24.1"
+GATEWAY_CMDLINE = "console=hvc0 modules=loop,squashfs,sd-mod,usb-storage quiet"
 HTTPS_PROBE = "https://www.cloudflare.com/cdn-cgi/trace"
 WAN_IPV4_MARKER = "VFLAB_WAN_IPV4"
 
@@ -204,7 +205,7 @@ class Lab:
         config = self.config
         assets = self.root / "images" / f"gateway-{ALPINE_VERSION}-aarch64"
         command = ["vfkit", "--cpus", "2", "--memory", "1024", "--bootloader",
-                   f'linux,kernel={assets}/vmlinux,initrd={assets}/initramfs-virt,cmdline="console=hvc0 modules=loop,squashfs,sd-mod,usb-storage quiet"',
+                   f'linux,kernel={assets}/vmlinux,initrd={assets}/initramfs-virt,cmdline="{GATEWAY_CMDLINE}"',
                    "--device", f"virtio-blk,path={self.directory}/gateway.iso",
                    "--device", f"virtio-fs,sharedDir={self.directory}/data,mountTag=vflab-state",
                    "--device", "virtio-rng", "--device", f"virtio-serial,logFilePath={self.directory}/serial.log",
@@ -265,21 +266,26 @@ class Lab:
                 raise ValueError(f"lab gateway IPv{family} HTTPS failed; NAT requires working upstream IPv6. "
                                  "Use a bridged lab on a suitable interface; no automatic fallback is performed") from error
 
-    def stop_gateway(self):
+    def stop_gateway(self, force=False):
         if not self.pid("gateway"):
             return
-        # Direct Linux boot does not reliably deliver the virtual power-button
-        # request to Alpine. Return the SSH acknowledgement before powering off.
-        self.ssh("nohup sh -c 'sleep 1; exec poweroff' </dev/null >/dev/null 2>&1 &", timeout=10)
+        if force:
+            run(["curl", "--fail", "--silent", "--show-error", "--max-time", "10",
+                 "--unix-socket", self.runtime / "gateway.sock", "-H", "Content-Type: application/json",
+                 "-d", '{"state":"HardStop"}', "http://localhost/vm/state"])
+        else:
+            # Direct Linux boot does not reliably deliver the virtual power-button
+            # request to Alpine. Return the SSH acknowledgement before powering off.
+            self.ssh("nohup sh -c 'sleep 1; exec poweroff' </dev/null >/dev/null 2>&1 &", timeout=10)
         for _ in range(60):
             if not self.pid("gateway"):
                 return
             time.sleep(1)
         raise ValueError("gateway shutdown timed out; gateway left running")
 
-    def stop(self):
+    def stop(self, force=False):
         self.require_no_clients()
-        self.stop_gateway()
+        self.stop_gateway(force=force)
         pid = self.pid("switch")
         if pid:
             os.kill(pid, signal.SIGTERM)

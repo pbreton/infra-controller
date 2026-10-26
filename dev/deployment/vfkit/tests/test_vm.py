@@ -50,6 +50,27 @@ class LifecycleTests(unittest.TestCase):
             self.assertFalse((self.directory / "root.raw").exists())
             self.assertFalse((self.directory / "image.json").exists())
 
+    def test_custom_image_is_retained_across_interrupted_creation(self):
+        source = self.root / 'custom.raw'
+        source.write_bytes(b'custom image')
+        checksum = vm.digest(source)
+        self.machine.create(self.args('--image', str(source), '--image-sha256', checksum.upper()))
+        reopened = vm.VM(self.directory)
+        reopened.create(self.args())
+        reopened.ensure_disk(self.args())
+        with (self.directory / 'root.raw').open('rb') as disk:
+            self.assertEqual(disk.read(12), b'custom image')
+        for options in (('--image', str(self.root / 'other.raw'), '--image-sha256', checksum),
+                        ('--image', str(source), '--image-sha256', '0' * 64)):
+            with self.subTest(options=options), self.assertRaisesRegex(ValueError, 'differs'):
+                reopened.create(self.args(*options))
+
+    def test_socket_requires_control_companion_before_launch(self):
+        self.machine.create(self.args('--network', 'socket', '--network-socket', '/tmp/fixture.sock'))
+        (self.directory / 'root.raw').touch()
+        with patch.object(vm.Path, 'is_socket', side_effect=[True, False]), self.assertRaisesRegex(ValueError, 'data/control'):
+            self.machine.command()
+
     def test_socket_modes_launch_supervisor_but_native_networks_do_not(self):
         (self.directory / "root.raw").touch()
         for network in ("lab", "socket", "nat", "bridged"):

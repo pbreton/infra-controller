@@ -45,7 +45,7 @@ class GatewayImageTests(unittest.TestCase):
             with patch.object(gateway, "IMAGES", images), patch.object(gateway, "run", side_effect=download), \
                     self.assertRaisesRegex(ValueError, "signature"):
                 gateway.stock_iso()
-            self.assertEqual(list((images / "downloads").glob("*.iso")), [])
+            self.assertEqual(list((images / "downloads").iterdir()), [])
 
 
 class SignatureTests(unittest.TestCase):

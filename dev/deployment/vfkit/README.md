@@ -86,7 +86,7 @@ The owner marker prevents adoption of arbitrary directories. A new lab saves
 its WAN mode, interface and generated MACs.
 Later `lab-up` calls reuse these settings; conflicting values are rejected even
 after stopping the lab. Use another ID or delete the unused lab before choosing
-a different configuration. Only `lab-up` accepts uplink/interface options.
+a different configuration. `lab-up` and `up --network lab` accept uplink/interface options.
 
 | Setting | Lab X |
 | --- | --- |
@@ -147,12 +147,14 @@ With it the root defaults to 40 GiB and `--data-disk-gib` defaults to 200 GiB.
 Do not remove or replace either disk when retaining a VM.
 
 `--network` defaults to `nat`. `bridged` requires `--interface`; `socket` requires
-an absolute `--network-socket`; `lab` uses the managed gateway options above.
+an absolute `--network-socket` from the bundled switch with its `.control`
+companion; generic vfkit datagram sockets are unsupported; `lab` uses the managed gateway options above.
 The interface and socket options cannot be used with other network modes.
 Direct bridge and external socket modes need working guest IPv4/IPv6 routing;
 NAT mode uses a 1280-byte MTU. Configuration remains fixed after first creation.
 `--image` accepts a local raw Ubuntu ARM64 EFI disk and requires its matching
-64-digit hexadecimal `--image-sha256`. Without these, the launcher verifies the
+64-digit hexadecimal `--image-sha256`. The canonical path and digest are saved;
+retries reuse them when omitted and reject conflicting values. Without these, the launcher verifies the
 bundled Ubuntu signing key, signed checksum manifest and pinned image digest
 before converting the official qcow2 image to a sparse raw disk. A root disk that
 is larger than `--disk-gib` is rejected. Missing initialized disks are never
@@ -259,7 +261,12 @@ already-running gateway; it does not apply guest-script changes in place.
 `lab-stop` refuses while guests remain attached, including custom socket-mode
 clients. Otherwise it requests gateway poweroff over SSH and then stops the
 switch, preserving state. Missing WAN IPv4 management access or shutdown timeout
-is an error, not permission to force-delete the data. After a switch failure,
+is an error. To recover an unused gateway whose SSH is unavailable, run
+`python3 vm.py --lab-root "$lab_root" --lab-id 1 --force lab-stop`.
+`--force` is accepted only with `lab-stop`; it invokes vfkit HardStop without
+guest shutdown and can lose unsaved gateway state. It still refuses running
+clients, checks process identity and preserves all state directories. Then
+inspect the logs and use `lab-up` to restart. After a switch failure,
 confirm affected guests have stopped before restarting the lab and guests.
 
 To permanently delete an unused lab's gateway state:
@@ -294,7 +301,7 @@ The launcher pins Alpine 3.24.1. The builder checks the downloaded ISO's SHA256
 and verifies its `.asc` signature with the bundled
 [Alpine publisher key](lab/image/keys/alpine.asc), including on cached-source
 reuse. Verification uses an isolated GnuPG home, not personal keyrings or
-automatic key retrieval. Old caches missing the signature download it once;
+automatic key retrieval. Caches missing the signature download it once;
 invalid or missing signatures fail closed. A source ISO with its valid cached
 signature can be verified offline, but `lab-up` still requires Internet HTTPS.
 

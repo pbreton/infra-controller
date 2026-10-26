@@ -20,6 +20,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
+sys.path.insert(0, str(ROOT.parent))
+from lab_manager import GATEWAY_CMDLINE
 import image_verification
 
 VAR = Path(os.environ.get("VXLAB_VAR", ROOT / "var"))
@@ -28,7 +30,7 @@ ARCH = os.environ.get("ALPINE_ARCH", "aarch64")
 IMAGES = VAR / "images"
 ASSETS = IMAGES / f"gateway-{VERSION}-{ARCH}"
 WORLD = ROOT / "image/gateway-world"
-CMDLINE = "console=hvc0 modules=loop,squashfs,sd-mod,usb-storage quiet"
+CMDLINE = GATEWAY_CMDLINE
 KEY_NAME = "vflab-repository.rsa.pub"
 IMAGE_SIGNING_KEY = ROOT / "image/keys/alpine.asc"
 
@@ -76,21 +78,26 @@ def stock_iso() -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     url = f"https://dl-cdn.alpinelinux.org/alpine/v{VERSION.rsplit('.', 1)[0]}/releases/{ARCH}/{filename}"
     signature = path.with_suffix(".iso.asc")
-    if not signature.exists():
-        pending_signature = signature.with_suffix(".asc.part")
-        run("curl", "-fL", "--retry", "3", "-o", pending_signature, url + ".asc")
-        pending_signature.replace(signature)
-    if path.exists():
-        image_verification.verify_signature(path, signature, IMAGE_SIGNING_KEY)
-        return path
-    run("curl", "-fL", "--retry", "3", "-o", str(path) + ".part", url)
-    checksum = run("curl", "-fsSL", url + ".sha256", capture_output=True, text=True).stdout.split()[0]
+    pending_signature = signature.with_suffix(".asc.part")
     pending = Path(str(path) + ".part")
-    if hashlib.sha256(pending.read_bytes()).hexdigest() != checksum:
-        raise SystemExit("Alpine ISO SHA-256 mismatch")
-    image_verification.verify_signature(pending, signature, IMAGE_SIGNING_KEY)
-    pending.replace(path)
-    return path
+    try:
+        if not signature.exists():
+            run("curl", "-fL", "--retry", "3", "-o", pending_signature, url + ".asc")
+        candidate_signature = signature if signature.exists() else pending_signature
+        if not path.exists():
+            run("curl", "-fL", "--retry", "3", "-o", pending, url)
+            checksum = run("curl", "-fsSL", url + ".sha256", capture_output=True, text=True).stdout.split()[0]
+            if hashlib.sha256(pending.read_bytes()).hexdigest() != checksum:
+                raise SystemExit("Alpine ISO SHA-256 mismatch")
+        image_verification.verify_signature(path if path.exists() else pending, candidate_signature, IMAGE_SIGNING_KEY)
+        if not signature.exists():
+            pending_signature.replace(signature)
+        if not path.exists():
+            pending.replace(path)
+        return path
+    finally:
+        pending_signature.unlink(missing_ok=True)
+        pending.unlink(missing_ok=True)
 
 
 def sign_index(index: Path, directory: Path):
@@ -109,9 +116,9 @@ def sign_index(index: Path, directory: Path):
 
 
 def fingerprint() -> str:
-    digest = hashlib.sha256((VERSION + ARCH).encode())
+    digest = hashlib.sha256((VERSION + ARCH + CMDLINE).encode())
     for path in (WORLD, ROOT / "guest/fetch-gateway-packages.sh", Path(__file__),
-                 Path(image_verification.__file__), IMAGE_SIGNING_KEY):
+                 Path(image_verification.__file__), IMAGE_SIGNING_KEY, ROOT / "image/extract-kernel.py"):
         digest.update(path.read_bytes())
     return digest.hexdigest()
 
