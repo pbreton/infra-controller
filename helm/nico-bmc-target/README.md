@@ -199,8 +199,9 @@ replacement, follow the [DHCPv6 recovery procedure](../../dev/deployment/lab/REA
 
 The standalone Tilt entrypoint builds through the same Make target and installs
 this chart. It requires a `kind-` context and matching Docker/guest architecture.
-`--values` is required; `--namespace` defaults to `bmc-lab` and `--release` to
-`target-one`. The namespace and PVC must already exist.
+For one target, `--values` is required; `--namespace` defaults to `bmc-lab` and
+`--release` to `target-one`. The namespace and PVC must already exist. To manage
+two targets in one session, use [the pair manifest](#two-target-tilt-session).
 
 ```bash
 tilt ci -f dev/deployment/lab/Tiltfile -- \
@@ -224,6 +225,53 @@ node namespace. TLS uses the repository's development fixture certificate.
 The `generic_ami` fixture starts with user `root` and password `factory_password`;
 rotate it through `/redfish/v1/AccountService/Accounts/2` before reading Systems.
 The service is for isolated development only.
+
+## Two-target Tilt session
+
+Prepare two independent chart values files and existing PVCs in one namespace.
+Each target needs a distinct `storage.existingClaim`, `target.instanceIndex`,
+`service.clusterIP` and `service.targetPort`. Its guest bridge prefixes must not
+overlap the other target or existing node routes. Keep the same values files for
+Tilt and direct Helm validation; the chart and runtime retain ownership of target
+identity, network checks and disk recovery.
+
+Create a JSON object mapping exactly two release names to those files:
+
+```json
+{
+  "target-one": "one.json",
+  "target-two": "two.json"
+}
+```
+
+Save it as `/tmp/nico-pair/targets.json`, with the existing values files at
+`/tmp/nico-pair/one.json` and `/tmp/nico-pair/two.json`. Relative paths resolve
+against the manifest's directory; absolute paths also work. Each value must be a
+nonempty filename. Releases must be lowercase DNS labels of at most 53 characters.
+
+```bash
+tilt ci -f dev/deployment/lab/Tiltfile --   --targets /tmp/nico-pair/targets.json --namespace bmc-lab
+```
+
+`--targets` has no default and cannot be combined with `--values` or `--release`.
+The namespace still defaults to `bmc-lab`. Before registering any build or
+release, Tilt reads both files, checks their architecture against the native
+Docker runtime, and rejects repeated PVC, index, BMC address or listener-port
+values. Address comparison here is textual; the chart and runtime perform the
+actual address and route validation. These checks do not reserve capacity or
+replace host preflight. Tilt builds each distinct image repository once and
+injects its result into both releases. A failure deploying one release can leave
+the other running; inspect both releases and retain their original values/PVCs.
+The manifest is not an atomic transaction or a cleanup instruction.
+
+Use `tilt up` with the same arguments for interactive work. Editing the manifest
+or either values file reevaluates the configuration. Removing or renaming a
+release in the manifest is not a supported target migration: stop it explicitly
+using the documented [network cleanup procedure](#verify-target-network-cleanup) before
+changing the selection. Core-managed targets instead require the
+[full lab discard procedure](../../dev/deployment/lab/README.md#stop-restart-and-discard-the-bmc-lab).
+PVC creation, instance registration, release and disk deletion remain explicit
+separate operations.
 
 ## Configuration and retention
 
