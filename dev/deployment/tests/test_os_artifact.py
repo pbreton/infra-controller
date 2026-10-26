@@ -80,14 +80,29 @@ class OsArtifactTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertIn('explicit local name:tag', result.stderr)
 
-    def test_untrusted_or_wrong_format_payload_is_rejected(self):
+    def test_untrusted_or_wrong_format_payload_never_reaches_docker_build(self):
         with tempfile.TemporaryDirectory() as directory:
-            image = Path(directory) / 'image'
+            args = argparse.Namespace(output=Path(directory) / 'output', boot_artifact_image='boot:fixture',
+                                      image='os:fixture', source_url='https://images.example/image')
             for content, digest, reason in [(PAYLOAD, '0' * 64, 'SHA256 mismatch'),
                                              (b'raw image', hashlib.sha256(b'raw image').hexdigest(), 'qcow2')]:
                 with self.subTest(reason=reason):
-                    image.write_bytes(content)
-                    with self.assertRaisesRegex(ValueError, reason): OS.verify_image(image, digest)
+                    args.sha256 = digest
+                    def run(command, **kwargs):
+                        if command[1] == 'info': result = json.dumps({'OSType': 'linux', 'Architecture': 'aarch64'})
+                        elif command[1:3] == ['image', 'inspect']:
+                            result = json.dumps([{'Id': 'parent', 'Os': 'linux', 'Architecture': 'arm64', 'RepoTags': ['boot:fixture']}])
+                        elif command[1:3] == ['image', 'ls'] or command[1] == 'run': result = ''
+                        elif command[0] == 'curl':
+                            Path(command[command.index('--output') + 1]).write_bytes(content)
+                            result = ''
+                        else: self.fail('unverified payload reached an image mutation: ' + str(command))
+                        return subprocess.CompletedProcess(command, 0, stdout=result)
+                    with patch.object(OS.platform, 'system', return_value='Linux'), patch.object(OS.platform, 'machine', return_value='aarch64'), \
+                            patch.object(OS, 'run', side_effect=run), self.assertRaisesRegex(ValueError, reason):
+                        OS.build(args)
+                    self.assertEqual(list(args.output.iterdir()), [])
+                    args.output.rmdir()
 
     def test_native_mismatch_and_existing_tag_fail_before_output_creation(self):
         with tempfile.TemporaryDirectory() as directory:
