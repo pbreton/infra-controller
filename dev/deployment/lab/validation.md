@@ -121,9 +121,12 @@ tilt ci -f dev/deployment/lab/Tiltfile --port 10373 --timeout 60m -- \
   --targets "$LAB_STATE/targets/targets.json" --namespace bmc-lab
 ```
 
-For the separate direct-Helm target run, create a new lab with the same chosen
-prefixes and sizing, regenerate its cluster identity and live endpoint values,
-and replace only the final target Tilt command with:
+For an optional direct-Helm target comparison after completing the lifecycle
+below, stop or discard the first pair and wait for its pods to disappear before
+reusing the same 8 GiB pool. Concurrent pairs require separately budgeted capacity.
+Create a new lab with the same chosen prefixes and sizing, regenerate its cluster
+identity and live endpoint values, and replace only the final target Tilt command
+with:
 
 ```bash
 make images-dev DEV_TARGET=bmc-target DEV_IMAGE=nico-bmc-target:validation
