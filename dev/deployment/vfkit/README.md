@@ -175,8 +175,8 @@ silently replaced.
 A generated private key, the user's valid `~/.ssh/*.pub` keys and corresponding
 host-key records stay in VM state. Keep this directory private. `ssh` opens an
 interactive guest shell; `exec` requires a command after `--` and runs it in
-`/home/nico/infra-controller` (the home directory before the first successful
-sync). Both use vsock, so management does not depend on
+`/home/nico/infra-controller` (a warning is printed and the home directory is used when the
+checkout directory is absent). Both use vsock, so management does not depend on
 LAN addresses. They wait only for SSH so a cloud-init failure does not block
 recovery access. Inspect its status from the host with:
 
@@ -189,12 +189,14 @@ tracked and nonignored local files, including
 local edits, without deleting guest files or copying `.git`. It records source
 version inputs in `~/.config/nico/vfkit-source-version.sh` inside the guest;
 `ssh` and `exec` load them automatically. For a separately opened guest shell,
-source that file before building. The private guest Git HEAD is only a workspace
+source that file before building. Re-source it in an already open shell after
+another sync. The private guest Git HEAD is only a workspace
 placeholder. The source checkout must have release tags for version capture.
 
-Sync retains the host index's pinned submodule entries. Initialize the needed
-submodules inside the guest with the documented `git submodule update --init`
-commands before building. Host submodule working-tree edits are not transferred;
+Sync mirrors the host index's pinned submodule entries, removing obsolete index
+entries while retaining their files. Resolve index conflicts before syncing. Initialize the needed
+submodules inside the guest using the [native boot build instructions](../lab/README.md#scout-boot-artifacts)
+before building. Host submodule working-tree edits are not transferred;
 commit and publish those edits and update the parent gitlink to use them here.
 
 Stop and restart without replacing data:

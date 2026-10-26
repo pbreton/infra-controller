@@ -48,7 +48,8 @@ def host_git(*args, **kwargs):
 def guest_shell_setup():
     return ('if [ -r "$HOME/.config/nico/vfkit-source-version.sh" ]; then '
             '. "$HOME/.config/nico/vfkit-source-version.sh"; fi; '
-            f'cd {shlex.quote(GUEST_REPO)} 2>/dev/null || cd "$HOME"; ')
+            f'if ! cd {shlex.quote(GUEST_REPO)} 2>/dev/null; then '
+            'printf "[vfkit] checkout unavailable; using home directory\\n" >&2; cd "$HOME"; fi; ')
 
 
 def check_vfkit_version():
@@ -493,6 +494,16 @@ class VM:
         # the synthetic guest checkout without copying the host's Git metadata.
         entries = host_git("ls-files", "--stage", "-z", capture_output=True).stdout
         links = [entry for entry in entries.split(b"\0") if entry.startswith(b"160000 ")]
+        if any(entry.split(b"\t", 1)[0].split()[2] != b"0" for entry in links):
+            raise ValueError("resolve submodule index conflicts before syncing")
+        paths = {entry.split(b"\t", 1)[1] for entry in links}
+        guest_entries = self.ssh("git", "-C", GUEST_REPO, "ls-files", "--stage", "-z",
+                                 stdin=subprocess.DEVNULL, capture_output=True).stdout
+        removed = [entry.split(b"\t", 1)[1] for entry in guest_entries.split(b"\0")
+                   if entry.startswith(b"160000 ") and entry.split(b"\t", 1)[1] not in paths]
+        if removed:
+            self.ssh("git", "-C", GUEST_REPO, "update-index", "--force-remove", "--",
+                     *(os.fsdecode(path) for path in removed), stdin=subprocess.DEVNULL)
         if links:
             self.ssh("git", "-C", GUEST_REPO, "update-index", "-z", "--index-info",
                      input=b"\0".join(links) + b"\0")
@@ -559,7 +570,8 @@ Actions: up creates/starts Ubuntu, waits for cloud-init, syncs this checkout and
 verifies the VM. It does not install Docker, create a cluster or deploy services.
 start/stop preserve disks. sync copies local nonignored files without deleting
 guest files. verify checks Ubuntu, KVM and networking. ssh opens a shell; exec
-runs arguments following -- in the guest checkout. Configuration is saved on
+runs arguments following -- in the guest checkout, or warns and uses the home
+directory when that checkout is absent. Configuration is saved on
 first up; use the same --vm-dir for subsequent actions. Resource/network options
 apply only to first up.
 lab-up creates/starts a managed dual-stack gateway and switch. lab-status reports

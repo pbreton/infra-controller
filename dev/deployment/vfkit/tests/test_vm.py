@@ -184,12 +184,16 @@ class LifecycleTests(unittest.TestCase):
         archive.wait.return_value = 0
         launch = MagicMock()
         launch.__enter__.return_value = archive
-        with patch.object(self.machine, "ssh") as ssh, \
+        link = b"160000 " + b"1" * 40 + b" 0\tpxe/tool\0"
+        with patch.object(self.machine, "ssh", return_value=subprocess.CompletedProcess([], 0, stdout=b"")) as ssh, \
                 patch.object(self.machine, "sync_build_version"), \
-                patch.object(vm, "host_git", return_value=subprocess.CompletedProcess([], 0, stdout=b"")), \
+                patch.object(vm, "host_git", side_effect=[subprocess.CompletedProcess([], 0, stdout=b""),
+                                                         subprocess.CompletedProcess([], 0, stdout=link)]), \
                 patch.object(vm.subprocess, "Popen", return_value=launch):
             self.machine.sync()
-        self.assertEqual(len(ssh.call_args_list), 3)
+        self.assertEqual(len(ssh.call_args_list), 5)
+        self.assertEqual(ssh.call_args_list[3].kwargs["stdin"], subprocess.DEVNULL)
+        self.assertEqual(ssh.call_args_list[4].kwargs["input"], link)
         self.assertEqual(ssh.call_args_list[0].kwargs["stdin"], subprocess.DEVNULL)
         self.assertIs(ssh.call_args_list[1].kwargs["stdin"], archive.stdout)
         self.assertEqual(ssh.call_args_list[2].kwargs["stdin"], subprocess.DEVNULL)
@@ -197,9 +201,10 @@ class LifecycleTests(unittest.TestCase):
 
     def test_synced_gitlink_can_initialize_pinned_submodule_without_host_git_metadata(self):
         source, dependency, guest = (self.root / name for name in ('source', 'dependency', 'guest'))
+        environment = {name: value for name, value in os.environ.items() if not name.startswith('GIT_')}
         def git(directory, *args):
-            return subprocess.run(['git', '-C', str(directory), *args], check=True,
-                                  capture_output=True, text=True)
+            return subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-C', str(directory), *args], check=True,
+                                  env=environment, capture_output=True, text=True)
         for directory in (source, dependency, guest):
             directory.mkdir()
             git(directory, 'init', '-q')
@@ -212,7 +217,9 @@ class LifecycleTests(unittest.TestCase):
         git(source, '-c', 'protocol.file.allow=always', 'submodule', 'add', str(dependency), 'pxe/tool')
         shutil.copyfile(source / '.gitmodules', guest / '.gitmodules')
         def guest_command(*args, **kwargs):
-            return subprocess.run(args, check=True, capture_output=True, **kwargs)
+            kwargs.setdefault('capture_output', True)
+            return subprocess.run([args[0], '-c', 'core.hooksPath=/dev/null', *args[1:]],
+                                  check=True, env=environment, **kwargs)
         with patch.object(vm, 'REPO', source), patch.object(vm, 'GUEST_REPO', str(guest)), \
                 patch.object(self.machine, 'ssh', side_effect=guest_command):
             self.machine.sync_submodules()
@@ -220,6 +227,15 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((guest / 'pxe/tool/payload').read_text(), 'pinned payload')
         self.assertEqual(git(guest / 'pxe/tool', 'rev-parse', 'HEAD').stdout,
                          git(dependency, 'rev-parse', 'HEAD').stdout)
+        git(source, 'update-index', '--force-remove', '--', 'pxe/tool')
+        (guest / '.gitmodules').write_text('')
+        with patch.object(vm, 'REPO', source), patch.object(vm, 'GUEST_REPO', str(guest)), \
+                patch.object(self.machine, 'ssh', side_effect=guest_command):
+            self.machine.sync_submodules()
+        self.assertEqual(git(guest, 'ls-files', '--stage').stdout, '')
+        git(guest, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init')
+        self.assertTrue((guest / 'pxe/tool/payload').exists())
+
 
     def test_guest_shell_loads_source_version_and_allows_recovery_before_sync(self):
         version = self.root / '.config/nico/vfkit-source-version.sh'
@@ -259,15 +275,20 @@ class LifecycleTests(unittest.TestCase):
         for action in ("ssh", "exec", "verify"):
             machine = MagicMock()
             machine.runtime = self.machine.runtime
+            machine.ssh_args.return_value = ['ssh']
             args = ["--vm-dir", str(self.directory), action]
             if action == "exec": args += ["--", "true"]
             with self.subTest(action=action), patch.object(vm, "VM", return_value=machine), \
-                    patch.object(vm, "check_vfkit_version"), patch.object(vm, "run"), \
+                    patch.object(vm, "check_vfkit_version"), patch.object(vm, "run") as command_run, \
                     patch.object(vm.platform, "system", return_value="Darwin"), \
                     patch.object(vm.platform, "machine", return_value="arm64"), \
                     patch.object(vm.platform, "mac_ver", return_value=("26.0", (), "")):
                 vm.main(args)
             machine.ready.assert_called_once_with(require_cloud_init=action == "verify")
+            if action == 'ssh':
+                self.assertEqual(command_run.call_args.args[0][-1], vm.guest_shell_setup() + 'exec bash -l')
+            elif action == 'exec':
+                self.assertEqual(machine.ssh.call_args.args, ('bash', '-lc', vm.guest_shell_setup() + 'exec true'))
 
     def test_checksum_failure_never_publishes_root_disk(self):
         image = self.root / "image.raw"
