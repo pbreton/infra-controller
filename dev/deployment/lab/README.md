@@ -1016,8 +1016,12 @@ ready. `--namespace` defaults to `bmc-lab`; both releases must use it.
 private permissions. `--timeout` is the wrapped command's positive duration in
 seconds, 60–86400 inclusive, default 14400. Put all wrapper options before `--`;
 the remaining arguments form the command, without shell expansion by the wrapper.
-The command receives no stdin. Timeout or interruption sends SIGINT to its
-process group, allowing the lifecycle runner to stop its own children and collect
+The command receives no stdin. Cancellation is recorded without interrupting
+evidence cleanup; repeated signals do not shorten the cleanup grace period.
+During startup, cancellation waits for the current bounded capture operation.
+While the command runs, cancellation is checked at least once per second.
+Cancellation during evidence collection also makes the run fail.
+Timeout or interruption sends SIGINT to the command's process group, allowing the lifecycle runner to stop its own children and collect
 diagnostics. Captures continue during a grace period of up to 300 seconds before
 a forced SIGKILL. Commands must handle SIGINT and clean up children they start
 in separate sessions; a forced stop is recorded as incomplete recovery.

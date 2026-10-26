@@ -241,6 +241,23 @@ def stop_command(process, outcome):
         outcome['returncode'] = process.returncode
 
 
+def wait_command(process, timeout, cancelled):
+    deadline = time.monotonic() + timeout
+    while True:
+        if cancelled():
+            raise InterruptedError('traffic guard cancelled')
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(process.args, timeout)
+        try:
+            code = process.wait(timeout=min(1, remaining))
+        except subprocess.TimeoutExpired:
+            continue
+        if cancelled():
+            raise InterruptedError('traffic guard cancelled')
+        return code
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--context', required=True)
@@ -261,13 +278,21 @@ def main():
     args.output.mkdir(mode=0o700, parents=False, exist_ok=False)
     guard = Guard(args)
     process = None
+    cancellation = []
     def interrupted(number, frame):
-        raise InterruptedError(f'traffic guard received signal {number}')
+        # Handlers only record cancellation: exceptions at arbitrary bytecode
+        # boundaries can skip cleanup even inside a finally block.
+        if not cancellation:
+            cancellation.append(number)
+            guard.outcome['error'] = f'traffic guard received signal {number}'
+        guard.command_succeeded = False
     previous = {number: signal.signal(number, interrupted) for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
         guard.start()
+        if cancellation:
+            raise InterruptedError('traffic guard cancelled during capture startup')
         process = subprocess.Popen(args.command, stdin=subprocess.DEVNULL, start_new_session=True)
-        code = process.wait(timeout=args.timeout)
+        code = wait_command(process, args.timeout, lambda: bool(cancellation))
         guard.outcome['returncode'] = code
         if code:
             raise subprocess.CalledProcessError(code, args.command)
@@ -276,9 +301,6 @@ def main():
         guard.outcome['error'] = type(error).__name__ + ': ' + str(error)
         raise
     finally:
-        # Further cancellation must not interrupt child cleanup or lose evidence.
-        for number in previous:
-            signal.signal(number, signal.SIG_IGN)
         try:
             try:
                 stop_command(process, guard.outcome)
@@ -287,6 +309,8 @@ def main():
         finally:
             for number, handler in previous.items():
                 signal.signal(number, handler)
+    if cancellation:
+        raise InterruptedError('traffic guard cancelled during evidence collection')
 
 
 if __name__ == '__main__':
