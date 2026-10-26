@@ -96,7 +96,11 @@ class LabTiltTests(unittest.TestCase):
         self.build, self.deploy = Mock(), Mock()
 
     def evaluate(self, options, plan=None):
-        environment = dict(__file__=str(TILTFILE), os=os, load=Mock(), update_settings=Mock(),
+        # Tilt joins path components without Python's absolute-path reset.
+        tilt_os = SimpleNamespace(path=SimpleNamespace(
+            realpath=os.path.realpath, dirname=os.path.dirname, abspath=os.path.abspath,
+            join=lambda *parts: os.path.normpath('/'.join(parts))))
+        environment = dict(__file__=str(TILTFILE), os=tilt_os, load=Mock(), update_settings=Mock(),
                            k8s_context=lambda: 'kind-lab', fail=fail, custom_build=self.build,
                            helm_resource=self.deploy, read_yaml=lambda path: self.values[path],
                            read_json=lambda path: plan or {'one': 'one.json', 'two': '/lab/two.json'},
@@ -113,6 +117,12 @@ class LabTiltTests(unittest.TestCase):
             self.assertEqual(call.kwargs['namespace'], 'chosen')
             self.assertEqual(call.kwargs['flags'][:2], ['--values', '/lab/' + name + '.json'])
             self.assertEqual(call.kwargs['image_deps'], ['nico-bmc-target'])
+
+    def test_single_target_defaults(self):
+        self.evaluate({'values': '/lab/one.json'})
+        self.deploy.assert_called_once()
+        self.assertEqual(self.deploy.call_args.kwargs['release_name'], 'target-one')
+        self.assertEqual(self.deploy.call_args.kwargs['namespace'], 'bmc-lab')
 
     def test_invalid_pair_stops_before_any_build_or_deploy(self):
         cases = [

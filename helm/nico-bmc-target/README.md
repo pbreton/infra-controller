@@ -200,7 +200,8 @@ replacement, follow the [DHCPv6 recovery procedure](../../dev/deployment/lab/REA
 The standalone Tilt entrypoint builds through the same Make target and installs
 this chart. It requires a `kind-` context and matching Docker/guest architecture.
 For one target, `--values` is required; `--namespace` defaults to `bmc-lab` and
-`--release` to `target-one`. The namespace and PVC must already exist. To manage
+`--release` to `target-one`. Release names must be lowercase DNS labels starting with a letter,
+of at most 53 characters. The namespace and PVC must already exist. To manage
 two targets in one session, use [the pair manifest](#two-target-tilt-session).
 
 ```bash
@@ -247,7 +248,7 @@ Create a JSON object mapping exactly two release names to those files:
 Save it as `/tmp/nico-pair/targets.json`, with the existing values files at
 `/tmp/nico-pair/one.json` and `/tmp/nico-pair/two.json`. Relative paths resolve
 against the manifest's directory; absolute paths also work. Each value must be a
-nonempty filename. Releases must be lowercase DNS labels starting with a letter,
+nonempty path. Releases must be lowercase DNS labels starting with a letter,
 of at most 53 characters. A relative `--targets` or `--values` argument itself
 resolves against the Tiltfile directory, so absolute command-line paths are clearer.
 
