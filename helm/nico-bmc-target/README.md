@@ -84,16 +84,18 @@ configuration and preserves existing retained inventories. Each target needs a
 separate non-overlapping prefix. Runtime validation rejects an invalid address
 or a prefix overlapping another interface's route before claiming fresh storage.
 IPv6 addresses are normalized before comparison with retained inventory.
-Adding, removing or changing the IPv6 prefix of an existing target is rejected;
-use its original configuration or explicitly release and destroy it before
-creating a new target. Before reusing a release identity (namespace and name) with new storage,
-[verify its network cleanup](#verify-target-network-cleanup). After an interrupted
-shutdown, reinstall with the original values and retained storage, then stop
-gracefully and verify cleanup as described there.
-If that storage has already been lost, recreate the disposable cluster; deleting
-only the PVC does not clean node networking and is not a supported reset.
+Adding, removing or changing the IPv6 prefix of a retained target is rejected;
+restore its original configuration to restart it. A different configuration needs
+fresh storage. For standalone chart use, [verify network cleanup](#verify-target-network-cleanup)
+before reusing a namespace/name with new storage. Core-managed labs instead use
+[full discard](../../dev/deployment/lab/README.md#stop-restart-and-discard-the-bmc-lab):
+Core, Vault and rotated BMC credentials must remain paired with retained disks.
+After an interrupted shutdown, reinstall with the original values and retained
+storage, then stop gracefully and verify cleanup. If that storage was lost,
+recreate the disposable lab; deleting only a PVC is not a supported reset.
 
-The kind node must already have IPv6 enabled for `all`, `default` and an existing
+Use the image's `nf_tables` netfilter backend; legacy-backend nodes are outside
+the supported IPv6 topology. The kind node must already have IPv6 enabled for `all`, `default` and an existing
 owned bridge, with `net.ipv6.conf.all.forwarding=1`. For a new disposable node
 created by the preceding example:
 
@@ -177,7 +179,8 @@ The service is for isolated development only.
 Cluster UID, release namespace/name, node, architecture, guest identity/sizing,
 bridge and BMC address/port are immutable for a retained target. A mismatch fails
 startup rather than adopting or resizing the disk. Reinstall using the original
-values and release identity. A new configuration requires a new empty PVC.
+values and release identity. A new standalone configuration requires a new empty PVC and verified network
+cleanup. Core-managed labs use the linked full-discard procedure instead.
 
 The PVC holds the disk, UEFI variables, libvirt definition/saved state, BMC
 credentials and logs. A filesystem lock prevents concurrent target writers.
@@ -216,12 +219,13 @@ promise that a later guest power-on will succeed.
 
 ## Verify target network cleanup
 
-Release the target's instance through Core and wait for Ready with live Scout
-before removing its runtime. Capture its nonsecret inventory while the pod is
+If Core manages the target, release its instance and wait for Ready with live
+Scout before removing its runtime. Capture its nonsecret inventory while the pod is
 available, then uninstall gracefully and check the node. This example removes
 `target-one` from `bmc-lab`, retaining its PVC:
 
 ```bash
+(
 set -euo pipefail
 inventory=$(kubectl -n bmc-lab exec deployment/target-one -- cat /data/inventory.json)
 node=$(printf '%s' "$inventory" | jq -er .nodeName)
@@ -232,13 +236,14 @@ kubectl -n bmc-lab wait --for=delete pod \
   -l app.kubernetes.io/name=nico-bmc-target,app.kubernetes.io/instance=target-one --timeout=5m
 docker exec "$node" ip -json link show | \
   jq -e --arg name "$bridge" 'all(.[]; .ifname != $name)'
-docker exec "$node" sh -ec 'iptables-save; ip6tables-save' | \
+docker exec "$node" sh -ec 'iptables-nft-save; ip6tables-nft-save' | \
   awk -v tag="$owner" 'index($0, tag) { found=1 } END { exit found }'
+)
 ```
 
-The link check prints `true`; the rule check is silent. Either exits nonzero
-if owned networking remains. Do not discard the PVC or reuse the identity after
-a failed check. The runtime intentionally retains a bridge with attached TAPs
+The link check prints `true`; the rule check is silent. The subshell stops at
+the first failure and leaves the caller’s shell options unchanged. Do not
+discard the PVC or reuse the identity with new storage after a failed check. The runtime intentionally retains a bridge with attached TAPs
 when guest save fails. Restore the original runtime and storage to recover,
 then stop gracefully and repeat the checks. If storage was lost or recovery is
 not possible, release any remaining instances and recreate the disposable
@@ -331,14 +336,11 @@ record private and outside Git. Exit status is 0 on success, 1 on validation or
 command failure, and 2 on invalid arguments. `--namespace` and `--release` have
 the same defaults as Tilt; `--context` and `--credentials` are required.
 
-Remove the release while retaining the claim with:
-
-```bash
-helm uninstall target-one --namespace bmc-lab --cascade foreground --wait --timeout 5m
-```
-
-Only when the isolated test data is no longer needed, delete its claim and the
-private smoke-test record:
+Remove the release while retaining the claim using
+[the network cleanup procedure](#verify-target-network-cleanup). The standalone
+smoke test has no Core instance, so its Core release step does not apply.
+Only after those checks succeed and the isolated test data is no longer needed,
+delete the standalone claim and private smoke-test record:
 
 ```bash
 kubectl -n bmc-lab delete pvc target-data
