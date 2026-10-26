@@ -109,6 +109,46 @@ nico-dhcp:
 
 Apply through the site's normal Helm upgrade workflow, using the Core image and chart from the same repository revision as required by the [image compatibility policy](https://github.com/dsx-ai-factory/infra-controller/blob/main/helm/README.md#image-configuration). When upgrading from a revision without the `dhcp` and `v6ExternalService` maps, update both the chart and Core image. DSX, hardware-health, and PXE use their dual-stack listener defaults unless an explicit listener configuration overrides them. Setting `dhcp.v6Enabled: false` removes the v6 resources while preserving the v4 pod template. The v6 Deployment uses `Recreate` so old and replacement v6 pods do not serve simultaneously.
 
+## Lease Timing
+
+`dhcp.v6LeaseTimers` controls the Kea DHCPv6 lease timers. All fields are optional
+integers in seconds, from 1 through 4294967294. Zero, infinite lifetimes,
+quoted numbers, fractional numbers, and unknown fields are rejected by the chart
+schema. An omitted or null map uses the defaults below; omitted fields in a
+partial map also use their defaults. Explicit null field values are invalid.
+
+| Field under `dhcp.v6LeaseTimers` | Default | Meaning |
+| --- | --- | --- |
+| `preferredLifetime` | 3600 | Time before the client deprecates an address |
+| `validLifetime` | 7200 | Time before the address lease expires |
+| `renewTimer` | 1800 | T1: time before the client starts renewal |
+| `rebindTimer` | 2880 | T2: time before the client starts rebinding |
+
+When DHCPv6 is enabled, rendering also requires
+`preferredLifetime <= validLifetime` and
+`renewTimer < rebindTimer < validLifetime`. These fields do not change DHCPv4
+lease timing. A changed DHCPv6 configuration triggers its existing pod rollout.
+Clients with an existing lease keep the previously supplied timers until they
+receive an updated lease; changing the chart does not force an immediate renewal.
+The timers configure Kea leases and do not change Core network allocations.
+
+For an isolated lab that needs to observe real client renewals quickly, use:
+
+```yaml
+nico-dhcp:
+  dhcp:
+    v6LeaseTimers:
+      preferredLifetime: 120
+      validLifetime: 180
+      renewTimer: 30
+      rebindTimer: 60
+```
+
+These short values increase DHCP traffic and are intended for lab validation.
+Confirm RENEW and REPLY packets or server lease-renewal records, and verify the
+updated lifetime in the guest. A successful lease-renew command alone does not
+prove the client sent DHCPv6 traffic.
+
 ## HTTP Boot Options
 
 HTTP boot option support is unreleased and is not included in NICo v2.2.1. For source builds, use a Core image containing [the implementation in PR #7574](https://github.com/dsx-ai-factory/infra-controller/pull/7574). This implements [site DHCPv6 HTTP boot support](https://github.com/dsx-ai-factory/infra-controller/issues/7171).
