@@ -216,7 +216,7 @@ class Lifecycle:
     def verify_network(self, target):
         info = json.loads(self.ssh(target, 'ip -j address'))
         if not self.leases_ready(target, info):
-            raise ValueError('allocated address is not a finite DHCP lease')
+            raise ValueError('allocated address is missing from the guest')
         if self.state['network'] == 'ipv6-only':
             v4 = [a for i in info if i['ifname'] != 'lo' for a in i.get('addr_info', []) if a['family'] == 'inet']
             routes = json.loads(self.ssh(target, 'ip -j -4 route show table all'))
