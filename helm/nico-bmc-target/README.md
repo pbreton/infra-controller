@@ -94,8 +94,7 @@ After an interrupted shutdown, reinstall with the original values and retained
 storage, then stop gracefully and verify cleanup. If that storage was lost,
 recreate the disposable lab; deleting only a PVC is not a supported reset.
 
-Use the image's `nf_tables` netfilter backend; legacy-backend nodes are outside
-the supported IPv6 topology. The kind node must already have IPv6 enabled for `all`, `default` and an existing
+The kind node must already have IPv6 enabled for `all`, `default` and an existing
 owned bridge, with `net.ipv6.conf.all.forwarding=1`. For a new disposable node
 created by the preceding example:
 
@@ -106,7 +105,9 @@ docker exec nico-target-control-plane sysctl -w net.ipv6.conf.all.forwarding=1
 This changes only that node's network namespace; it does not configure the outer
 host. Recheck the prerequisites after restarting or replacing the node, because
 a recreated namespace loses runtime sysctl changes. Startup fails if these prerequisites are
-missing. The target never changes shared forwarding policy. Keep IPv4 bridge,
+missing. Use the image's `nf_tables` netfilter backend; legacy-backend nodes are
+unsupported, and startup does not verify the node backend. The target never
+changes shared forwarding policy. Keep IPv4 bridge,
 BMC Service and provisioning settings: this option adds guest IPv6 routing,
 not an IPv6 Kubernetes or provisioning deployment.
 
@@ -241,9 +242,16 @@ docker exec "$node" sh -ec 'iptables-nft-save; ip6tables-nft-save' | \
 )
 ```
 
-The link check prints `true`; the rule check is silent. The subshell stops at
-the first failure and leaves the caller’s shell options unchanged. Do not
-discard the PVC or reuse the identity with new storage after a failed check. The runtime intentionally retains a bridge with attached TAPs
+The subshell exits zero only when both checks pass: the link check prints
+`true`, and the rule check is silent. A remaining bridge prints `false`; a
+remaining owned rule exits nonzero without output. The subshell stops at the
+first failure and leaves the caller’s shell options unchanged. Do not discard
+the PVC or reuse the identity with new storage after a failed check. For a
+Core-managed target, even a passing check does not authorize replacing its PVC:
+use [full discard](../../dev/deployment/lab/README.md#stop-restart-and-discard-the-bmc-lab)
+to keep the database, Vault and BMC credentials paired.
+
+The runtime intentionally retains a bridge with attached TAPs
 when guest save fails. Restore the original runtime and storage to recover,
 then stop gracefully and repeat the checks. If storage was lost or recovery is
 not possible, release any remaining instances and recreate the disposable
