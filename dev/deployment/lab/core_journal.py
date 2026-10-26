@@ -4,6 +4,7 @@
 """Durable creation intents for explicitly owned native lab Core resources."""
 import json
 import os
+import subprocess
 from pathlib import Path
 from lifecycle import run
 
@@ -37,8 +38,23 @@ class CoreJournal:
             command += ['-f', 'json']
         else:
             command += ['--cloud-unsafe-op', 'Initialize owned native lab resources']
-        output = run([*command, *args], env=self.environment,
-                     log_path=self.directory / (operation + '.log') if operation else None)
+        sensitive = '--bmc-password' in args
+        log = self.directory / (operation + '.log') if operation else None
+        try:
+            output = run([*command, *args], env=self.environment, log_path=None if sensitive else log)
+        except (RuntimeError, subprocess.SubprocessError):
+            if not sensitive:
+                raise
+            message = 'expected-machine registration failed; inspect Core and resume the retained journal'
+            if log:
+                log.write_text(message + '\n')
+            # TimeoutExpired includes argv. Suppress the original exception and
+            # command output rather than publishing the initial BMC credential.
+            raise RuntimeError(message) from None
+        if sensitive:
+            if log:
+                log.write_text('expected-machine registration command completed\n')
+            return ''
         return json.loads(output) if read else output
 
     def verify_cluster(self):

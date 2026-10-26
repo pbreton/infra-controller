@@ -1176,8 +1176,9 @@ pairs, not a claim that machines are Ready. Obtain machine IDs with
 target inventories and resource configuration. It never updates expected
 machines, resets rotated credentials or repeats an uncertain create. If a
 recorded create is absent, retain the journal and inspect Core; a later visible
-matching resource can be adopted. A confirmed-absent result requires a new lab
-or registration journal; partially created resources remain until their
-explicit cleanup or destruction of the disposable cluster. Changed, conflicting
+matching resource can be adopted. A confirmed-absent result requires a new
+dedicated lab and registration journal. A new journal alone cannot adopt the old
+segments or target identities; partially created resources remain until that lab
+is explicitly discarded. Changed, conflicting
 or replaced resources fail without adoption. The directory is locked against
 concurrent invocation. Neither mode deletes resources or target disks.

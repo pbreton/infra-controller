@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
+import traceback
 import unittest
 from unittest.mock import Mock, patch
 
@@ -116,6 +118,20 @@ class RegistrationTests(unittest.TestCase):
             self.lab.apply()
         self.lab.admin.assert_not_called()
 
+    def test_initial_credential_timeout_does_not_print_or_log_password(self):
+        secret = 'fixture-password-must-stay-private'
+        journal = REG.CoreJournal(self.directory, self.state)
+        with patch('core_journal.run', side_effect=subprocess.TimeoutExpired(['cli', '--bmc-password', secret], 90)):
+            try:
+                journal.admin('em', 'add', '--bmc-password', secret, operation='expected-create')
+            except Exception:
+                evidence = traceback.format_exc()
+            else:
+                self.fail('timeout must fail the registration')
+        self.assertNotIn(secret, evidence)
+        self.assertIn('registration failed', evidence)
+        self.assertNotIn(secret, (self.directory / 'expected-create.log').read_text())
+
     def test_checkpoint_flush_failure_preserves_previous_intents(self):
         self.lab.checkpoint()
         original = (self.directory / 'state.json').read_text()
@@ -179,6 +195,13 @@ class RegistrationTests(unittest.TestCase):
             with self.subTest(args=args), patch.object(sys, 'argv', args), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 REG.main()
             self.assertFalse(destination.exists())
+        Path(self.state['bmc_password_file']).chmod(0o644)
+        with patch.object(sys, 'argv', valid), patch.object(REG, 'run') as command, \
+                self.assertRaisesRegex(ValueError, 'password file'):
+            REG.main()
+        command.assert_not_called()
+        self.assertFalse(destination.exists())
+        Path(self.state['bmc_password_file']).chmod(0o600)
         with patch.object(sys, 'argv', valid), patch.object(REG, 'run', side_effect=ValueError('cluster unavailable')), \
                 self.assertRaisesRegex(ValueError, 'cluster unavailable'):
             REG.main()

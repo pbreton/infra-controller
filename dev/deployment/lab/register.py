@@ -22,6 +22,15 @@ DPU_IGNORE = 3
 RESERVE_FIRST = 10
 
 
+def initial_password(secret):
+    if secret.stat().st_uid != os.getuid() or secret.stat().st_mode & 0o077:
+        raise ValueError('BMC password file must be owned by this user and private')
+    password = secret.read_text().rstrip('\n')
+    if not password or '\n' in password:
+        raise ValueError('BMC password file must contain one nonempty line')
+    return password
+
+
 def target_inventory(context, namespace, release, cluster):
     kube = ['kubectl', '--context', context, '-n', namespace]
     deployment = json.loads(run([*kube, 'get', 'deployment', release, '-o', 'json']))
@@ -155,12 +164,7 @@ class Registration(CoreJournal):
             key = 'expected-' + target['expected_id']
             command = []
             if not self.find_expected(target) and not self.state.get(key + '_intent'):
-                secret = Path(self.state['bmc_password_file'])
-                if secret.stat().st_uid != os.getuid() or secret.stat().st_mode & 0o077:
-                    raise ValueError('BMC password file must be owned by this user and private')
-                password = secret.read_text().rstrip('\n')
-                if not password or '\n' in password:
-                    raise ValueError('BMC password file must contain one nonempty line')
+                password = initial_password(Path(self.state['bmc_password_file']))
                 command = ['em', 'add', '--id', target['expected_id'], '--bmc-mac-address', target['bmc_mac'],
                            '--bmc-username', self.state['bmc_username'], '--bmc-password', password,
                            '--chassis-serial-number', inv['serial'], '--bmc-ip-address', inv['bmcAddress'],
@@ -200,6 +204,7 @@ def main():
     os.umask(0o077)
     directory = args.state_dir.expanduser().resolve()
     if not args.resume:
+        initial_password(args.bmc_password_file.expanduser().resolve())
         cluster = json.loads(run(['kubectl', '--context', args.context, 'get', 'namespace', 'kube-system', '-o', 'json']))['metadata']['uid']
         inventories = {r: target_inventory(args.context, args.namespace or 'bmc-lab', r, cluster) for r in args.target}
         architectures = {i['architecture'] for i in inventories.values()}
