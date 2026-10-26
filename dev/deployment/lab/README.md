@@ -514,7 +514,7 @@ This proves installation and replacement of a virtual disk image, not hardware
 secure erase. Scout's hardware cleanup discovers NVMe and `/dev/sd*` devices;
 the target's `/dev/vda` is outside those paths. Do not infer tenant data erasure
 at release from a successful reprovisioning test. Virtio inventory, hardware
-sanitize coverage and tenant IPv6 remain separate acceptance boundaries in
+sanitize coverage, DHCPv6, SLAAC, IPv6-only guests and Internet IPv6 remain separate acceptance boundaries in
 [the migration issue](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 ## Two-instance IPv4 connectivity
@@ -592,7 +592,7 @@ SIGTERM, SIGHUP and forced termination do not guarantee local process cleanup.
 Success prints one JSON object with `directions`, containing the verified
 `source`, `destination` and payload `bytes` for each direction, and exits 0.
 A failed probe prints an error to stderr and exits 1 without a success object;
-argument parsing errors, non-kind contexts and duplicate addresses/releases exit 2.
+argument parsing errors, non-kind contexts, mixed address families and duplicate addresses/releases exit 2.
 Validation failures inside the SSH helper (such as a missing key, invalid path
 or address outside the target subnet) instead fail the probe with exit 1.
 `--help` prints usage and exits 0. A failed second
@@ -635,7 +635,7 @@ gateway and peer prefix from the table:
 ```yaml
 write_files:
   - path: /etc/systemd/network/05-lab-ipv6.network
-    permissions: '0600'
+    permissions: '0644'
     content: |
       [Match]
       MACAddress=02:00:00:01:00:02
@@ -650,7 +650,6 @@ write_files:
       Gateway=fd42:8124:40::1
 runcmd:
   - [networkctl, reload]
-  - [networkctl, reconfigure, "*"]
 ```
 
 The early networkd filename takes precedence over the image's generated network

@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import subprocess
 import socket
+import shlex
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -50,6 +51,38 @@ class TargetTest(unittest.TestCase):
                 TARGET.bridge(config)
             self.assertEqual([call.args[:3] for call in run.call_args_list],
                              [('ip', '-json', 'link'), ('ip', '-4', '-json'), ('ip', '-6', '-json')])
+
+    def test_dual_stack_bridge_assigns_both_gateways_before_bringing_link_up(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        with patch.object(TARGET, 'check_network', return_value=None), patch.object(TARGET, 'run') as run:
+            TARGET.bridge(config)
+        self.assertEqual([call.args for call in run.call_args_list], [
+            ('ip', 'link', 'add', config['bridge'], 'type', 'bridge'),
+            ('ip', 'link', 'set', config['bridge'], 'alias', config['uuid']),
+            ('ip', 'address', 'replace', CONFIG['bridgeAddress'], 'dev', config['bridge']),
+            ('ip', '-6', 'address', 'replace', 'fd42:84:40::1/64', 'dev', config['bridge']),
+            ('ip', 'link', 'set', config['bridge'], 'up')])
+
+    def test_ipv6_forwarding_failure_does_not_claim_fresh_storage(self):
+        read = Path.read_text
+        def read_text(path, *args, **kwargs):
+            return '0' if str(path) == '/proc/sys/net/ipv6/conf/all/forwarding' else read(path, *args, **kwargs)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_file = root / 'config.json'
+            config_file.write_text(json.dumps({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'}))
+            data = root / 'data'
+            data.mkdir()
+            with patch.object(TARGET, 'ROOT', data), \
+                    patch.object(sys, 'argv', ['target.py', '--config', str(config_file)]), \
+                    patch.dict(TARGET.os.environ, NODE_NAME=CONFIG['nodeName']), \
+                    patch.object(TARGET.platform, 'machine', return_value='aarch64'), \
+                    patch.object(TARGET.preflight, 'check_kvm'), \
+                    patch.object(TARGET, 'check_network'), patch.object(TARGET, 'check_bmc_port'), \
+                    patch.object(Path, 'read_text', autospec=True, side_effect=read_text), \
+                    self.assertRaisesRegex(ValueError, 'IPv6 forwarding'):
+                TARGET.main()
+            self.assertEqual(list(data.iterdir()), [])
 
     def test_hugepage_config_preserves_legacy_identity_and_rejects_backing_changes(self):
         legacy = TARGET.configuration(CONFIG)
@@ -358,6 +391,34 @@ class ProvisioningNetworkTest(unittest.TestCase):
         self.assertTrue(all('fd42:84:40::/64' in rule and network.owner in rule for rule in rules))
         self.assertTrue(all(rule[-1] == 'ACCEPT' for rule in rules))
         self.assertEqual(rules[-1][8:12], ('-d', 'fd42:84:40::/64', '-o', config['bridge']))
+
+    def test_partial_ipv6_install_rolls_back_owned_rules_and_keeps_foreign_rules(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        foreign = '-A FORWARD -s fd42:84:41::/64 -m comment --comment other-target -j ACCEPT'
+        tables = {('iptables', 'filter'): [], ('iptables', 'nat'): [],
+                  ('ip6tables', 'filter'): [foreign], ('ip6tables', 'nat'): []}
+        inserted = []
+        def run(*args):
+            if args[0].endswith('-save'):
+                return '\n'.join(tables[args[0][:-5], args[2]])
+            table = tables[args[0], args[4]]
+            if args[5] == '-I':
+                if inserted:
+                    raise subprocess.CalledProcessError(4, 'ip6tables')
+                line = shlex.join(['-A', args[6], *args[8:]])
+                table.append(line)
+                inserted.append(line)
+            else:
+                self.assertEqual(args[5], '-D')
+                table.remove(shlex.join(['-A', args[6], *args[7:]]))
+            return ''
+        network = TARGET.Network(config, run, server='10.96.40.20', pod_cidr='10.244.0.0/24')
+        with patch('network.subprocess.Popen') as spawn, self.assertRaises(subprocess.CalledProcessError):
+            network.start()
+        spawn.assert_not_called()
+        self.assertEqual(len(inserted), 1)
+        self.assertEqual(tables[('ip6tables', 'filter')], [foreign])
+        self.assertTrue(all(not value for key, value in tables.items() if key != ('ip6tables', 'filter')))
 
     def test_ipv6_bad_owned_rule_prevents_deletion_in_either_family(self):
         config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})

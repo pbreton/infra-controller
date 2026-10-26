@@ -86,7 +86,11 @@ or a prefix overlapping another interface's route before claiming fresh storage.
 IPv6 addresses are normalized before comparison with retained inventory.
 Adding, removing or changing the IPv6 prefix of an existing target is rejected;
 use its original configuration or explicitly release and destroy it before
-creating a new target.
+creating a new target. Before reusing a release name with new storage, verify
+its owned bridge and tagged IPv4/IPv6 rules were removed. After an interrupted
+shutdown, restore the original values and retained storage to complete cleanup.
+If that storage has already been lost, recreate the disposable cluster; deleting
+only the PVC does not clean node networking and is not a supported reset.
 
 The kind node must already have IPv6 enabled for `all`, `default` and an existing
 owned bridge, with `net.ipv6.conf.all.forwarding=1`. For a new disposable node
@@ -96,8 +100,9 @@ created by the preceding example:
 docker exec nico-target-control-plane sysctl -w net.ipv6.conf.all.forwarding=1
 ```
 
-This changes only that node's network namespace and lasts until node removal;
-it does not configure the outer host. Startup fails if these prerequisites are
+This changes only that node's network namespace; it does not configure the outer
+host. Recheck the prerequisites after restarting or replacing the node, because
+a recreated namespace loses runtime sysctl changes. Startup fails if these prerequisites are
 missing. The target never changes shared forwarding policy. Keep IPv4 bridge,
 BMC Service and provisioning settings: this option adds guest IPv6 routing,
 not an IPv6 Kubernetes or provisioning deployment.
