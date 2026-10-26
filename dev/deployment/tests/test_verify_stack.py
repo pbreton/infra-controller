@@ -63,7 +63,7 @@ class InventoryTest(unittest.TestCase):
 
 
 class CommandTest(unittest.TestCase):
-    def invoke(self, mode="healthy", rest=False, *extra):
+    def invoke(self, mode="healthy", rest=False, *extra, command_delay=0):
         import os
         import subprocess
         import sys
@@ -77,6 +77,7 @@ import base64, json, os, sys, time
 from pathlib import Path
 name, args = Path(sys.argv[0]).name, sys.argv[1:]
 mode = os.environ["TEST_MODE"]
+time.sleep(float(os.environ["TEST_COMMAND_DELAY"]))
 context = os.environ["TEST_CONTEXT"]
 with open(os.environ["TEST_CALLS"], "a") as log:
     log.write(json.dumps([name, args]) + "\n")
@@ -161,12 +162,27 @@ else:
             for command in ("kubectl", "bash", "curl"):
                 (root / command).symlink_to(fake)
             calls = root / "calls"
+            driver = root / "verify.py"
+            driver.write_text(r'''import importlib.util, sys, types
+spec = importlib.util.spec_from_file_location("verify_stack", sys.argv.pop(1))
+verify = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(verify)
+# Advance only the verifier's retry clock. Real subprocess deadlines remain
+# active, and the stalled-command case below still exercises real elapsed time.
+clock = [0.0]
+def sleep(seconds):
+    clock[0] += seconds
+verify.time = types.SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep)
+sys.exit(verify.main())
+''')
+            entrypoint = [str(SPEC.origin)] if mode == "stalled" else [str(driver), str(SPEC.origin)]
             result = subprocess.run(
-                [sys.executable, "-B", str(SPEC.origin), "--core-namespace", "core-test",
+                [sys.executable, "-B", *entrypoint, "--core-namespace", "core-test",
                  "--rest-namespace", "rest-test", "--timeout", "15" if mode in ("retry", "rest-retry", "scout-retry", "healthy", "assigned") else "3",
                  *(["--rest"] if rest else []), *extra],
                 env={**os.environ, "PATH": f"{root}:{os.environ['PATH']}",
                      "TEST_MODE": mode, "TEST_CALLS": str(calls),
+                     "TEST_COMMAND_DELAY": str(command_delay),
                      "TEST_CONTEXT": extra[extra.index("--context") + 1] if "--context" in extra else "kind-selected"},
                 capture_output=True, text=True, timeout=25)
             records = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
@@ -188,6 +204,11 @@ else:
                 self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
                 if expected:
                     self.assertIn("unsupported site-agent identity source", result.stdout)
+
+    def test_slow_commands_preserve_the_readiness_failure_reason(self):
+        result, _ = self.invoke("wrong-rest", rest=True, command_delay=0.3)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("exact usable", result.stdout + result.stderr)
 
     def test_assigned_hosts_do_not_require_scout(self):
         result, calls = self.invoke("assigned", rest=True)
