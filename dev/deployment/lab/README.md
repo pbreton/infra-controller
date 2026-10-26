@@ -1142,6 +1142,11 @@ or other permissions. Keep it private. The helper does not generate or replace
 BMC credentials. Its path is recorded; its contents are not saved in the journal.
 During first registration, the initial credential appears in the process
 arguments of the host wrapper, kubectl and the admin CLI. Use a trusted lab host. Resume does not need that file after both registrations exist.
+Expected-machine creation logs deliberately retain only completion or failure
+status: CLI output and exception text can include the credential. Diagnose a
+failed create through Core service logs and the read-only `em show` command;
+the local creation log does not retain its rejection reason. Segment creation
+logs retain normal CLI diagnostics.
 
 Python 3.9+, Bash, jq, kubectl and the configured Core client wrapper are required.
 For a new journal, `--context`, two distinct `--target` values, `--bmc-prefix`,
