@@ -1013,12 +1013,33 @@ helm_chart(
     image_keys=[('image.repository', 'image.tag')],
     manual=True,
 )
+dhcp_dependencies = ['nico-api']
+dhcp_values_files = []
+if ipv6_boot:
+    endpoint_export = os.path.join(repo_root, 'dev/deployment/lab/endpoint-values.py')
+    endpoint_values = os.path.join(tilt_dir, '.local', cluster_context, 'ipv6-endpoints.json')
+    local_resource(
+        'ipv6-boot-endpoints',
+        ['python3', endpoint_export, '--context', cluster_context,
+         '--namespace', core_namespace, '--output', endpoint_values],
+        deps=[endpoint_export],
+        resource_deps=['nico-lab-dns', 'nico-pxe'],
+        labels=['infrastructure'],
+    )
+    # The selected boot profile owns these allocated Service addresses. Remove
+    # explicit flags so Helm's generated values file can supply them.
+    all_values['nico-dhcp']['dhcp'].pop('v6DnsServers', None)
+    all_values['nico-dhcp']['dhcp'].pop('v6ProvisioningServer', None)
+    dhcp_dependencies.append('ipv6-boot-endpoints')
+    dhcp_values_files.append(endpoint_values)
+
 helm_chart(
     name='nico-dhcp',
     chart=os.path.join(core_charts, 'nico-dhcp'),
     namespace=core_namespace,
     values=component_values(core_global, all_values['nico-dhcp']),
-    resource_deps=['nico-api'],
+    resource_deps=dhcp_dependencies,
+    values_files=dhcp_values_files,
     image_deps=['nico-dhcp'],
     image_keys=[('global.image.repository', 'global.image.tag')],
     manual=True,
@@ -1243,6 +1264,8 @@ if bmc_lab:
     ]] + ['nico-pxe']
 if ipv6_endpoints:
     enabled_resources.append('nico-lab-dns')
+if ipv6_boot:
+    enabled_resources.append('ipv6-boot-endpoints')
 if persistent_vault:
     enabled_resources.append('vault-bootstrap')
 if enable_observability:

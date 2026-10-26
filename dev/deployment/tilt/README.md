@@ -817,19 +817,39 @@ squashfs files; Tilt's init command rejects mismatched or missing IPv6 markers
 before copying artifacts. Default builds retain their IPv4 resolver and URLs;
 older unmarked artifacts are accepted only by the default boot profile.
 
-After deploying the manual `nico-pxe` resource and the resolver, read their
-allocated IPv6 addresses:
+With `--ipv6-boot`, the `ipv6-boot-endpoints` resource waits for `nico-pxe` and
+`nico-lab-dns`, then exports their allocated IPv6 addresses into
+`.local/CONTEXT/ipv6-endpoints.json`. DHCP depends on this export. The generated
+Helm values supply `dhcp.v6ProvisioningServer` and `dhcp.v6DnsServers`; this profile
+ignores explicit values for those two fields in `values.yaml`. Other DHCP
+settings, including lease timers, retain their existing precedence. Trigger the
+manual `nico-pxe` and `nico-dhcp` resources before powering on targets.
+
+Direct Helm uses the same exporter after deploying the IPv6 PXE and DNS Services:
 
 ```bash
-kubectl -n nico-system get service nico-pxe-external nico-lab-dns \
-  -o custom-columns=NAME:.metadata.name,IP:.spec.clusterIP
+python3 dev/deployment/lab/endpoint-values.py \
+  --context kind-nico-lab --output "$HOME/nico-ipv6-endpoints.json"
+helm upgrade nico-dhcp helm/charts/nico-dhcp \
+  --kube-context kind-nico-lab --namespace nico-system --reuse-values \
+  --values "$HOME/nico-ipv6-endpoints.json" --wait --timeout 5m
 ```
 
-Set `nico-dhcp.dhcp.v6ProvisioningServer` to the PXE address and
-`nico-dhcp.dhcp.v6DnsServers` to the resolver address in `values.yaml`, then
-explicitly trigger `nico-dhcp`. Do this before powering on targets. BMC Service
-addresses and installed guest configuration are independent settings. Use the
-[lab DNS chart](../../../helm/nico-lab-dns/README.md) for name-resolution details.
+This upgrade assumes the existing DHCP release already enables DHCPv6. Omit
+`--set` overrides for the two endpoint fields: Helm gives explicit flags
+precedence over values files. The exporter requires Python 3.9+ and kubectl.
+`--context` and `--output` are required; `--namespace` defaults to `nico-system`.
+It reads only the selected kind cluster's `nico-lab-dns` and `nico-pxe-external`
+Services, verifies their Helm release ownership, single-stack IPv6 addresses and
+DNS ports (UDP/TCP 53) or PXE port (TCP 8080), then writes JSON values. Parent
+directories are created; a changed file is atomically replaced with mode 0600.
+An unchanged file is left untouched. Lookup or validation failure returns nonzero
+and preserves the previous file; do not deploy that stale file after a failure.
+The helper neither changes cluster resources nor tests backend reachability.
+Run it again after Service replacement and before reconciling DHCP.
+
+BMC Service addresses and installed guest configuration are independent settings.
+Use the [lab DNS chart](../../../helm/nico-lab-dns/README.md) for name-resolution details.
 
 Keep both `--ipv6-endpoints` and `--ipv6-boot` enabled for the lifetime of the
 dedicated IPv6 boot lab cluster. Changing

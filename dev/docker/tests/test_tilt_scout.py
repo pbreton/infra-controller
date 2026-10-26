@@ -236,6 +236,39 @@ class ScoutWiringTest(unittest.TestCase):
             exec(compile(ast.Module(body=guards, type_ignores=[]), 'Tiltfile', 'exec'),
                  dict(ipv6_endpoints=True, dhcpv6=False, fail=fail))
 
+    def test_ipv6_boot_exports_live_services_before_dhcp_without_flag_overrides(self):
+        tree = ast.parse(TILT.read_text())
+        start = next(i for i, n in enumerate(tree.body) if isinstance(n, ast.Assign)
+                     and any(isinstance(t, ast.Name) and t.id == 'dhcp_dependencies' for t in n.targets))
+        for enabled in (False, True):
+            with self.subTest(ipv6_boot=enabled):
+                local_calls, helm_calls = [], []
+                values = {'nico-dhcp': {'dhcp': {'v6DnsServers': 'old', 'v6ProvisioningServer': 'old'}}}
+                env = dict(ipv6_boot=enabled, all_values=values, core_global={}, core_namespace='nico-system',
+                           cluster_context='kind-test', repo_root=str(ROOT), tilt_dir=str(TILT.parent),
+                           core_charts=str(ROOT / 'helm/charts'), os=os,
+                           local_resource=lambda *a, **kw: local_calls.append((a, kw)),
+                           helm_chart=lambda **kw: helm_calls.append(kw), component_values=lambda a, b: b)
+                exec(compile(ast.Module(body=tree.body[start:start + 4], type_ignores=[]), 'Tiltfile', 'exec'), env)
+                dhcp = helm_calls[0]
+                if not enabled:
+                    self.assertEqual(dhcp['resource_deps'], ['nico-api'])
+                    self.assertEqual(dhcp['values_files'], [])
+                    self.assertEqual(local_calls, [])
+                    continue
+                self.assertEqual(dhcp['resource_deps'], ['nico-api', 'ipv6-boot-endpoints'])
+                self.assertEqual(dhcp['values']['dhcp'], {})
+                self.assertEqual(local_calls[0][1]['resource_deps'], ['nico-lab-dns', 'nico-pxe'])
+                self.assertEqual(local_calls[0][0][1][-1], dhcp['values_files'][0])
+                output = {'dhcp': {'v6Enabled': True, 'v6ServerIdentifier': '020000000006',
+                                  'v6DnsServers': 'fd00:10:96::11', 'v6ProvisioningServer': 'fd00:10:96::12'}}
+                rendered = subprocess.check_output(['helm', 'template', 'nico-dhcp', str(ROOT / 'helm/charts/nico-dhcp'),
+                    '-n', 'nico-system', '-f', '-', '--show-only', 'templates/configmap-v6.yaml'], input=json.dumps(output), text=True)
+                kea = json.loads(yaml.safe_load(rendered)['data']['kea_config6.json'])['Dhcp6']
+                parameters = kea['hooks-libraries'][0]['parameters']
+                self.assertEqual(parameters['hook-dns-servers-ipv6'], output['dhcp']['v6DnsServers'])
+                self.assertEqual(parameters['hook-provisioning-server-ipv6'], output['dhcp']['v6ProvisioningServer'])
+
     def test_bmc_mode_does_not_enable_mat_or_its_readiness_resource(self):
         tree = ast.parse(TILT.read_text())
         assignments = [n for n in tree.body if isinstance(n, ast.Assign)
