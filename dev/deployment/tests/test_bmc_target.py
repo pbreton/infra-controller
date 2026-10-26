@@ -4,6 +4,7 @@
 import importlib.util
 import errno
 import json
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -257,43 +258,50 @@ class TargetTest(unittest.TestCase):
                 self.assertEqual(list(root.iterdir()), [])
 
     def test_bmc_stops_before_guest_save_and_libvirt_shutdown(self):
-        events = []
-        config = TARGET.configuration(CONFIG)
+        for saved in (False, True):
+            with self.subTest(saved=saved):
+                events = []
+                config = TARGET.configuration(dict(CONFIG, hugepages=saved))
 
-        class Child:
-            def __init__(self, command):
-                self.name = command[0]
-            def poll(self):
-                return None
-            def terminate(self):
-                events.append(('stop', self.name))
-            def wait(self, timeout):
-                return 0
+                class Child:
+                    def __init__(self, command):
+                        self.name = command[0]
+                    def poll(self):
+                        return None
+                    def terminate(self):
+                        events.append(('stop', self.name))
+                    def wait(self, timeout):
+                        return 0
 
-        def virsh(*args, **kwargs):
-            events.append(('virsh', args[0]))
-            return {'list': 'target', 'domuuid': config['uuid'], 'domstate': 'running', 'dumpxml': TARGET.domain_xml(config)}.get(args[0], '')
+                def virsh(*args, **kwargs):
+                    events.append(('virsh', args[0]))
+                    return {'list': 'target', 'domuuid': config['uuid'], 'domstate': 'running', 'dumpxml': TARGET.domain_xml(config), 'managedsave-dumpxml': TARGET.domain_xml(config)}.get(args[0], '')
 
-        with tempfile.TemporaryDirectory() as directory, patch.object(TARGET, 'ROOT', Path(directory)), \
-                patch.object(TARGET, 'READY', Path(directory) / 'ready'), \
-                patch.object(TARGET, 'prepare_storage'), patch.object(TARGET, 'bridge'), \
-                patch.object(TARGET, 'clear_bridge'), \
-                patch.object(TARGET.Path, 'mkdir'), \
-                patch.object(TARGET, 'virsh', side_effect=virsh), \
-                patch.object(TARGET.subprocess, 'Popen', side_effect=Child), \
-                patch.object(TARGET.socket, 'create_connection'), \
-                patch.object(TARGET.time, 'sleep', side_effect=lambda _: setattr(TARGET, 'STOP', True)), \
-                patch.object(TARGET, 'STOP', False):
-            (Path(directory) / 'bmc.json').write_text('{}')
-            network = Mock()
-            network.start.return_value = Child(['dhcrelay'])
-            network.clear.side_effect = lambda: events.append(('clear', 'network'))
-            TARGET.serve(config, network)
-        self.assertLess(events.index(('stop', 'bmc-mock')), events.index(('virsh', 'managedsave')))
-        self.assertLess(events.index(('virsh', 'managedsave')), events.index(('stop', 'libvirtd')))
-        self.assertLess(events.index(('stop', 'libvirtd')), events.index(('stop', 'dhcrelay')))
-        self.assertLess(events.index(('stop', 'dhcrelay')), events.index(('clear', 'network')))
-        self.assertNotIn(('virsh', 'start'), events)
+                with tempfile.TemporaryDirectory() as directory, patch.object(TARGET, 'ROOT', Path(directory)), \
+                        patch.object(TARGET, 'READY', Path(directory) / 'ready'), \
+                        patch.object(TARGET, 'prepare_storage'), patch.object(TARGET, 'bridge'), \
+                        patch.object(TARGET, 'clear_bridge'), \
+                        patch.object(TARGET.Path, 'mkdir'), \
+                        patch.object(TARGET, 'virsh', side_effect=virsh), \
+                        patch.object(TARGET.subprocess, 'Popen', side_effect=Child), \
+                        patch.object(TARGET.socket, 'create_connection'), \
+                        patch.object(TARGET.time, 'sleep', side_effect=lambda _: setattr(TARGET, 'STOP', True)), \
+                        patch.object(TARGET, 'STOP', False):
+                    (Path(directory) / 'bmc.json').write_text('{}')
+                    network = Mock()
+                    network.start.return_value = Child(['dhcrelay'])
+                    network.clear.side_effect = lambda: events.append(('clear', 'network'))
+                    if saved:
+                        save_path = Path(directory) / 'libvirt/qemu/save/target.save'
+                        os.makedirs(save_path.parent)
+                        save_path.write_bytes(b'saved guest memory')
+                    TARGET.serve(config, network)
+                self.assertLess(events.index(('stop', 'bmc-mock')), events.index(('virsh', 'managedsave')))
+                self.assertLess(events.index(('virsh', 'managedsave')), events.index(('stop', 'libvirtd')))
+                self.assertLess(events.index(('stop', 'libvirtd')), events.index(('stop', 'dhcrelay')))
+                self.assertLess(events.index(('stop', 'dhcrelay')), events.index(('clear', 'network')))
+                self.assertNotIn(('virsh', 'start'), events)
+                self.assertEqual(('virsh', 'managedsave-dumpxml') in events, saved)
 
 
 class ProvisioningNetworkTest(unittest.TestCase):

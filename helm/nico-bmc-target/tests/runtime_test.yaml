@@ -248,3 +248,10 @@ tests:
           value:
             requests: {cpu: "2"}
             limits: {memory: 8Gi}
+  - it: prevents a huge-page limit override independently of requests
+    template: deployment.yaml
+    set:
+      resources.limits.hugepages-2Mi: 2Gi
+    asserts:
+      - failedTemplate:
+          errorMessage: huge-page resources are derived from target.hugepages and target.memoryMiB

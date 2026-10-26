@@ -26,6 +26,17 @@ req=urllib.request.Request('https://'+config['bmcAddress']+request['path'],data=
 with urllib.request.urlopen(req,context=ssl._create_unverified_context(),timeout=15) as response:
  print(response.read().decode() or '{}')
 '''
+HUGEPAGES = '''import json
+from pathlib import Path
+config=json.loads(Path('/data/inventory.json').read_text())
+pid=int(Path('/run/libvirt/qemu/target.pid').read_text())
+status=Path(f'/proc/{pid}/status').read_text().splitlines()
+actual=next(int(line.split()[1]) for line in status if line.startswith('HugetlbPages:'))
+expected=config['memoryMiB']*1024
+if actual != expected:
+ raise ValueError(f'QEMU HugeTLB backing is {actual} KiB, expected {expected} KiB')
+print(f'PASS QEMU holds {actual} KiB of explicit HugeTLB memory')
+'''
 CAPTURE = '''import json,socket,time,sys
 from pathlib import Path
 config=json.loads(Path('/data/inventory.json').read_text())
@@ -155,6 +166,8 @@ def main():
             capture.wait(timeout=5)
     if request(credentials, 'GET', system_path)['PowerState'] != 'On':
         raise ValueError('guest firmware ran but BMC did not observe power-on')
+    if config.get('hugepages'):
+        print(command(execute + ['python3', '-c', HUGEPAGES]).strip())
     command(execute + ['test', '-s', '/data/logs/console.log'])
     if args.lease_address:
         print(f'PASS firmware DHCP ACK: {args.lease_address}')

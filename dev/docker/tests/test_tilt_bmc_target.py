@@ -59,15 +59,18 @@ class TargetWiringTest(unittest.TestCase):
             spec.loader.exec_module(runtime)
         finally:
             sys.path.pop(0)
-        result = subprocess.run(
-            ['helm', 'template', 'target-two', str(ROOT / 'helm/nico-bmc-target'),
-             '--namespace', 'test-lab', '--show-only', 'templates/configmap.yaml',
-             '--set', 'nodeName=node,clusterUID=cluster,storage.existingClaim=data,service.clusterIP=10.96.40.10',
-             '--set', 'architecture=arm64,target.instanceIndex=2,target.memoryMiB=8192'],
-            capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        config = runtime.configuration(json.loads(yaml.safe_load(result.stdout)['data']['config.json']))
-        self.assertEqual(config['owner'], 'test-lab/target-two')
-        self.assertEqual(config['memoryMiB'], 8192)
-        self.assertEqual(config['mac'], '02:00:00:02:00:02')
-        self.assertEqual(config['architecture'], 'arm64')
+        for hugepages in (False, True):
+            with self.subTest(hugepages=hugepages):
+                result = subprocess.run(
+                    ['helm', 'template', 'target-two', str(ROOT / 'helm/nico-bmc-target'),
+                     '--namespace', 'test-lab', '--show-only', 'templates/configmap.yaml',
+                     '--set', 'nodeName=node,clusterUID=cluster,storage.existingClaim=data,service.clusterIP=10.96.40.10',
+                     '--set', f'architecture=arm64,target.instanceIndex=2,target.memoryMiB=8192,target.hugepages={str(hugepages).lower()}'],
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                config = runtime.configuration(json.loads(yaml.safe_load(result.stdout)['data']['config.json']))
+                self.assertEqual(config['owner'], 'test-lab/target-two')
+                self.assertEqual(config['memoryMiB'], 8192)
+                self.assertEqual(config['mac'], '02:00:00:02:00:02')
+                self.assertEqual(config['architecture'], 'arm64')
+                self.assertEqual(config.get('hugepages', False), hugepages)

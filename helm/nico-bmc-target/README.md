@@ -22,7 +22,10 @@ The chart requests 2 CPUs and derives memory requests from guest size: guest RAM
 plus 1 GiB ordinary memory, or 1 GiB ordinary memory plus guest RAM in huge pages
 when enabled. Explicit ordinary resources override these defaults; a memory
 limit alone lets Kubernetes default the request to that limit. Kubernetes
-requests do not guarantee free disk capacity.
+requests do not guarantee free disk capacity. When upgrading a release created
+with the fixed 5 GiB request, check available node capacity or set an explicit
+request: larger guests and limit-only settings can increase the replacement
+pod’s request and leave it Pending after the old pod stops.
 
 Run from the repository root with Docker, kind, kubectl, Helm and Python 3.9 or
 newer on PATH. The Docker daemon and kind node must expose native `/dev/kvm`.
