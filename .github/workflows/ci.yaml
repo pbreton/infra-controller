@@ -1296,7 +1296,20 @@ jobs:
             --build-arg KEA_VERSION="$KEA_VERSION" \
             --tag nico-dev-dhcp:ci .
           test "$(docker image inspect --format '{{.Architecture}}' nico-dev-dhcp:ci)" = "$ARCH"
-          bash dev/docker/tests/smoke_dhcp_image.sh nico-dev-dhcp:ci
+          package_dir=$(mktemp -d)
+          trap 'rm -rf "$package_dir"' EXIT
+          if docker run --rm --entrypoint sh "$BUILD_CONTAINER" -ec \
+            'if [ -e /opt/kea/kea-common.deb ]; then cat /opt/kea/kea-common.deb; else exit 3; fi' \
+            > "$package_dir/kea-common.deb"; then
+            bash dev/docker/tests/smoke_dhcp_image.sh nico-dev-dhcp:ci "$package_dir/kea-common.deb"
+          else
+            status=$?
+            if [[ "$status" != 3 || -f dev/docker/build-kea.sh ]]; then
+              echo "Could not extract the required build-image Kea package (status $status)" >&2
+              exit 1
+            fi
+            bash dev/docker/tests/smoke_dhcp_image.sh nico-dev-dhcp:ci
+          fi
 
   # ============================================================================
   # BUILD STAGE - Forge CLI (Multi-arch)

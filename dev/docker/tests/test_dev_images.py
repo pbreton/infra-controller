@@ -54,28 +54,33 @@ class DevImagesTest(unittest.TestCase):
             calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             return result, calls
 
-    def test_dhcp_smoke_optional_mount_reaches_docker_with_system_bash(self):
+    def test_dhcp_smoke_copies_client_package_and_cleans_up_with_system_bash(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
-            log = directory / 'args.json'
+            log = directory / 'args.jsonl'
             docker = directory / 'docker'
-            docker.write_text(f'#!{sys.executable}\nimport json, sys\n'
-                              f'from pathlib import Path\nPath({str(log)!r}).write_text(json.dumps(sys.argv[1:]))\n'
-                              'sys.stdin.read()\n')
+            docker.write_text(f'#!{sys.executable}\nimport json, os, sys\n'
+                              f'with open({str(log)!r}, "a") as stream: stream.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                              'if sys.argv[1] == "create": print("test-container")\n'
+                              'if sys.argv[1] == "cp" and os.environ.get("FAIL_COPY"): sys.exit(7)\n'
+                              'if sys.argv[1] == "start": sys.stdin.read()\n')
             docker.chmod(0o755)
-            package = directory / 'package with spaces.deb'
+            package = directory / 'package, with spaces.deb'
             package.touch()
             env = dict(os.environ, PATH=str(directory) + os.pathsep + os.environ['PATH'])
-            for extra in ([], [str(package)]):
-                with self.subTest(package=bool(extra)):
+            for extra, fail in (([], False), ([str(package)], False), ([str(package)], True)):
+                with self.subTest(package=bool(extra), fail=fail):
+                    log.unlink(missing_ok=True)
                     result = subprocess.run(['/bin/bash', str(ROOT / 'dev/docker/tests/smoke_dhcp_image.sh'),
-                                             'test-image', *extra], env=env, capture_output=True, text=True)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    args = json.loads(log.read_text())
-                    self.assertEqual(args.count('--mount'), len(extra))
+                                             'test-image', *extra], env=dict(env, FAIL_COPY='yes' if fail else ''),
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 7 if fail else 0, result.stderr)
+                    calls = [json.loads(line) for line in log.read_text().splitlines()]
+                    expected = ['create'] + (['cp'] if extra else []) + ([] if fail else ['start']) + ['rm']
+                    self.assertEqual([c[0] for c in calls], expected)
                     if extra:
-                        self.assertIn(f'type=bind,src={package},dst=/tmp/expected-kea.deb,readonly', args)
-                    self.assertEqual(args[-2:], ['test-image', '-eu'])
+                        self.assertEqual(calls[1], ['cp', str(package), 'test-container:/tmp/expected-kea.deb'])
+                    self.assertEqual(calls[0][-2:], ['test-image', '-eu'])
 
     def test_daemon_platform_selects_native_compiler_and_local_service(self):
         for platform, arch, compiler in (

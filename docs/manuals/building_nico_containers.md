@@ -84,7 +84,8 @@ dev/docker/tests/smoke_dhcp_image.sh nico-dev-dhcp:latest
 
 The script requires an image reference available in the selected Docker daemon;
 use the value of `DEV_IMAGE` if overridden. An optional second argument names a
-local `kea-common.deb` file. It is mounted read-only and must match the installed
+local `kea-common.deb` file. It is copied from the client into the temporary container, including with a remote
+Docker context, and must match the installed
 package name, version and native architecture; every packaged `libkea*.so*`
 regular file must match the runtime bytes. A missing file or mismatch fails.
 Omitting the package skips those comparisons. Zero or more than two arguments

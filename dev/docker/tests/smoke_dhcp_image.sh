@@ -9,17 +9,18 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
     exit 2
 fi
 
-package_mount=()
 if [[ $# == 2 ]]; then
-    package_path="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
-    test -f "$package_path"
-    package_mount=(--mount "type=bind,src=$package_path,dst=/tmp/expected-kea.deb,readonly")
+    test -f "$2"
 fi
-
-docker run --rm --network none ${package_mount[@]+"${package_mount[@]}"} \
+container=$(docker create --rm --network none \
     --sysctl net.ipv6.conf.all.disable_ipv6=0 \
     --sysctl net.ipv6.conf.default.disable_ipv6=0 \
-    --entrypoint sh -i "$1" -eu <<'CONTAINER'
+    --entrypoint sh -i "$1" -eu)
+trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+if [[ $# == 2 ]]; then
+    docker cp "$2" "$container:/tmp/expected-kea.deb"
+fi
+docker start -ai "$container" <<'CONTAINER'
 ip -V
 ss -V
 curl --version

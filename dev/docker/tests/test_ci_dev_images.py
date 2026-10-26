@@ -28,7 +28,7 @@ class CiDevImagesTest(unittest.TestCase):
         )
 
     def run_build(self, arch="amd64", platform="linux/x86_64", rebuilt=True,
-                  published=False, fail_build=False):
+                  published=False, fail_build=False, package_status=0):
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yaml").read_text())
         step = workflow["jobs"]["test-dev-dhcp-image"]["steps"][-1]
         with tempfile.TemporaryDirectory() as directory:
@@ -55,6 +55,11 @@ class CiDevImagesTest(unittest.TestCase):
                 "elif args[0] == 'build' and os.environ['DOCKER_TEST_FAIL_BUILD'] == 'true':\n"
                 "    sys.exit('compiler build failed')\n"
                 "elif args[0] == 'run':\n"
+                "    sys.stdout.write('test package')\n"
+                "    sys.exit(int(os.environ['DOCKER_PACKAGE_STATUS']))\n"
+                "elif args[0] == 'create':\n"
+                "    print('test-container')\n"
+                "elif args[0] == 'start':\n"
                 "    sys.stdin.read()\n"
             )
             docker.chmod(0o755)
@@ -70,6 +75,7 @@ class CiDevImagesTest(unittest.TestCase):
                 PUBLISH_COMPILER=str(published).lower(),
                 KEA_VERSION=(ROOT / "dev/docker/kea.version").read_text().strip(),
                 DOCKER_TEST_LOG=str(log),
+                DOCKER_PACKAGE_STATUS=str(package_status),
                 DOCKER_TEST_PLATFORM=platform,
                 DOCKER_TEST_UNPUBLISHED=str(rebuilt and not published).lower(),
                 DOCKER_TEST_FAIL_BUILD=str(fail_build).lower(),
@@ -90,7 +96,7 @@ class CiDevImagesTest(unittest.TestCase):
                 result, calls = self.run_build(arch=arch, platform=platform)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual([call[0] for call in calls],
-                                 ["context", "info", "build", "image", "build", "build", "image", "run"])
+                                 ["context", "info", "build", "image", "build", "build", "image", "run", "create", "cp", "start", "rm"])
                 compiler_build = calls[2]
                 self.assertEqual(compiler_build[compiler_build.index("--file") + 1],
                                  f"dev/docker/Dockerfile.build-container-{compiler}")
@@ -107,8 +113,18 @@ class CiDevImagesTest(unittest.TestCase):
                 result, calls = self.run_build(rebuilt=rebuilt, published=published)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual([call[0] for call in calls],
-                                 ["context", "info", "pull", "image", "build", "build", "image", "run"])
+                                 ["context", "info", "pull", "image", "build", "build", "image", "run", "create", "cp", "start", "rm"])
                 self.assertEqual(calls[2], ["pull", "--platform", "linux/amd64", BUILD_CONTAINER])
+
+    def test_missing_optional_package_preserves_stock_smoke_but_extraction_errors_fail(self):
+        producer_present = (ROOT / 'dev/docker/build-kea.sh').exists()
+        for status in (3, 125):
+            with self.subTest(status=status):
+                result, calls = self.run_build(package_status=status)
+                allowed = status == 3 and not producer_present
+                self.assertEqual(result.returncode == 0, allowed, result.stderr)
+                self.assertEqual([c[0] for c in calls if c[0] in ('create', 'cp', 'start', 'rm')],
+                                 ['create', 'start', 'rm'] if allowed else [])
 
     def test_compiler_build_failure_stops_runtime_and_smoke(self):
         result, calls = self.run_build(fail_build=True)

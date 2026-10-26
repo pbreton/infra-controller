@@ -817,15 +817,23 @@ the native package extracted from the selected build image to the existing smoke
 check:
 
 ```bash
-bash dev/docker/tests/smoke_dhcp_image.sh nico-dev-dhcp:validation /path/to/kea-common.deb
+build_image=nico-dev-build:latest  # Use the actual DEV_BUILD_CONTAINER from the build.
+container=$(docker create "$build_image" /not-started)
+docker cp "$container:/opt/kea/kea-common.deb" /tmp/kea-common.deb
+docker rm "$container"
+bash dev/docker/tests/smoke_dhcp_image.sh nico-dev-dhcp:latest /tmp/kea-common.deb
 ```
 
 The second argument is optional; without it, the smoke check tests tool presence,
 hook loading and isolated UDP listeners as before. With it, the check also
 requires the `kea-common` package name, installed version and native architecture
 to match and compares every packaged `libkea*.so*` regular file with the runtime
-copy. It mounts the package read-only into a disposable container with networking
-disabled. This packaging check does not replace the real instance lifecycle.
+copy. It copies the client-side package into a disposable container with networking
+disabled, so an SSH Docker context does not need shared client paths. For Tilt,
+use the exact resolved `build-container-localdev` image and deployed DHCP image
+from that build. CI extracts the package from its selected build image and runs
+this comparison when supplied; when the checkout contains the Kea package
+producer, a missing package fails CI. This packaging check does not replace the real instance lifecycle.
 
 ### IPv6 boot profile
 
