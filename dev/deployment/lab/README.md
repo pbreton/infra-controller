@@ -653,14 +653,15 @@ CPU compatibility.
 `--sha256` is exactly 64 hexadecimal digits, case-insensitive. Verification uses
 that trusted digest; it does not retrieve a publisher signing key or select a
 release. `--image` is an explicit unqualified local `name:tag`, without a registry,
-namespace or digest; an existing tag is rejected. `--output` must not exist, its
+namespace or digest; tags are at most 128 characters and an existing tag is rejected. `--output` must not exist, its
 parent must exist, and relative paths resolve from the current directory.
 Do not run concurrent builds for the same output tag.
 
 The resulting image preserves the selected parent's boot payloads and adds
 `ubuntu.img` under its native `aarch64/` or `x86_64/` directory. A temporary unique
 parent tag holds the inspected parent image ID during the build and is removed
-on completion or ordinary failure. The output directory retains the verified
+on completion or ordinary failure. Cleanup failures warn with the retained tag
+without replacing the build result. The output directory retains the verified
 `ubuntu.img` and `build-info.json`, including architecture, source digest, parent
 and output image IDs, and the PXE path. The builder verifies bytes and format
 before Docker builds the layer. Failures return nonzero and remove temporary
