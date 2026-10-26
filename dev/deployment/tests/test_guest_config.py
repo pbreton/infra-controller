@@ -75,8 +75,8 @@ class GuestConfigTest(unittest.TestCase):
                  (['--network', 'ipv6-only'], 'ssh-ed25519 malformed'),
                  (['--network', 'ipv6-only'], KEY + ' lab\x7fcomment')]
         with tempfile.TemporaryDirectory() as directory:
-            for args, key in cases:
-                with self.subTest(args=args, key_type=key.split()[0]):
+            for case, (args, key) in enumerate(cases):
+                with self.subTest(case=case, args=args, key_type=key.split()[0]):
                     result = self.invoke(directory, *args, key=key)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(result.stdout, '')

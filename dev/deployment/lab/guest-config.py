@@ -55,7 +55,7 @@ def main():
     parser.add_argument('--network', choices=PROFILES, default='ipv4', help='installed OS networking (default: ipv4)')
     args = parser.parse_args()
     if not args.generation.strip() or not args.generation.isprintable():
-        parser.error('--generation must contain non-whitespace printable characters')
+        parser.error('--generation must be nonempty, not only whitespace, and contain only printable characters')
     try:
         key = args.public_key.read_text().strip()
         # Reject private-key files before invoking any key parser or writing output.
