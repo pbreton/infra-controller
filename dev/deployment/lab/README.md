@@ -809,7 +809,6 @@ the [retained-state restart](../../../helm/nico-bmc-target/README.md#configurati
 Target readiness checks the runtime, not DHCP lease availability. Run the guest
 address and connectivity checks after this recovery.
 
-
 ### Repeat the instance lifecycle
 
 `lifecycle.py` operates on two explicitly selected, already admitted no-DPU lab
