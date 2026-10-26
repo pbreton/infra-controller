@@ -185,19 +185,24 @@ workspace for diagnosis and requires a different empty output directory to retry
 No cleanup or cluster operation is performed by this helper.
 
 For the [IPv6 endpoint profile](../tilt/README.md#ipv6-provisioning-endpoints),
-add `--ipv6-endpoints` to both `build-scout.py` and `build-imager.py` invocations.
+add `--ipv6-boot` to both `build-scout.py` and `build-imager.py` invocations.
 This boolean option defaults to false. It omits the pinned IPv4 resolver for
 `cluster.local` so each boot stage uses DHCP-provided DNS. Scout's rootfs
 fallback uses `http://carbide-static-pxe.forge:8080`; the matching Tilt profile
 supplies the API and PXE URLs. Deploy the resolver and advertise it through
 DHCPv6 before boot. Use a new output directory and artifact tag when switching
-profiles; the helpers never rewrite an existing artifact directory.
+profiles; the helpers never rewrite an existing artifact directory. The Scout
+payload includes `scout.network-profile` and the imager payload includes
+`qcow-imager.network-profile`, each containing `default` or `ipv6` plus a newline.
+Copy these files into the artifact image with the payloads. The matching Tilt
+`--ipv6-boot` profile requires the IPv6 markers and targets with IPv4 provisioning
+disabled; see its documented fresh-cluster setup.
 
 Successful output contains `aarch64/scout.efi` and `aarch64/scout.squashfs`, or
 `x86_64/scout.efi` and `x86_64/scout.squashfs`. `build/` retains the staged profiles,
 mkosi output and downloaded package cache. `build-info.json` records the native
 architecture, package version, requested virtual-kernel package and SHA-256
-hashes of the input package and both payloads, plus the `ipv6_endpoints` boolean. The manifest is written only after
+hashes of the input package and both payloads, plus the `ipv6_boot` boolean. The manifest is written only after
 both build stages succeed. Distribution packages are resolved during each build;
 these development builds are not promised to be byte-for-byte reproducible.
 Output is root-owned when built in the container. `.dockerignore` excludes the
@@ -386,12 +391,12 @@ directory and requires root on native Linux ARM64 or AMD64. It copies the
 production `qcow-imager-aarch64` or `qcow-imager` profile and the real
 `disk_imaging.sh` without changing their source. Both profiles already use the
 virtual kernel. The default staged profile adds the same kind DNS routing as Scout.
-With `--ipv6-endpoints` it instead relies on DHCP-provided DNS.
+With `--ipv6-boot` it instead relies on DHCP-provided DNS.
 No OS image, tenant credentials or cloud-init data is embedded in this artifact.
 
 Successful output is `ARCH/qcow-imager.efi`, with staged sources and caches in
 `build/`. `build-info.json` records the architecture, selected profile, payload
-SHA-256, installer SHA-256 and the `ipv6_endpoints` boolean. Failure leaves the build workspace for diagnosis;
+SHA-256, installer SHA-256 and the `ipv6_boot` boolean. Failure leaves the build workspace for diagnosis;
 retry with a new or empty output directory. The helper never cleans an existing
 directory or changes a cluster. Distribution package resolution happens during
 the build, so these artifacts are not promised to be byte-for-byte reproducible.

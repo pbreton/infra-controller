@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 import yaml
@@ -20,7 +21,7 @@ TILT = ROOT / 'dev/deployment/tilt/Tiltfile'
 
 
 class ScoutWiringTest(unittest.TestCase):
-    def profile(self, bmc, arch='aarch64', ipv6_endpoints=False):
+    def profile(self, bmc, arch='aarch64', ipv6_endpoints=False, ipv6_boot=False):
         tree = ast.parse(TILT.read_text())
         calls = []
         values = yaml.safe_load((TILT.parent / 'values.yaml').read_text())
@@ -28,7 +29,8 @@ class ScoutWiringTest(unittest.TestCase):
                     and isinstance(n.test, ast.Name) and n.test.id == 'bmc_lab'
                     and any(isinstance(x, ast.Call) and getattr(x.func, 'id', '') == 'helm_chart'
                             for x in ast.walk(n))]
-        env = dict(bmc_lab=bmc, ipv6_endpoints=ipv6_endpoints, nico_api_values=values['nico-api'], all_values=values,
+        selected = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'boot_artifact_command'] + selected
+        env = dict(bmc_lab=bmc, ipv6_endpoints=ipv6_endpoints, ipv6_boot=ipv6_boot, nico_api_values=values['nico-api'], all_values=values,
                    core_global=values['global'], core_namespace='nico-system',
                    core_charts=str(ROOT / 'helm/charts'), tilt_dir=str(TILT.parent), os=os,
                    read_file=lambda p: Path(p).read_text(), compiler_arch=arch,
@@ -152,10 +154,10 @@ class ScoutWiringTest(unittest.TestCase):
         self.assertEqual(calls[0]['resource_deps'], ['nico-api', 'nico-pxe'])
         pxe_calls, _ = self.profile(True, ipv6_endpoints=True)
         env_values = pxe_calls[0]['values']['config']['extraEnvData']
-        self.assertEqual(env_values['CARBIDE_API_URL'], 'https://carbide-api.forge:1079')
-        self.assertEqual(env_values['CARBIDE_PXE_URL'], 'http://carbide-pxe.forge:8080')
+        self.assertEqual(env_values['CARBIDE_API_URL'], 'https://nico-api.nico-system.svc.cluster.local:1079')
+        self.assertEqual(env_values['CARBIDE_PXE_URL'], 'http://nico-pxe.nico-system.svc.cluster.local')
         for component, settings, port in [('nico-api', {'global': values['global'], **env['nico_api_values']}, 1079),
-                                           ('nico-pxe', {**pxe_calls[0]['values'], 'global': values['global']}, 8080)]:
+                                           ('nico-pxe', {**pxe_calls[0]['values'], 'global': values['global']}, 80)]:
             with self.subTest(component=component):
                 settings.pop('global_values', None)
                 result = subprocess.run(
@@ -171,10 +173,53 @@ class ScoutWiringTest(unittest.TestCase):
                 self.assertEqual(service['ports'][0]['port'], port)
                 self.assertNotIn('externalTrafficPolicy', service)
 
+    def test_artifact_init_checks_profile_before_copying_payloads(self):
+        cases = [
+            (False, None, None, True),
+            (True, None, None, False),
+            (True, 'ipv6', 'ipv6', True),
+            (True, 'ipv6', 'default', False),
+            (False, 'ipv6', 'ipv6', False),
+        ]
+        for ipv6, scout, imager, success in cases:
+            with self.subTest(ipv6=ipv6, scout=scout, imager=imager), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                payload = root / 'aarch64'
+                payload.mkdir()
+                destination = root / 'destination'
+                destination.mkdir()
+                for name, profile in [('scout', scout), ('qcow-imager', imager)]:
+                    (payload / (name + '.efi')).write_text('fixture')
+                    if profile is not None:
+                        (payload / (name + '.network-profile')).write_text(profile + '\n')
+                calls, _ = self.profile(True, ipv6_endpoints=ipv6, ipv6_boot=ipv6)
+                command = calls[0]['values']['bootArtifactContainers'][0]['command']
+                command[-1] = command[-1].replace('/aarch64', str(payload)).replace('/forge-boot-artifacts/blobs/internal/', str(destination) + '/')
+                result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode == 0, success, result.stderr)
+                self.assertEqual((destination / 'aarch64/scout.efi').exists(), success)
+                if not success:
+                    self.assertIn('boot artifact network profile mismatch', result.stderr)
+
+    def test_ipv6_boot_is_explicit_and_requires_companion_endpoints(self):
+        calls, _ = self.profile(True, ipv6_endpoints=True, ipv6_boot=True)
+        values = calls[0]['values']
+        self.assertEqual(values['externalService']['port'], 8080)
+        self.assertEqual(values['config']['extraEnvData']['CARBIDE_API_URL'], 'https://carbide-api.forge:1079')
+        self.assertEqual(values['config']['extraEnvData']['CARBIDE_PXE_URL'], 'http://carbide-pxe.forge:8080')
+        tree = ast.parse(TILT.read_text())
+        guard = next(n for n in tree.body if isinstance(n, ast.If) and isinstance(n.test, ast.BoolOp)
+                     and isinstance(n.test.values[0], ast.Name) and n.test.values[0].id == 'ipv6_boot')
+        def fail(message):
+            raise ValueError(message)
+        with self.assertRaisesRegex(ValueError, 'requires --ipv6-endpoints'):
+            exec(compile(ast.Module(body=[guard], type_ignores=[]), 'Tiltfile', 'exec'),
+                 dict(ipv6_boot=True, ipv6_endpoints=False, fail=fail))
+
     def test_ipv6_endpoints_require_managed_dhcpv6(self):
         tree = ast.parse(TILT.read_text())
         guards = [n for n in tree.body if isinstance(n, ast.If) and isinstance(n.test, ast.BoolOp)
-                  and any(isinstance(x, ast.Name) and x.id == 'ipv6_endpoints' for x in ast.walk(n.test))]
+                  and isinstance(n.test.values[0], ast.Name) and n.test.values[0].id == 'ipv6_endpoints']
         def fail(message):
             raise ValueError(message)
         with self.assertRaisesRegex(ValueError, 'requires --dhcpv6'):

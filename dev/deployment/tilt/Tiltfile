@@ -39,6 +39,7 @@ config.define_bool('persistent-vault')
 config.define_bool('bmc-lab')
 config.define_bool('dhcpv6')
 config.define_bool('ipv6-endpoints')
+config.define_bool('ipv6-boot')
 config.define_string('boot-artifact-image')
 options = config.parse()
 persistent_vault = options.get('persistent-vault', False)
@@ -46,6 +47,9 @@ bmc_lab = options.get('bmc-lab', False)
 boot_artifact_image = options.get('boot-artifact-image', '')
 dhcpv6 = options.get('dhcpv6', False)
 ipv6_endpoints = options.get('ipv6-endpoints', False)
+ipv6_boot = options.get('ipv6-boot', False)
+if ipv6_boot and not ipv6_endpoints:
+    fail('--ipv6-boot requires --ipv6-endpoints')
 if ipv6_endpoints and not dhcpv6:
     fail('--ipv6-endpoints requires --dhcpv6')
 if dhcpv6:
@@ -917,6 +921,16 @@ if ipv6_endpoints:
         values={},
         resource_deps=['nico-api', 'nico-pxe'],
     )
+def boot_artifact_command(architecture, ipv6):
+    profile = 'ipv6' if ipv6 else 'default'
+    return ['sh', '-ec',
+        'for name in scout qcow-imager; do '
+        'if test -f /%s/$name.efi; then ' % architecture +
+        'actual=default; '
+        'if test -f /%s/$name.network-profile; then actual=$(cat /%s/$name.network-profile); fi; ' % (architecture, architecture) +
+        'test "$actual" = %s || { echo "boot artifact network profile mismatch: $name" >&2; exit 1; }; ' % profile +
+        'fi; done; cp -r /%s /forge-boot-artifacts/blobs/internal/' % architecture]
+
 if bmc_lab:
     # A separate site configuration keeps simulated hardware shortcuts out of
     # real Scout admission. This mode is for a fresh, dedicated kind cluster.
@@ -940,15 +954,15 @@ if bmc_lab:
             'externalService': {
                 'enabled': ipv6_endpoints, 'type': 'ClusterIP', 'externalTrafficPolicy': '',
                 'ipFamilyPolicy': 'SingleStack', 'ipFamilies': ['IPv6'],
-                'port': 8080, 'alternatePort': 0, 'sharedIpAnnotation': '',
+                'port': 8080 if ipv6_boot else 80, 'alternatePort': 0, 'sharedIpAnnotation': '',
             },
             'config': {'extraEnvData': {
-                'CARBIDE_API_URL': 'https://carbide-api.forge:1079' if ipv6_endpoints else 'https://nico-api.%s.svc.cluster.local:1079' % core_namespace,
-                'CARBIDE_PXE_URL': 'http://carbide-pxe.forge:8080' if ipv6_endpoints else 'http://nico-pxe.%s.svc.cluster.local' % core_namespace,
+                'CARBIDE_API_URL': 'https://carbide-api.forge:1079' if ipv6_boot else 'https://nico-api.%s.svc.cluster.local:1079' % core_namespace,
+                'CARBIDE_PXE_URL': 'http://carbide-pxe.forge:8080' if ipv6_boot else 'http://nico-pxe.%s.svc.cluster.local' % core_namespace,
             }},
             'bootArtifactContainers': [{
                 'name': 'scout-artifacts', 'image': boot_artifact_image, 'imagePullPolicy': 'IfNotPresent',
-                'command': ['sh', '-ec', 'cp -r /%s /forge-boot-artifacts/blobs/internal/' % compiler_arch],
+                'command': boot_artifact_command(compiler_arch, ipv6_boot),
             }],
         }),
         resource_deps=['nico-api'],

@@ -36,7 +36,7 @@ class ImagerArtifactsTest(unittest.TestCase):
     def test_ipv6_profile_does_not_pin_an_ipv4_cluster_resolver(self):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
-            profile = IMAGER.stage_profile(ROOT, work, 'x86_64', ipv6_endpoints=True)
+            profile = IMAGER.stage_profile(ROOT, work, 'x86_64', ipv6_boot=True)
             self.assertFalse((work / 'mkosi.profiles' / profile /
                 'mkosi.extra/etc/systemd/resolved.conf.d/90-nico-lab.conf').exists())
 

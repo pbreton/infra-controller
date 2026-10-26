@@ -56,7 +56,7 @@ class ScoutArtifactsTest(unittest.TestCase):
             work = Path(directory)
             package = work / 'scout.deb'
             package.write_bytes(b'fixture')
-            SCOUT.stage_profiles(ROOT, work, package, 'aarch64', ipv6_endpoints=True)
+            SCOUT.stage_profiles(ROOT, work, package, 'aarch64', ipv6_boot=True)
             for profile in SCOUT.profiles('aarch64'):
                 self.assertFalse((work / 'mkosi.profiles' / profile /
                     'mkosi.extra/etc/systemd/resolved.conf.d/90-nico-lab.conf').exists())
