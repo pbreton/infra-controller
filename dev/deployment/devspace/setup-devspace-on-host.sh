@@ -174,12 +174,7 @@ USER_GROUP="$(id -gn "${DEV_USER}")"
 [[ -n "${USER_HOME}" ]] || die "could not determine home for ${DEV_USER}"
 
 case "$(uname -m)" in
-  x86_64)
-    DOWNLOAD_ARCH="amd64"
-    ;;
-  aarch64|arm64)
-    DOWNLOAD_ARCH="arm64"
-    ;;
+  x86_64|aarch64|arm64) ;;
   *)
     die "unsupported CPU architecture: $(uname -m)"
     ;;

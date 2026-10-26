@@ -7,7 +7,7 @@ python3 dev/deployment/install-tools.py
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-It requires Python 3.10 or newer, curl and Internet HTTPS access. The defaults
+It requires Python 3.9 or newer, curl and Internet HTTPS access. The defaults
 are pinned in [`install-tools.py`](install-tools.py); these pins identify the
 versions tested together by this workflow. It verifies publisher SHA256 manifests
 before installing binaries. `--bin-dir PATH` selects another directory (default
