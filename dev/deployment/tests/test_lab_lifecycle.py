@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import importlib.util
-import sys
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -56,7 +56,7 @@ class LifecycleTest(unittest.TestCase):
             lab.verify_ownership = Mock()
             lab.preflight_network = Mock()
             lab.ready = Mock(side_effect=[RuntimeError('Scout is reconnecting'), False, True, True])
-            lab.exercise = Mock()
+            lab.exercise = Mock(side_effect=lambda: self.assertEqual(lab.ready.call_count, 4))
             lab.diagnostics = Mock()
             args = ['lifecycle.py', '--context', 'kind-test', '--state-dir', str(destination),
                     '--target', 'one=machine-one', '--target', 'two=machine-two',
@@ -68,6 +68,16 @@ class LifecycleTest(unittest.TestCase):
             self.assertEqual(lab.ready.call_count, 4)
             lab.exercise.assert_called_once()
             lab.diagnostics.assert_not_called()
+            lab.exercise.reset_mock()
+            lab.ready = Mock(return_value=False)
+            with patch.object(sys, 'argv', [str(destination) + '-timeout' if a == str(destination) else a for a in args]), \
+                    patch.object(LAB, 'Lifecycle', return_value=lab), \
+                    patch.object(LAB, 'run', return_value='{"metadata":{"uid":"cluster"}}'), \
+                    patch.object(LAB.time, 'monotonic', side_effect=[0, 0, 61]), patch.object(LAB.time, 'sleep'), \
+                    self.assertRaises(TimeoutError):
+                LAB.main()
+            lab.exercise.assert_not_called()
+            lab.diagnostics.assert_called_once()
 
     def test_inventory_rejects_cross_cluster_and_wrong_bmc_before_adoption(self):
         inventory = dict(clusterUID='cluster', owner='bmc-lab/one', bmcAddress='fd00::12', instanceIndex=3)

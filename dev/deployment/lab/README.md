@@ -909,7 +909,10 @@ address and connectivity checks after this recovery.
 `lifecycle.py` operates on two explicitly selected, already admitted no-DPU lab
 machines. Deploy the stack and targets, register the native OS image with its
 SHA-256 digest, and create a flat VPC with the [catalog helper](#owned-os-and-vpc-catalog) first.
-Both machines must be Ready with live Scout connections. The OS image must
+Before allocating, the runner waits for both targets to be Ready with live Scout
+streams, using the same per-target `--timeout` as later lifecycle waits. This
+allows Scout to reconnect after recovery; a recorded Ready state alone is not
+sufficient. No allocation starts if either initial wait fails. The OS image must
 support the Ubuntu/networkd cloud-init fixture; the root disk must be `/dev/vda`.
 For IPv6 guests, deploy the managed DHCPv6 relay, resolver and routes first.
 The DHCP runtime must include the
@@ -983,10 +986,6 @@ target independently, reports all failures, and returns nonzero if any remain. D
 `--context`, `--target`, `--vpc` or `--os-image` with `--release-only`. Other run
 settings are read from the journal. Repeating cleanup after successful release
 is harmless. Keep journals in a persistent directory: a reboot may clear `/tmp`.
-Before allocating, the runner waits for both targets to be Ready with live Scout
-streams, using the same per-target `--timeout` as later lifecycle waits. This
-allows Scout to reconnect after recovery; a recorded Ready state alone is not
-sufficient. No allocation starts if either initial wait fails.
 Run directories support cleanup, not resuming an interrupted test;
 start a new directory for another run. Neither mode deletes VPCs, OS catalog
 entries, target PVCs, the stack or its credentials. Exit status is zero only when
@@ -1179,7 +1178,7 @@ Ready, then creates expected machines with DPU policy `ignore` and DPF disabled.
 60–1800); individual API calls can extend the final poll. Registration starts
 normal Core discovery and provisioning. Success prints release and expected-ID
 pairs, not a claim that machines are Ready. Obtain machine IDs with
-`machine show`, then require Ready and live Scout before the lifecycle runner.
+`machine show`, then use the lifecycle runner, which waits for Ready and live Scout.
 
 `--resume` accepts only the existing `--state-dir` and rechecks the saved cluster,
 target inventories and resource configuration. It never updates expected
