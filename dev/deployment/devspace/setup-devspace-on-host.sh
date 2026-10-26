@@ -9,11 +9,6 @@
 
 set -euo pipefail
 
-DEVSPACE_VERSION="v6.3.21"
-KIND_VERSION="v0.32.0"
-KUBECTL_VERSION="v1.36.3"
-HELM_VERSION="v3.21.3"
-
 DEV_USER=""
 REPO_DIR=""
 REPO_URL="https://github.com/NVIDIA/infra-controller.git"
@@ -252,6 +247,7 @@ install_host_packages() {
     git \
     jq \
     openssh-client \
+    python3 \
     rsync
 
   if command -v docker >/dev/null 2>&1 && \
@@ -327,66 +323,16 @@ EOF
     die "${DEV_USER} cannot access Docker after being added to the docker group"
 }
 
-verify_checksum_file() {
-  local artifact="$1"
-  local checksum_file="$2"
-  local expected actual
-  expected="$(awk '{print $1; exit}' "${checksum_file}")"
-  actual="$(sha256sum "${artifact}" | awk '{print $1}')"
-  [[ "${actual}" == "${expected}" ]] || die "checksum failed for ${artifact}"
-}
-
-install_cli_tools() (
-  log "Installing pinned DevSpace, kind, kubectl, and Helm binaries"
-  local install_dir="${USER_HOME}/.local/bin"
-  local work_dir
-  local devspace_binary="devspace-linux-${DOWNLOAD_ARCH}"
-  local kind_binary="kind-linux-${DOWNLOAD_ARCH}"
-  work_dir="$(mktemp -d)"
-  trap 'rm -rf -- "${work_dir}"' EXIT
-  install -o "${DEV_USER}" -g "${USER_GROUP}" -m 0755 -d "${install_dir}"
-
-  pushd "${work_dir}" >/dev/null
-
-  curl -fsSLO \
-    "https://github.com/loft-sh/devspace/releases/download/${DEVSPACE_VERSION}/${devspace_binary}"
-  curl -fsSLO \
-    "https://github.com/loft-sh/devspace/releases/download/${DEVSPACE_VERSION}/${devspace_binary}.sha256"
-  verify_checksum_file "${devspace_binary}" "${devspace_binary}.sha256"
-  install -o "${DEV_USER}" -g "${USER_GROUP}" -m 0755 \
-    "${devspace_binary}" "${install_dir}/devspace"
-
-  curl -fsSLO \
-    "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/${kind_binary}"
-  curl -fsSLO \
-    "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/${kind_binary}.sha256sum"
-  verify_checksum_file "${kind_binary}" "${kind_binary}.sha256sum"
-  install -o "${DEV_USER}" -g "${USER_GROUP}" -m 0755 \
-    "${kind_binary}" "${install_dir}/kind"
-
-  curl -fsSLO \
-    "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${DOWNLOAD_ARCH}/kubectl"
-  curl -fsSLO \
-    "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${DOWNLOAD_ARCH}/kubectl.sha256"
-  printf '%s  %s\n' "$(cat kubectl.sha256)" kubectl | sha256sum --check
-  install -o "${DEV_USER}" -g "${USER_GROUP}" -m 0755 \
-    kubectl "${install_dir}/kubectl"
-
-  local helm_archive="helm-${HELM_VERSION}-linux-${DOWNLOAD_ARCH}.tar.gz"
-  curl -fsSLO "https://get.helm.sh/${helm_archive}"
-  curl -fsSLO "https://get.helm.sh/${helm_archive}.sha256sum"
-  verify_checksum_file "${helm_archive}" "${helm_archive}.sha256sum"
-  tar -xzf "${helm_archive}"
-  install -o "${DEV_USER}" -g "${USER_GROUP}" -m 0755 \
-    "linux-${DOWNLOAD_ARCH}/helm" "${install_dir}/helm"
-
-  popd >/dev/null
-
+install_cli_tools() {
+  log "Installing pinned native deployment tools"
+  local helper
+  helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/install-tools.py"
+  run_as_user python3 "${helper}" --bin-dir "${USER_HOME}/.local/bin" devspace kind kubectl helm
   run_as_user devspace version
   run_as_user kind version
   run_as_user kubectl version --client
   run_as_user helm version --short
-)
+}
 
 configure_user_shell() {
   local login_shell marker end_marker rc_file candidate

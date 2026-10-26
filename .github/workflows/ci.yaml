@@ -2254,6 +2254,7 @@ jobs:
       # Uses jq installed by the configuration check above.
       - name: Test shared kind bootstrap
         run: |
+          /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_install_tools.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_setup_kind.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_lab_preflight.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_bmc_target.py'

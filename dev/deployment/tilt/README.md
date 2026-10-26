@@ -16,6 +16,17 @@ charts and Kubernetes sources.
 - `kubectl` connected to a native kind cluster; the setup helper below requires
   kind 0.32.0 or newer and `jq`
 
+The optional shared tool installer supplies the tested native kind, kubectl,
+Helm and Tilt versions on Linux or macOS, for ARM64 or AMD64:
+
+```bash
+python3 dev/deployment/install-tools.py
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+See the [installer contract](../install-tools.md) for prerequisites, tool
+selection, destination handling and failure recovery.
+
 The Tiltfile refuses to load unless the active Kubernetes context starts with
 `kind-`. This is stricter than Tilt's built-in local-cluster safety check and
 prevents this development stack from targeting another cluster type.
