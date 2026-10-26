@@ -16,12 +16,19 @@ import sys
 import time
 
 HERE = Path(__file__).resolve() if '__file__' in globals() else None
+SOL_PACKET = 263
+PACKET_STATISTICS = 6
+PACKET_ADD_MEMBERSHIP = 1
+PACKET_MR_PROMISC = 1
+SO_RCVBUFFORCE = 33
+
 COUNTERS = ('ipv6', 'dhcp4_probe', 'ipv4', 'arp', 'other', 'malformed', 'dropped')
 
 
 def classify(frame, mac):
-    if len(frame) < 14 or mac not in (frame[:6], frame[6:12]):
+    if len(frame) < 14:
         return None
+    guest_frame = mac in (frame[:6], frame[6:12])
     offset, protocol = 14, int.from_bytes(frame[12:14], 'big')
     for _ in range(2):
         if protocol not in (0x8100, 0x88a8):
@@ -36,11 +43,13 @@ def classify(frame, mac):
     if protocol == 0x0806:
         return 'arp'
     if protocol == 0x86dd:
+        if not guest_frame:
+            return None
         if len(packet) < 40 or packet[0] >> 4 != 6 or len(packet) < 40 + int.from_bytes(packet[4:6], 'big'):
             return 'malformed'
         return 'ipv6'
     if protocol != 0x0800:
-        return 'other'
+        return 'other' if guest_frame else None
     if len(packet) < 20 or packet[0] >> 4 != 4:
         return 'malformed'
     header = (packet[0] & 15) * 4
@@ -66,7 +75,10 @@ def capture():
     start = time.monotonic()
     with socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3)) as packets:
         packets.bind((actual['bridge'], 0))
-        packets.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+        packets.setsockopt(socket.SOL_SOCKET, SO_RCVBUFFORCE, 4 * 1024 * 1024)
+        membership = struct.pack('IHH8s', socket.if_nametoindex(actual['bridge']), PACKET_MR_PROMISC, 0, b'')
+        packets.setsockopt(SOL_PACKET, PACKET_ADD_MEMBERSHIP, membership)
+        packets.getsockopt(SOL_PACKET, PACKET_STATISTICS, 8)
         print(json.dumps({'event': 'ready', 'mac': actual['mac'], 'bridge': actual['bridge']}), flush=True)
         last = start
         while True:
@@ -92,11 +104,11 @@ def capture():
                 if category:
                     counts[category] += 1
             if time.monotonic() - last >= 1:
-                _, dropped = struct.unpack('II', packets.getsockopt(263, 6, 8))
+                _, dropped = struct.unpack('II', packets.getsockopt(SOL_PACKET, PACKET_STATISTICS, 8))
                 counts['dropped'] += dropped
                 print(json.dumps({'event': 'sample', 'seconds': time.monotonic() - start, 'counts': counts}), flush=True)
                 last = time.monotonic()
-        _, dropped = struct.unpack('II', packets.getsockopt(263, 6, 8))
+        _, dropped = struct.unpack('II', packets.getsockopt(SOL_PACKET, PACKET_STATISTICS, 8))
         counts['dropped'] += dropped
         print(json.dumps({'event': 'finished', 'stop_requested': stop == b'!',
                           'seconds': time.monotonic() - start, 'counts': counts}), flush=True)
@@ -192,8 +204,11 @@ class Guard:
                     process.wait()
                 job['log'].close()
                 job['errors'].close()
-        if checked([*self.kube, 'get', 'namespace', 'kube-system', '-o', 'json'])['metadata']['uid'] != self.cluster:
-            failures.append('cluster identity changed')
+        try:
+            if checked([*self.kube, 'get', 'namespace', 'kube-system', '-o', 'json'])['metadata']['uid'] != self.cluster:
+                failures.append('cluster identity changed')
+        except Exception as error:
+            failures.append('final cluster identity check failed: ' + str(error))
         if len(results) != 2:
             failures.append('two complete captures are required')
         report = {'cluster': self.cluster, 'command_succeeded': self.command_succeeded,
@@ -223,6 +238,9 @@ def main():
     args.output.mkdir(mode=0o700, parents=False, exist_ok=False)
     guard = Guard(args)
     process = None
+    def interrupted(number, frame):
+        raise InterruptedError(f'traffic guard received signal {number}')
+    previous = {number: signal.signal(number, interrupted) for number in (signal.SIGTERM, signal.SIGHUP)}
     try:
         guard.start()
         process = subprocess.Popen(args.command, stdin=subprocess.DEVNULL, start_new_session=True)
@@ -237,7 +255,11 @@ def main():
             except ProcessLookupError:
                 pass
             process.wait()
-        guard.stop()
+        try:
+            guard.stop()
+        finally:
+            for number, handler in previous.items():
+                signal.signal(number, handler)
 
 
 if __name__ == '__main__':

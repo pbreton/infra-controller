@@ -1005,7 +1005,7 @@ python3 dev/deployment/lab/traffic-guard.py \
 
 Use the selected lab's actual context, releases and IDs. The wrapper requires
 Python 3.9+, kubectl, an accessible kind cluster and two running native BMC target
-pods with Python and Linux raw-packet access (`CAP_NET_RAW`). It verifies the
+pods with Python and Linux raw-packet and receive-buffer access (`CAP_NET_RAW` and `CAP_NET_ADMIN`). It verifies the
 cluster UID, target ownership, distinct guest MACs and bridges, and captures
 inside each selected pod. The command runs locally only after both captures are
 ready. `--namespace` defaults to `bmc-lab`; both releases must use it.
@@ -1018,7 +1018,10 @@ The command receives no stdin. Timeout or interruption terminates its process gr
 Each target's `.jsonl` file contains readiness, periodic cumulative counters and
 an explicit completion record. `.stderr` retains observer errors; `report.json`
 records the command outcome and guard result. No packet payloads are stored.
-Only frames with that guest MAC as source or destination count. IPv6 must be
+All IPv4 and ARP frames on each dedicated guest bridge count, including
+broadcast DHCP replies. IPv6 and other Ethernet traffic count only when the guest
+MAC is a source or destination. Capture uses temporary promiscuous socket
+membership and a 4 MiB receive buffer; closing the socket releases both. IPv6 must be
 observed on both targets; ARP, other IPv4 traffic, malformed IP frames, kernel
 capture drops, early observer exit, or target/cluster replacement fail the guard.
 Other Ethernet protocols are counted separately. An empty capture cannot pass.

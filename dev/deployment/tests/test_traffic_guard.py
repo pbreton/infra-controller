@@ -36,6 +36,8 @@ class TrafficGuardTests(unittest.TestCase):
         v6 = b'\x60' + b'\0' * 39
         cases = [
             (frame(0x0806, b'\0' * 28), 'arp'),
+            (b'\xff' * 6 + b'\x01' * 6 + b'\x08\x00' + ipv4(ports=b'\0C\0D'), 'ipv4'),
+            (b'\xff' * 6 + b'\x01' * 6 + b'\x08\x06' + b'\0' * 28, 'arp'),
             (frame(0x86dd, v6), 'ipv6'),
             (frame(0x8100, b'\0\1\x86\xdd' + v6), 'ipv6'),
             (frame(0x0800, ipv4()), 'dhcp4_probe'),
@@ -76,11 +78,12 @@ class TrafficGuardTests(unittest.TestCase):
                 process.poll.return_value = 1
                 jobs.append(dict(release=name, process=process, log=Mock(), errors=Mock()))
             guard.jobs = jobs
-            with patch.object(GUARD, 'checked', return_value={'metadata': {'uid': 'cluster'}}), self.assertRaises(ValueError):
+            with patch.object(GUARD, 'checked', side_effect=RuntimeError('cluster unavailable')), self.assertRaises(ValueError):
                 guard.stop()
             report = json.loads((Path(directory) / 'report.json').read_text())
             self.assertFalse(report['passed'])
-            self.assertEqual(len(report['failures']), 3)
+            self.assertEqual(len(report['failures']), 4)
+            self.assertIn('cluster unavailable', report['failures'][-2])
             for job in jobs:
                 job['log'].close.assert_called_once()
                 job['errors'].close.assert_called_once()
@@ -97,6 +100,31 @@ class TrafficGuardTests(unittest.TestCase):
                 GUARD.main()
             launch.assert_not_called()
             observer.stop.assert_called_once()
+
+    def test_termination_signals_stop_the_wrapped_process_group_and_observers(self):
+        for number in (GUARD.signal.SIGTERM, GUARD.signal.SIGHUP):
+            with self.subTest(signal=number), tempfile.TemporaryDirectory() as directory:
+                observer, process = Mock(), Mock()
+                handlers = {}
+                def install(number, handler):
+                    previous = handlers.get(number, GUARD.signal.SIG_DFL)
+                    handlers[number] = handler
+                    return previous
+                def wait(**kwargs):
+                    if kwargs:
+                        handlers[number](number, None)
+                    return 0
+                process.wait.side_effect = wait
+                args = ['traffic-guard.py', '--context', 'kind-test', '--target', 'one', '--target', 'two',
+                        '--output', str(Path(directory) / 'output'), '--', 'command']
+                with patch.object(GUARD.sys, 'argv', args), patch.object(GUARD, 'Guard', return_value=observer), \
+                        patch.object(GUARD.signal, 'signal', side_effect=install), \
+                        patch.object(GUARD.subprocess, 'Popen', return_value=process), \
+                        patch.object(GUARD.os, 'killpg') as kill, self.assertRaises(InterruptedError):
+                    GUARD.main()
+                kill.assert_called_once_with(process.pid, GUARD.signal.SIGKILL)
+                observer.stop.assert_called_once()
+                self.assertEqual(handlers[number], GUARD.signal.SIG_DFL)
 
     def test_same_source_executes_through_python_c_without_file_context(self):
         result = subprocess.run(['python3', '-c', PATH.read_text(), '--help'], capture_output=True, text=True)
