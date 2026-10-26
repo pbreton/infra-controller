@@ -4,6 +4,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -132,3 +133,40 @@ class ScoutArtifactsTest(unittest.TestCase):
                     SCOUT.main()
             self.assertFalse((output / 'build-info.json').exists())
             self.assertFalse((output / 'x86_64').exists())
+
+    def test_main_publishes_the_selected_network_profile_with_its_payload(self):
+        for ipv6 in (False, True):
+            with self.subTest(ipv6=ipv6), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                output = root / 'output'
+                mkosi = root / 'pxe/mkosi/bin/mkosi'
+                mkosi.parent.mkdir(parents=True)
+                mkosi.touch()
+                package = root / 'scout.deb'
+                package.write_bytes(b'fixture')
+                installer = root / 'pxe/common_files/disk_imaging.sh'
+                installer.parent.mkdir(parents=True)
+                installer.write_bytes(b'fixture')
+                def build(*args, **kwargs):
+                    built = output / 'build/output'
+                    built.mkdir(exist_ok=True)
+                    for name in ['loader.efi', 'scout.squashfs']:
+                        (built / name).write_bytes(b'payload')
+                argv = ['builder', '--output', str(output)]
+                argv += ['--scout-package', str(package)]
+                if ipv6:
+                    argv.append('--ipv6-boot')
+                with patch.object(SCOUT, 'REPO', root), \
+                        patch.object(SCOUT.platform, 'machine', return_value='aarch64'), \
+                        patch.object(SCOUT.platform, 'system', return_value='Linux'), \
+                        patch.object(SCOUT.os, 'geteuid', return_value=0), \
+                        patch.object(SCOUT, 'stage_profiles', return_value='unused'), \
+                        patch.object(SCOUT.subprocess, 'check_output', side_effect=['arm64', 'fixture']), \
+                        patch.object(SCOUT.subprocess, 'run', side_effect=build), \
+                        patch.object(sys, 'argv', argv), contextlib.redirect_stdout(io.StringIO()):
+                    SCOUT.main()
+                self.assertEqual((output / 'aarch64/scout.network-profile').read_text(),
+                                 'ipv6\n' if ipv6 else 'default\n')
+                manifest = json.loads((output / 'build-info.json').read_text())
+                self.assertEqual(manifest['ipv6_boot'], ipv6)
+                self.assertTrue((output / 'aarch64/scout.efi').is_file())

@@ -4,6 +4,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -75,3 +76,39 @@ class ImagerArtifactsTest(unittest.TestCase):
             self.assertTrue((output / 'build').is_dir())
             self.assertFalse((output / 'x86_64').exists())
             self.assertFalse((output / 'build-info.json').exists())
+
+    def test_main_publishes_the_selected_network_profile_with_its_payload(self):
+        for ipv6 in (False, True):
+            with self.subTest(ipv6=ipv6), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                output = root / 'output'
+                mkosi = root / 'pxe/mkosi/bin/mkosi'
+                mkosi.parent.mkdir(parents=True)
+                mkosi.touch()
+                package = root / 'scout.deb'
+                package.write_bytes(b'fixture')
+                installer = root / 'pxe/common_files/disk_imaging.sh'
+                installer.parent.mkdir(parents=True)
+                installer.write_bytes(b'fixture')
+                def build(*args, **kwargs):
+                    built = output / 'build/output'
+                    built.mkdir(exist_ok=True)
+                    for name in ['qcow-imager.efi']:
+                        (built / name).write_bytes(b'payload')
+                argv = ['builder', '--output', str(output)]
+                if ipv6:
+                    argv.append('--ipv6-boot')
+                with patch.object(IMAGER, 'REPO', root), \
+                        patch.object(IMAGER.platform, 'machine', return_value='x86_64'), \
+                        patch.object(IMAGER.platform, 'system', return_value='Linux'), \
+                        patch.object(IMAGER.os, 'geteuid', return_value=0), \
+                        patch.object(IMAGER, 'stage_profile', return_value='qcow-imager'), \
+                        patch.object(IMAGER.subprocess, 'check_output', side_effect=['arm64', 'fixture']), \
+                        patch.object(IMAGER.subprocess, 'run', side_effect=build), \
+                        patch.object(sys, 'argv', argv), contextlib.redirect_stdout(io.StringIO()):
+                    IMAGER.main()
+                self.assertEqual((output / 'x86_64/qcow-imager.network-profile').read_text(),
+                                 'ipv6\n' if ipv6 else 'default\n')
+                manifest = json.loads((output / 'build-info.json').read_text())
+                self.assertEqual(manifest['ipv6_boot'], ipv6)
+                self.assertTrue((output / 'x86_64/qcow-imager.efi').is_file())

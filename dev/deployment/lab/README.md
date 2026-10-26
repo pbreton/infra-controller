@@ -198,7 +198,8 @@ Copy these files into the artifact image with the payloads. The matching Tilt
 `--ipv6-boot` profile requires the IPv6 markers and targets with IPv4 provisioning
 disabled; see its documented fresh-cluster setup.
 
-Successful output contains `aarch64/scout.efi` and `aarch64/scout.squashfs`, or
+Successful output contains `ARCH/scout.network-profile` and
+`aarch64/scout.efi` and `aarch64/scout.squashfs`, or
 `x86_64/scout.efi` and `x86_64/scout.squashfs`. `build/` retains the staged profiles,
 mkosi output and downloaded package cache. `build-info.json` records the native
 architecture, package version, requested virtual-kernel package and SHA-256
@@ -396,7 +397,8 @@ virtual kernel. The default staged profile adds the same kind DNS routing as Sco
 With `--ipv6-boot` it instead relies on DHCP-provided DNS.
 No OS image, tenant credentials or cloud-init data is embedded in this artifact.
 
-Successful output is `ARCH/qcow-imager.efi`, with staged sources and caches in
+Successful output is `ARCH/qcow-imager.efi` and `ARCH/qcow-imager.network-profile`,
+with staged sources and caches in
 `build/`. `build-info.json` records the architecture, selected profile, payload
 SHA-256, installer SHA-256 and the `ipv6_boot` boolean. Failure leaves the build workspace for diagnosis;
 retry with a new or empty output directory. The helper never cleans an existing

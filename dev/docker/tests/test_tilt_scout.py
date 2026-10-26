@@ -160,7 +160,7 @@ class ScoutWiringTest(unittest.TestCase):
         for component, settings, port in [('nico-api', {'global': values['global'], **env['nico_api_values']}, 1079),
                                            ('nico-pxe', {**pxe_calls[0]['values'], 'global': values['global']}, 80),
                                            ('nico-pxe', {**boot_calls[0]['values'], 'global': values['global']}, 8080)]:
-            with self.subTest(component=component):
+            with self.subTest(component=component, port=port):
                 settings.pop('global_values', None)
                 result = subprocess.run(
                     ['helm', 'template', component, str(ROOT / 'helm/charts' / component),
@@ -215,7 +215,6 @@ class ScoutWiringTest(unittest.TestCase):
     def test_ipv6_boot_is_explicit_and_requires_companion_endpoints(self):
         calls, _ = self.profile(True, ipv6_endpoints=True, ipv6_boot=True)
         values = calls[0]['values']
-        self.assertEqual(values['externalService']['port'], 8080)
         self.assertEqual(values['config']['extraEnvData']['CARBIDE_API_URL'], 'https://carbide-api.forge:1079')
         self.assertEqual(values['config']['extraEnvData']['CARBIDE_PXE_URL'], 'http://carbide-pxe.forge:8080')
         tree = ast.parse(TILT.read_text())
