@@ -273,20 +273,30 @@ Use `tilt up` with the same arguments for interactive work. Editing the manifest
 or either values file reevaluates the configuration. While Tilt is running,
 removing or renaming a release, or changing arguments to select another release,
 causes Tilt to **uninstall the old Helm release immediately**. That does not
-release its Core instance or verify network cleanup. Stop Tilt before changing
-the release selection or namespace, disabling a target, or using `tilt down`,
-then follow the [network cleanup procedure](#verify-target-network-cleanup).
+release its Core instance or verify network cleanup. Do not disable a target or
+run `tilt down`. Stop Tilt before changing the release selection or namespace,
+then follow the [network cleanup procedure](#verify-target-network-cleanup),
+which performs the uninstall after release and verification.
 A live namespace change is not a migration and can leave the old release running;
 inspect both namespaces if it was already changed.
 That procedure covers Core-managed targets and preserving their existing PVCs;
 replacing or reusing their disks requires the
 [full lab discard procedure](../../dev/deployment/lab/README.md#stop-restart-and-discard-the-bmc-lab).
-If Tilt already uninstalled a target, restore its original release and namespace
-with the original values and retained PVC, as described in
-[configuration and retention](#configuration-and-retention). Once its runtime is
-available again, release the Core instance and perform the network cleanup
-checks. Do not rename the release or replace its PVC to recover it. If the
-original state cannot be recovered, use the full lab discard procedure.
+If Tilt already uninstalled a target, stop Tilt and inspect any replacement
+release. Remove a replacement that uses the original target's values or PVC and
+wait for its pod to disappear; its Service or storage lock can block recovery.
+Restore the original release name, namespace, values and retained PVC by
+restoring the original Tilt arguments or manifest. A direct Helm restoration also
+needs the previously built image repository and tag, which Tilt injects without
+writing them into the values file. See
+[configuration and retention](#configuration-and-retention).
+
+Once the runtime is available again, follow the network cleanup procedure. For
+Core-managed targets, release the Core instance first; if the original state
+cannot be recovered, use the full lab discard procedure. Standalone targets have
+no Core instance and use the standalone cleanup and disposable-cluster fallback
+in the network cleanup procedure. Do not rename the release or replace its PVC
+to recover it.
 
 PVC creation, instance registration, Core instance release and disk deletion
 remain separate operations.
