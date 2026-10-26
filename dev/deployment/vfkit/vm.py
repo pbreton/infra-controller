@@ -45,6 +45,12 @@ def host_git(*args, **kwargs):
     return run(["git", "-C", REPO, *args], env=environment, **kwargs)
 
 
+def guest_shell_setup():
+    return ('if [ -r "$HOME/.config/nico/vfkit-source-version.sh" ]; then '
+            '. "$HOME/.config/nico/vfkit-source-version.sh"; fi; '
+            f'cd {shlex.quote(GUEST_REPO)} 2>/dev/null || cd "$HOME"; ')
+
+
 def check_vfkit_version():
     """Require cloud-init network-config support before creating or starting a VM."""
     version = run(["vfkit", "--version"], capture_output=True, text=True).stdout.strip()
@@ -479,7 +485,17 @@ class VM:
         self.ssh("bash", "-c", 'if ! git -C "$1" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$1" init -q && '
                  'git -C "$1" -c user.name="NICo VM" -c user.email="nico@localhost" '
                  'commit -q --allow-empty -m "Initialize VM workspace"; fi', "_", GUEST_REPO, stdin=subprocess.DEVNULL)
+        self.sync_submodules()
         self.sync_build_version()
+
+    def sync_submodules(self):
+        # Preserve gitlinks so submodule update can fetch the pinned commits in
+        # the synthetic guest checkout without copying the host's Git metadata.
+        entries = host_git("ls-files", "--stage", "-z", capture_output=True).stdout
+        links = [entry for entry in entries.split(b"\0") if entry.startswith(b"160000 ")]
+        if links:
+            self.ssh("git", "-C", GUEST_REPO, "update-index", "-z", "--index-info",
+                     input=b"\0".join(links) + b"\0")
 
     def sync_build_version(self):
         # The synthetic guest HEAD has no release ancestry. Preserve the host
@@ -672,9 +688,9 @@ def main(argv=None):
             if args.action == "verify":
                 vm.verify()
             elif args.action == "ssh":
-                run(vm.ssh_args() + ["-t", "nico@nico-vfkit", f"cd {GUEST_REPO} && exec bash -l"])
+                run(vm.ssh_args() + ["-t", "nico@nico-vfkit", guest_shell_setup() + "exec bash -l"])
             elif args.action == "exec":
-                vm.ssh("bash", "-lc", f"cd {GUEST_REPO} && exec {shlex.join(command)}")
+                vm.ssh("bash", "-lc", guest_shell_setup() + "exec " + shlex.join(command))
 
 
 

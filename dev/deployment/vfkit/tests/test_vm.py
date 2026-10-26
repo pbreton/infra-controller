@@ -195,6 +195,46 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(ssh.call_args_list[2].kwargs["stdin"], subprocess.DEVNULL)
         archive.stdout.close.assert_called_once()
 
+    def test_synced_gitlink_can_initialize_pinned_submodule_without_host_git_metadata(self):
+        source, dependency, guest = (self.root / name for name in ('source', 'dependency', 'guest'))
+        def git(directory, *args):
+            return subprocess.run(['git', '-C', str(directory), *args], check=True,
+                                  capture_output=True, text=True)
+        for directory in (source, dependency, guest):
+            directory.mkdir()
+            git(directory, 'init', '-q')
+            git(directory, '-c', 'commit.gpgsign=false', '-c', 'user.name=Fixture',
+                '-c', 'user.email=fixture@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'fixture')
+        (dependency / 'payload').write_text('pinned payload')
+        git(dependency, 'add', 'payload')
+        git(dependency, '-c', 'commit.gpgsign=false', '-c', 'user.name=Fixture',
+            '-c', 'user.email=fixture@example.invalid', 'commit', '-q', '-m', 'payload')
+        git(source, '-c', 'protocol.file.allow=always', 'submodule', 'add', str(dependency), 'pxe/tool')
+        shutil.copyfile(source / '.gitmodules', guest / '.gitmodules')
+        def guest_command(*args, **kwargs):
+            return subprocess.run(args, check=True, capture_output=True, **kwargs)
+        with patch.object(vm, 'REPO', source), patch.object(vm, 'GUEST_REPO', str(guest)), \
+                patch.object(self.machine, 'ssh', side_effect=guest_command):
+            self.machine.sync_submodules()
+        git(guest, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', 'pxe/tool')
+        self.assertEqual((guest / 'pxe/tool/payload').read_text(), 'pinned payload')
+        self.assertEqual(git(guest / 'pxe/tool', 'rev-parse', 'HEAD').stdout,
+                         git(dependency, 'rev-parse', 'HEAD').stdout)
+
+    def test_guest_shell_loads_source_version_and_allows_recovery_before_sync(self):
+        version = self.root / '.config/nico/vfkit-source-version.sh'
+        version.parent.mkdir(parents=True)
+        version.write_text('export VERSION=v1.2.3-4-gabcdef00\nexport CI_COMMIT_SHORT_SHA=abcdef00\n')
+        checkout = self.root / 'checkout'
+        for initialized in (False, True):
+            if initialized: checkout.mkdir()
+            with self.subTest(initialized=initialized), patch.object(vm, 'GUEST_REPO', str(checkout)):
+                result = subprocess.run(['bash', '-c', vm.guest_shell_setup() +
+                                         'printf "%s %s %s" "$PWD" "$VERSION" "$CI_COMMIT_SHORT_SHA"'],
+                                        env=dict(os.environ, HOME=str(self.root)), check=True, capture_output=True, text=True)
+            expected = checkout if initialized else self.root
+            self.assertEqual(result.stdout, f'{expected} v1.2.3-4-gabcdef00 abcdef00')
+
     def test_vm_verification_preserves_caller_input(self):
         self.machine.config = {"network": "lab"}
         with patch.object(self.machine, "ssh") as ssh:
