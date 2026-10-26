@@ -184,7 +184,7 @@ or empty; an existing artifact directory is rejected. A failed build leaves its
 workspace for diagnosis and requires a different empty output directory to retry.
 No cleanup or cluster operation is performed by this helper.
 
-For the [IPv6 endpoint profile](../tilt/README.md#ipv6-provisioning-endpoints),
+For the [IPv6 boot profile](../tilt/README.md#ipv6-boot-profile),
 add `--ipv6-boot` to both `build-scout.py` and `build-imager.py` invocations.
 This boolean option defaults to false. It omits the pinned IPv4 resolver for
 `cluster.local` so each boot stage uses DHCP-provided DNS. Scout's rootfs
@@ -257,10 +257,10 @@ accepts the optional [disk imager](#native-disk-imager). It does
 not publish the image to a registry. Build and load it on the cluster's native
 Docker runtime.
 
-The VM Scout loader's default rootfs URL points to
+Without `--ipv6-boot`, the VM Scout loader's fallback rootfs URL points to
 `http://nico-pxe.nico-system.svc.cluster.local/public/blobs/internal/ARCH/scout.squashfs`.
 An explicit `newrootfs=` kernel argument still takes precedence. Hardware source
-profiles retain their original fallback. Both VM stages route `cluster.local`
+profiles retain their original fallback. In this default profile, both VM stages route `cluster.local`
 lookups to kind DNS at `10.96.0.10`, rather than multicast DNS. Rebuild Scout artifacts using the
 preceding instructions to get this VM-specific default.
 

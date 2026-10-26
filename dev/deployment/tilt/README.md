@@ -787,6 +787,9 @@ the default boot URLs and artifacts.
 ### IPv6 boot profile
 
 For a fresh lab dedicated to IPv6 provisioning, also select `--ipv6-boot`.
+The registered OS image URL must also be reachable over IPv6 by the imager.
+An IPv6-accessible lab image server is sufficient; external IPv6 is only needed
+when the image URL requires it.
 It defaults to false and requires `--ipv6-endpoints`. Disable IPv4 provisioning
 on **every** target (`network.provisioning.enabled: false`); this profile does
 not support mixing IPv4 and IPv6 boot clients. Keep DHCPv6 relay and managed RA
