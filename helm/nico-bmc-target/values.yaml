@@ -26,6 +26,8 @@ network:
   dhcpv6:
     # Empty disables DHCPv6 relay and router advertisements. Requires bridgeAddressV6.
     server: ""
+    # Selected kind node IPv6 pod CIDR; prevents DHCPv6 relay source-port translation.
+    podCIDR: ""
     # Opt in only with separately configured upstream routing.
     defaultRoute: false
   provisioning:

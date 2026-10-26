@@ -360,6 +360,7 @@ def main():
     parser.add_argument('--pod-cidr', default='', help='selected single-node kind IPv4 pod CIDR; requires --dhcp-server')
     parser.add_argument('--uplink', default='eth0', help='node uplink used by the relay and Internet masquerade')
     parser.add_argument('--dhcp6-server', default='', help='optional IPv6 DHCP Service address; requires bridgeAddressV6')
+    parser.add_argument('--pod-cidr-v6', default='', help='selected kind node IPv6 pod CIDR; required with --dhcp6-server')
     parser.add_argument('--ipv6-default-route', action='store_true', help='advertise this bridge as an IPv6 default router; requires --dhcp6-server and separately configured upstream routing')
     args = parser.parse_args()
     config = configuration(json.loads(args.config.read_text()))
@@ -367,7 +368,7 @@ def main():
         raise ValueError('target architecture must match the native runtime')
     if os.environ.get('NODE_NAME') != config['nodeName']:
         raise ValueError('target must run on its configured Kubernetes node')
-    networking = Network(config, run, args.dhcp_server, args.pod_cidr, args.uplink, args.dhcp6_server, args.ipv6_default_route)
+    networking = Network(config, run, args.dhcp_server, args.pod_cidr, args.uplink, args.dhcp6_server, args.ipv6_default_route, args.pod_cidr_v6)
     preflight.check_kvm(config['architecture'])
     if config.get('hugepages'):
         available = preflight.hugepage_capacity()

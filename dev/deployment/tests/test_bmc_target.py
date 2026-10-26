@@ -385,11 +385,22 @@ class ProvisioningNetworkTest(unittest.TestCase):
                 (config, 'fe80::1'), (config, 'ff02::1:2'), (config, '::1'),
                 (config, 'fd42:84:40::10'), (config, 'fd00::20%eth0')]:
             with self.subTest(server=server), self.assertRaises(ValueError):
-                TARGET.Network(selected, Mock(), server_v6=server)
+                TARGET.Network(selected, Mock(), server_v6=server, pod_cidr_v6="fd00:10:244::/64")
+
+    def test_dhcpv6_preserves_relay_source_port_to_pods_and_validates_the_pod_cidr(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        network = TARGET.Network(config, Mock(), server_v6='fd00::20', pod_cidr_v6='fd00:10:244::/64')
+        rules = list(network.ipv6_rules())
+        self.assertIn(('nat', 'POSTROUTING', ['-s', 'fd42:84:40::/64', '-d', 'fd00:10:244::/64',
+                        '-m', 'comment', '--comment', network.owner, '-j', 'ACCEPT']), rules)
+        for server, cidr in [('fd00::20', ''), ('', 'fd00:10:244::/64'),
+                             ('fd00::20', '::/0'), ('fd00::20', 'fd42:84:40::/64')]:
+            with self.subTest(server=server, cidr=cidr), self.assertRaises(ValueError):
+                TARGET.Network(config, Mock(), server_v6=server, pod_cidr_v6=cidr)
 
     def test_router_advertisements_are_managed_and_do_not_allocate_slaac_addresses(self):
         config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
-        network = TARGET.Network(config, Mock(), server_v6='fd00::20')
+        network = TARGET.Network(config, Mock(), server_v6='fd00::20', pod_cidr_v6='fd00:10:244::/64')
         advertisement = network.router_advertisement()
         self.assertIn('interface ' + config['bridge'], advertisement)
         self.assertIn('AdvManagedFlag on;', advertisement)
@@ -401,17 +412,22 @@ class ProvisioningNetworkTest(unittest.TestCase):
 
     def test_dhcpv6_partial_start_stops_relay_before_removing_owned_network(self):
         config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
-        network = TARGET.Network(config, Mock(return_value=''), server_v6='fd00::20')
+        network = TARGET.Network(config, Mock(return_value=''), server='10.96.0.20', pod_cidr='10.244.0.0/24', server_v6='fd00::20', pod_cidr_v6='fd00:10:244::/64')
         events = []
+        ipv4 = Mock()
+        ipv4.poll.return_value = None
+        ipv4.terminate.side_effect = lambda: events.append('stop IPv4')
         child = Mock()
         child.poll.return_value = None
         child.terminate.side_effect = lambda: events.append('stop')
         with patch.object(network, 'clear', side_effect=lambda: events.append('clear')), \
                 patch('network.Path.write_text') as write, \
+                patch.object(network, 'upstreams', return_value=['eth0']), \
+                patch('network.Relay', return_value=ipv4), \
                 patch('network.subprocess.Popen', side_effect=[child, OSError('radvd failed')]) as spawn:
             with self.assertRaisesRegex(OSError, 'radvd failed'):
                 network.start()
-        self.assertEqual(events, ['clear', 'stop', 'clear'])
+        self.assertEqual(events, ['clear', 'stop', 'stop IPv4', 'clear'])
         child.wait.assert_called_once_with(timeout=20)
         command = spawn.call_args_list[0].args[0]
         self.assertEqual(command[-6:], ['--link-address', 'fd42:84:40::1', '--server', 'fd00::20', '--mac', config['mac']])

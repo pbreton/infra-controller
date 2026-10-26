@@ -12,7 +12,7 @@ import sys
 
 
 class Network:
-    def __init__(self, config, run, server='', pod_cidr='', uplink='eth0', server_v6='', default_route_v6=False):
+    def __init__(self, config, run, server='', pod_cidr='', uplink='eth0', server_v6='', default_route_v6=False, pod_cidr_v6=''):
         self.config = config
         self.run = run
         self.owner = 'nico-target:' + config['uuid']
@@ -20,6 +20,12 @@ class Network:
         self.subnet_v6 = (ipaddress.IPv6Interface(config['bridgeAddressV6']).network
                           if config.get('bridgeAddressV6') else None)
         self.server_v6 = ipaddress.IPv6Address(server_v6) if server_v6 else None
+        self.pod_cidr_v6 = ipaddress.IPv6Network(pod_cidr_v6) if pod_cidr_v6 else None
+        if (self.server_v6 is None) != (self.pod_cidr_v6 is None):
+            raise ValueError('DHCPv6 server and IPv6 pod CIDR must be supplied together')
+        if self.pod_cidr_v6 is not None and (self.pod_cidr_v6.prefixlen == 0
+                or self.subnet_v6 is not None and self.pod_cidr_v6.overlaps(self.subnet_v6)):
+            raise ValueError('IPv6 pod CIDR must be non-default and separate from the guest subnet')
         self.default_route_v6 = default_route_v6
         if default_route_v6 and self.server_v6 is None:
             raise ValueError('IPv6 default-route advertisements require DHCPv6')
@@ -111,6 +117,9 @@ class Network:
         yield 'filter', 'FORWARD', ['-i', bridge, '-s', subnet, *tag, '-j', 'ACCEPT']
         yield 'filter', 'FORWARD', ['-o', bridge, '-d', subnet, '-m', 'conntrack',
                                     '--ctstate', 'RELATED,ESTABLISHED', *tag, '-j', 'ACCEPT']
+        if self.pod_cidr_v6 is not None:
+            # Kea sends relay replies to UDP 547; SNAT port remapping loses them.
+            yield 'nat', 'POSTROUTING', ['-s', subnet, '-d', str(self.pod_cidr_v6), *tag, '-j', 'ACCEPT']
         # Preserve peer sources even when the cluster has an IPv6 masquerade rule.
         yield 'nat', 'POSTROUTING', ['-d', subnet, '-o', bridge, *tag, '-j', 'ACCEPT']
 

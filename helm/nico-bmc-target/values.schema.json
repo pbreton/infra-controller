@@ -120,6 +120,9 @@
             },
             "defaultRoute": {
               "type": "boolean"
+            },
+            "podCIDR": {
+              "type": "string"
             }
           }
         }

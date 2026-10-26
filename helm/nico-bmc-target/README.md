@@ -128,10 +128,14 @@ network isolation between tenants. See the
 Set `network.dhcpv6.server` to the existing Kea DHCPv6 Service IPv6 address to
 start a relay and router advertisements on this target's owned bridge. Empty
 (the default) starts neither. This requires `network.bridgeAddressV6`; the
-server must be an unscoped ULA or global address outside that prefix. The relay
+server must be an unscoped ULA or global address outside that prefix. Also set
+`network.dhcpv6.podCIDR` to the selected node’s IPv6 pod CIDR. The runtime rejects
+a default or overlapping pod CIDR and exempts this guest subnet’s pod traffic
+from masquerade, preserving the relay source port Kea uses for replies. The relay
 forwards only this guest's configured MAC and includes RFC 6939 link-layer
 metadata, so DUID-UUID and DUID-EN clients retain their Ethernet identity. It
-accepts unfragmented, untagged IPv6/UDP packets; extension headers, VLANs and
+survives transient upstream UDP failures while clients retry, without restarting
+the guest. It accepts unfragmented, untagged IPv6/UDP packets; extension headers, VLANs and
 chained relays are outside this flat lab topology.
 
 RA sets the managed and other-configuration flags, advertises the bridge /64 as
@@ -153,6 +157,7 @@ network:
   bridgeAddressV6: fd42:8124:40::1/64
   dhcpv6:
     server: fd00:10:96::20  # Replace with the actual DHCPv6 Service address.
+    podCIDR: fd00:10:244::/64  # Replace with the selected node IPv6 pod CIDR.
     defaultRoute: true
 ```
 

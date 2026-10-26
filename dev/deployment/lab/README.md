@@ -698,7 +698,8 @@ Obtain the Service address after the DHCP release is ready:
 kubectl -n nico-system get service nico-dhcp6 -o jsonpath='{.spec.clusterIP}'
 ```
 
-Set each target's `network.dhcpv6.server` to that result, configure distinct
+Set each target's `network.dhcpv6.server` to that result and
+`network.dhcpv6.podCIDR` to the node’s IPv6 entry in `spec.podCIDRs`. Configure distinct
 `network.bridgeAddressV6` /64 prefixes, and enable `network.dhcpv6.defaultRoute`
 when the node should route between those target networks. This enables managed
 RA, not SLAAC. Add each IPv6 prefix to its corresponding host-inband segment by

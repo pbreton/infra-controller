@@ -16,6 +16,9 @@ SPEC.loader.exec_module(relay)
 
 class RelayTests(unittest.TestCase):
     def setUp(self):
+        outgoing = patch.object(relay.socket, 'PACKET_OUTGOING', 4, create=True)
+        outgoing.start()
+        self.addCleanup(outgoing.stop)
         self.link = ipaddress.IPv6Address("fd42:84:30::1")
         self.peer = ipaddress.IPv6Address("fe80::1234")
         self.mac = bytes.fromhex("020000010002")
@@ -35,6 +38,68 @@ class RelayTests(unittest.TestCase):
             + destination.packed
         )
         self.frame = bytes.fromhex("333300010002") + self.mac + b"\x86\xdd" + ip + udp
+
+    def run_events(self, events, upstream=None, allowed=None):
+        upstream = upstream or Mock()
+        packets = Mock()
+        selected = []
+        frames = []
+        responses = []
+        times = []
+        for now, source, value in events:
+            times.append(now)
+            selected.append(([packets if source == 'client' else upstream], [], []))
+            (frames if source == 'client' else responses).append(value)
+        packets.recvmsg.side_effect = frames
+        upstream.recv.side_effect = responses
+        with patch.object(relay.time, 'monotonic', side_effect=times + [999]), \
+                patch.object(relay.select, 'select', side_effect=selected + [StopIteration]), \
+                self.assertRaises(StopIteration):
+            relay.run_relay(upstream, packets, self.link, {self.mac} if allowed is None else allowed, 7)
+        return upstream
+
+    def client_event(self, now=0, outgoing=False):
+        return now, 'client', (self.frame, [], 0, ('bridge', 0, relay.socket.PACKET_OUTGOING if outgoing else 0))
+
+    def server_event(self, now=0, transaction=b"\x12\x34\x56"):
+        message = b"\x07" + transaction
+        return now, 'server', b"\x0d\0" + self.link.packed + self.peer.packed + relay.option(9, message)
+
+    def test_transient_upstream_failure_keeps_relay_available_for_client_retry(self):
+        upstream = Mock()
+        upstream.send.side_effect = [ConnectionRefusedError(errno.ECONNREFUSED, 'no endpoints'), 60]
+        self.run_events([self.client_event(), (1, 'server', ConnectionRefusedError(errno.ECONNREFUSED, 'restarting')),
+                         self.client_event(2), self.server_event(3)], upstream)
+        self.assertEqual(upstream.send.call_count, 2)
+        upstream.sendto.assert_called_once_with(b"\x07\x12\x34\x56", (str(self.peer), 546, 0, 7))
+        upstream.send.side_effect = OSError(errno.EBADF, 'invalid socket')
+        with self.assertRaises(OSError):
+            self.run_events([self.client_event()], upstream)
+
+    def test_loop_requires_allowed_incoming_client_and_live_matching_transaction(self):
+        for name, events, allowed in (
+            ('foreign MAC', [self.client_event(), self.server_event()], {b'foreign'}),
+            ('outgoing', [self.client_event(outgoing=True), self.server_event()], None),
+            ('unsolicited', [self.server_event()], None),
+            ('wrong transaction', [self.client_event(), self.server_event(transaction=b'bad')], None),
+            ('expired', [self.client_event(), self.server_event(relay.REQUEST_LIFETIME)], None),
+        ):
+            with self.subTest(name=name):
+                upstream = self.run_events(events, allowed=allowed)
+                upstream.sendto.assert_not_called()
+                if name in ('foreign MAC', 'outgoing'):
+                    upstream.send.assert_not_called()
+
+    def test_pending_bound_allows_retry_and_recovers_after_expiration(self):
+        # Two slots distinguish admission, retry of an admitted request, and expiration.
+        other = (self.mac, self.peer, b'\x01abc')
+        rejected = (self.mac, self.peer, b'\x01def')
+        original = (self.mac, self.peer, self.message)
+        with patch.object(relay, 'MAX_PENDING', 2), \
+                patch.object(relay, 'client_packet', side_effect=[original, other, rejected, original, rejected]):
+            upstream = self.run_events([self.client_event(t) for t in (0, 1, 2, 3, 124)])
+        self.assertEqual(upstream.send.call_count, 4)
+        self.assertEqual(upstream.send.call_args.args[0], relay.forward(self.link, self.peer, self.mac, rejected[2]))
 
     def test_bind_waits_for_dad_but_does_not_hide_a_port_conflict(self):
         upstream = Mock()

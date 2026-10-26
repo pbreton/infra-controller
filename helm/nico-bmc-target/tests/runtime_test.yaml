@@ -274,15 +274,17 @@ tests:
     set:
       network.bridgeAddressV6: fd42:84:40::1/64
       network.dhcpv6.server: fd00::20
+      network.dhcpv6.podCIDR: fd00:10:244::/64
       network.dhcpv6.defaultRoute: true
     asserts:
       - equal:
           path: spec.template.spec.containers[0].args
-          value: [--config, /etc/nico-target/config.json, --dhcp6-server, 'fd00::20', --ipv6-default-route]
+          value: [--config, /etc/nico-target/config.json, --dhcp6-server, 'fd00::20', --pod-cidr-v6, 'fd00:10:244::/64', --ipv6-default-route]
   - it: rejects DHCPv6 without a routed IPv6 bridge
     template: deployment.yaml
     set:
       network.dhcpv6.server: fd00::20
+      network.dhcpv6.podCIDR: fd00:10:244::/64
     asserts:
       - failedTemplate:
           errorMessage: network.bridgeAddressV6 is required for DHCPv6
@@ -293,3 +295,18 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: network.dhcpv6.defaultRoute requires network.dhcpv6.server
+  - it: requires the IPv6 pod CIDR when DHCPv6 is enabled
+    template: deployment.yaml
+    set:
+      network.bridgeAddressV6: fd42:84:40::1/64
+      network.dhcpv6.server: fd00::20
+    asserts:
+      - failedTemplate:
+          errorMessage: network.dhcpv6.podCIDR is required
+  - it: rejects an IPv6 pod CIDR without a relay server
+    template: templates/deployment.yaml
+    set:
+      network.dhcpv6.podCIDR: fd00:10:244::/64
+    asserts:
+      - failedTemplate:
+          errorMessage: network.dhcpv6.podCIDR requires network.dhcpv6.server

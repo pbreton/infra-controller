@@ -130,6 +130,67 @@ def bind_link(upstream, address):
             time.sleep(0.1)
 
 
+def exchange(operation, *args):
+    try:
+        return operation(*args)
+    except OSError as error:
+        # Connected UDP reports ICMP errors during server restarts or route recovery.
+        # Clients retry DHCP; an upstream outage must not restart the target guest.
+        if error.errno not in {errno.ECONNREFUSED, errno.ENETUNREACH, errno.EHOSTUNREACH,
+                               errno.ENETDOWN, errno.ETIMEDOUT, errno.ENOBUFS}:
+            raise
+        print(f"DHCPv6 packet deferred: {error}", flush=True)
+        return None
+
+
+def run_relay(upstream, packets, link_address, allowed, interface_index):
+    pending = {}
+    while True:
+        now = time.monotonic()
+        pending = {
+            key: expires for key, expires in pending.items() if expires > now
+        }
+        readable, _, _ = select.select([packets, upstream], [], [], 1)
+        for source in readable:
+            if source is packets:
+                frame, ancillary, flags, address = packets.recvmsg(
+                    65535, socket.CMSG_SPACE(AUXDATA_SIZE)
+                )
+                if flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC):
+                    continue
+                if address[2] == socket.PACKET_OUTGOING:
+                    continue
+                request = client_packet(frame, packet_status(ancillary))
+                if request is None:
+                    continue
+                mac, peer, message = request
+                if mac not in allowed:
+                    continue
+                key = (peer, message[1:4])
+                if key not in pending and len(pending) >= MAX_PENDING:
+                    continue
+                pending[key] = now + REQUEST_LIFETIME
+                if exchange(upstream.send, forward(link_address, peer, mac, message)) is None:
+                    continue
+                print(
+                    f"Forwarded DHCPv6 type={message[0]} peer={peer} mac={mac.hex(':')}",
+                    flush=True,
+                )
+            else:
+                packet = exchange(upstream.recv, 65535)
+                if packet is None:
+                    continue
+                response = reply(packet, link_address)
+                if response is None:
+                    continue
+                peer, message = response
+                if (peer, message[1:4]) not in pending:
+                    continue
+                if exchange(upstream.sendto, message, (str(peer), 546, 0, interface_index)) is None:
+                    continue
+                print(f"Returned DHCPv6 type={message[0]} peer={peer}", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interface", required=True)
@@ -156,46 +217,7 @@ def main():
         upstream.connect((str(args.server), 547))
         packets.setsockopt(SOL_PACKET, PACKET_AUXDATA, 1)
         packets.bind((args.interface, 0))
-        pending = {}
-        while True:
-            now = time.monotonic()
-            pending = {
-                key: expires for key, expires in pending.items() if expires > now
-            }
-            readable, _, _ = select.select([packets, upstream], [], [], 1)
-            for source in readable:
-                if source is packets:
-                    frame, ancillary, flags, address = packets.recvmsg(
-                        65535, socket.CMSG_SPACE(AUXDATA_SIZE)
-                    )
-                    if flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC):
-                        continue
-                    if address[2] == socket.PACKET_OUTGOING:
-                        continue
-                    request = client_packet(frame, packet_status(ancillary))
-                    if request is None:
-                        continue
-                    mac, peer, message = request
-                    if mac not in allowed:
-                        continue
-                    key = (peer, message[1:4])
-                    if key not in pending and len(pending) >= MAX_PENDING:
-                        continue
-                    pending[key] = now + REQUEST_LIFETIME
-                    upstream.send(forward(args.link_address, peer, mac, message))
-                    print(
-                        f"Forwarded DHCPv6 type={message[0]} peer={peer} mac={mac.hex(':')}",
-                        flush=True,
-                    )
-                else:
-                    response = reply(upstream.recv(65535), args.link_address)
-                    if response is None:
-                        continue
-                    peer, message = response
-                    if (peer, message[1:4]) not in pending:
-                        continue
-                    upstream.sendto(message, (str(peer), 546, 0, interface_index))
-                    print(f"Returned DHCPv6 type={message[0]} peer={peer}", flush=True)
+        run_relay(upstream, packets, args.link_address, allowed, interface_index)
 
 
 if __name__ == "__main__":

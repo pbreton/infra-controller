@@ -2,18 +2,23 @@
 {{- $dhcpv6 := .Values.network.dhcpv6 | default dict -}}
 {{- if $dhcpv6.server -}}
 {{- $_ := required "network.bridgeAddressV6 is required for DHCPv6" .Values.network.bridgeAddressV6 -}}
+{{- else if $dhcpv6.podCIDR -}}
+{{- fail "network.dhcpv6.podCIDR requires network.dhcpv6.server" -}}
 {{- else if $dhcpv6.defaultRoute -}}
 {{- fail "network.dhcpv6.defaultRoute requires network.dhcpv6.server" -}}
 {{- end -}}
-{{- if $provisioning.enabled -}}
+{{- if or $provisioning.enabled $dhcpv6.server -}}
 {{- $nodes := lookup "v1" "Node" "" "" -}}
 {{- if $nodes.items -}}
 {{- if ne (len $nodes.items) 1 -}}
 {{- fail "provisioning requires a single-node kind cluster" -}}
 {{- end -}}
 {{- $node := index $nodes.items 0 -}}
-{{- if or (ne $node.metadata.name .Values.nodeName) (ne $node.spec.podCIDR $provisioning.podCIDR) -}}
+{{- if or (ne $node.metadata.name .Values.nodeName) (and $provisioning.enabled (ne $node.spec.podCIDR $provisioning.podCIDR)) -}}
 {{- fail "provisioning podCIDR must match the selected node" -}}
+{{- end -}}
+{{- if and $dhcpv6.server (not (has $dhcpv6.podCIDR ($node.spec.podCIDRs | default list))) -}}
+{{- fail "DHCPv6 podCIDR must match the selected node" -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -69,6 +74,8 @@ spec:
             {{- if $dhcpv6.server }}
             - --dhcp6-server
             - {{ $dhcpv6.server | quote }}
+            - --pod-cidr-v6
+            - {{ required "network.dhcpv6.podCIDR is required" $dhcpv6.podCIDR | quote }}
             {{- if $dhcpv6.defaultRoute }}
             - --ipv6-default-route
             {{- end }}
