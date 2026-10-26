@@ -185,8 +185,34 @@ class TrafficGuardTests(unittest.TestCase):
                     patch.object(GUARD.subprocess, 'Popen', return_value=process), self.assertRaises(InterruptedError):
                 GUARD.main()
             self.assertFalse(observer.command_succeeded)
-            self.assertIn('signal', observer.outcome['error'])
+            self.assertEqual(observer.outcome['cancellation_signal'], GUARD.signal.SIGTERM)
             observer.stop.assert_called_once()
+
+    def test_cancellation_preserves_primary_error_and_stops_at_report_boundary(self):
+        for finished in (False, True):
+            with self.subTest(finished=finished), tempfile.TemporaryDirectory() as directory:
+                observer, process = Mock(), Mock()
+                observer.outcome = {}
+                process.poll.return_value = 1
+                process.wait.return_value = 1
+                handlers = {}
+                def install(number, handler):
+                    previous = handlers.get(number, GUARD.signal.SIG_DFL)
+                    handlers[number] = handler
+                    return previous
+                def stop():
+                    if finished:
+                        observer.outcome['finished'] = 'completion boundary'
+                    handlers[GUARD.signal.SIGTERM](GUARD.signal.SIGTERM, None)
+                observer.stop.side_effect = stop
+                args = ['traffic-guard.py', '--context', 'kind-test', '--target', 'one', '--target', 'two',
+                        '--output', str(Path(directory) / 'output'), '--', 'command']
+                with patch.object(GUARD.sys, 'argv', args), patch.object(GUARD, 'Guard', return_value=observer), \
+                        patch.object(GUARD.signal, 'signal', side_effect=install), \
+                        patch.object(GUARD.subprocess, 'Popen', return_value=process), self.assertRaises(subprocess.CalledProcessError):
+                    GUARD.main()
+                self.assertIn('CalledProcessError', observer.outcome['error'])
+                self.assertEqual(observer.outcome.get('cancellation_signal'), None if finished else GUARD.signal.SIGTERM)
 
     def test_start_rejects_ambiguous_or_foreign_targets_before_launch(self):
         pod = {'metadata': {'name': 'one-pod', 'uid': 'pod', 'labels': {'app.kubernetes.io/name': 'nico-bmc-target'}}}

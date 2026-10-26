@@ -1018,9 +1018,11 @@ seconds, 60–86400 inclusive, default 14400. Put all wrapper options before `--
 the remaining arguments form the command, without shell expansion by the wrapper.
 The command receives no stdin. Cancellation is recorded without interrupting
 evidence cleanup; repeated signals do not shorten the cleanup grace period.
-During startup, cancellation waits for the current bounded capture operation.
+During startup, cancellation waits for the bounded setup of both captures.
 While the command runs, cancellation is checked at least once per second.
-Cancellation during evidence collection also makes the run fail.
+Cancellation during evidence collection also makes the run fail. The completion
+boundary is the recorded finish time, after capture and identity checks; signals
+received while writing the final report do not change that completed result.
 Timeout or interruption sends SIGINT to the command's process group, allowing the lifecycle runner to stop its own children and collect
 diagnostics. Captures continue during a grace period of up to 300 seconds before
 a forced SIGKILL. Commands must handle SIGINT and clean up children they start
@@ -1028,7 +1030,7 @@ in separate sessions; a forced stop is recorded as incomplete recovery.
 
 Each target's `.jsonl` file contains readiness, periodic cumulative counters and
 an explicit completion record. `.stderr` retains observer errors; `report.json`
-records the command arguments, exit code or error, UTC start/end times, forced
+records the command arguments, exit code or error, cancellation signal, UTC start/end times, forced
 termination status, selected targets and guard result. Use the command record to
 distinguish a smoke run from a full lifecycle; the wrapper does not infer or
 validate the wrapped command's target selection. No packet payloads are stored.

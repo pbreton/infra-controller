@@ -119,7 +119,7 @@ def capture():
 
 
 def checked(command):
-    result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, check=True)
+    result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, check=True, start_new_session=True)
     return json.loads(result.stdout)
 
 
@@ -220,8 +220,9 @@ class Guard:
         if len(results) != 2:
             failures.append('two complete captures are required')
         self.outcome['finished'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        report = {'cluster': self.cluster, 'outcome': self.outcome, 'command_succeeded': self.command_succeeded,
-                  'passed': self.command_succeeded and not failures, 'captures': results, 'failures': failures}
+        succeeded = self.command_succeeded and not self.outcome.get('cancellation_signal')
+        report = {'cluster': self.cluster, 'outcome': self.outcome, 'command_succeeded': succeeded,
+                  'passed': succeeded and not failures, 'captures': results, 'failures': failures}
         (self.args.output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         if failures:
             raise ValueError('; '.join(failures))
@@ -282,9 +283,11 @@ def main():
     def interrupted(number, frame):
         # Handlers only record cancellation: exceptions at arbitrary bytecode
         # boundaries can skip cleanup even inside a finally block.
+        if guard.outcome.get('finished'):
+            return
         if not cancellation:
             cancellation.append(number)
-            guard.outcome['error'] = f'traffic guard received signal {number}'
+            guard.outcome['cancellation_signal'] = number
         guard.command_succeeded = False
     previous = {number: signal.signal(number, interrupted) for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
