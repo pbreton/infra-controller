@@ -54,6 +54,20 @@ class TargetTest(unittest.TestCase):
             with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'retained domain'):
                 TARGET.check_memory_backing(config, changed)
 
+    def test_libvirt_normalized_memory_is_accepted_for_legacy_and_hugepage_guests(self):
+        for hugepages in (False, True):
+            with self.subTest(hugepages=hugepages):
+                config = TARGET.configuration(dict(CONFIG, hugepages=hugepages))
+                # Relevant fields from native libvirt dumpxml and managedsave-dumpxml.
+                backing = """<memoryBacking><hugepages><page size='2048' unit='KiB'/></hugepages>
+                  <source type='memfd'/><allocation mode='immediate'/></memoryBacking>""" if hugepages else ''
+                xml = f"""<domain type='kvm'><name>target</name><uuid>{config['uuid']}</uuid>
+                  <memory unit='KiB'>4194304</memory><currentMemory unit='KiB'>4194304</currentMemory>
+                  {backing}</domain>"""
+                TARGET.check_memory_backing(config, xml)
+                with self.assertRaisesRegex(ValueError, 'retained domain'):
+                    TARGET.check_memory_backing(config, xml.replace('4194304', '4096'))
+
     def test_missing_hugepage_pool_does_not_claim_fresh_storage(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -258,10 +272,10 @@ class TargetTest(unittest.TestCase):
                 self.assertEqual(list(root.iterdir()), [])
 
     def test_bmc_stops_before_guest_save_and_libvirt_shutdown(self):
-        for saved in (False, True):
-            with self.subTest(saved=saved):
+        for hugepages, saved in ((False, False), (False, True), (True, True)):
+            with self.subTest(hugepages=hugepages, saved=saved):
                 events = []
-                config = TARGET.configuration(dict(CONFIG, hugepages=saved))
+                config = TARGET.configuration(dict(CONFIG, hugepages=hugepages))
 
                 class Child:
                     def __init__(self, command):
