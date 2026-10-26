@@ -5,7 +5,7 @@
 import json
 import os
 from pathlib import Path
-from lifecycle import run, save
+from lifecycle import run
 
 HERE = Path(__file__).resolve().parent
 
@@ -18,9 +18,13 @@ class CoreJournal:
 
     def checkpoint(self):
         path = self.directory / 'state.json'
-        save(path, self.state)
-        with path.open() as stream:
+        pending = path.with_suffix('.pending')
+        with pending.open('w') as stream:
+            json.dump(self.state, stream, indent=2)
+            stream.write('\n')
+            stream.flush()
             os.fsync(stream.fileno())
+        pending.replace(path)
         descriptor = os.open(self.directory, os.O_RDONLY)
         try:
             os.fsync(descriptor)

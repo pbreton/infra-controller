@@ -116,17 +116,86 @@ class RegistrationTests(unittest.TestCase):
             self.lab.apply()
         self.lab.admin.assert_not_called()
 
+    def test_checkpoint_flush_failure_preserves_previous_intents(self):
+        self.lab.checkpoint()
+        original = (self.directory / 'state.json').read_text()
+        self.state['new_intent'] = True
+        with patch('core_journal.os.fsync', side_effect=OSError('disk full')), self.assertRaises(OSError):
+            self.lab.checkpoint()
+        self.assertEqual((self.directory / 'state.json').read_text(), original)
+
+    def test_invalid_initial_credentials_never_create_expected_machines(self):
+        secret = Path(self.state['bmc_password_file'])
+        for contents, mode, owner in [('', 0o600, REG.os.getuid()), ('one\ntwo', 0o600, REG.os.getuid()),
+                                      ('test', 0o644, REG.os.getuid()), ('test', 0o600, REG.os.getuid() + 1)]:
+            secret.write_text(contents)
+            secret.chmod(mode)
+            with self.subTest(contents=contents, mode=mode, owner=owner), patch.object(REG.os, 'getuid', return_value=owner), \
+                    self.assertRaisesRegex(ValueError, 'password file'):
+                self.lab.apply()
+            self.assertEqual(self.expected, [])
+
+    def test_segment_timeout_can_resume_without_recreating_segments(self):
+        original = self.admin
+        def pending(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if not kwargs.get('read') and args[0] == 'network-segment':
+                self.segments[-1]['status']['lifecycle']['state'] = '{"state":"provisioning"}'
+            return result
+        self.lab.admin.side_effect = pending
+        with patch.object(REG.time, 'monotonic', side_effect=[0, 61]), self.assertRaisesRegex(TimeoutError, 'not Ready'):
+            self.lab.apply()
+        self.assertEqual(len(self.writes), 3)
+        self.assertEqual(self.expected, [])
+        self.lab.admin.side_effect = original
+        for segment in self.segments:
+            segment['status']['lifecycle']['state'] = '{"state":"ready"}'
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.lab.apply()
+        self.assertEqual(len(self.writes), 5)
+
+    def test_dual_stack_segment_commands_keep_gateway_and_domain_policy(self):
+        self.state['segments'], self.state['targets'] = REG.plan_targets(
+            inventories(), 'dual-stack', ['fd00:10:96::4010/124'], 'lab-test', 'domain')
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.lab.apply()
+        for flag in ('--gateway', '--subdomain-id', '--reserve-first'):
+            self.assertNotIn(flag, self.writes[0])
+        for command, index in zip(self.writes[1:3], (1, 2)):
+            self.assertEqual(command[command.index('--gateway') + 1], f'10.84.{index}.1')
+            self.assertEqual(command[command.index('--reserve-first') + 1], '10')
+            self.assertEqual(command[command.index('--subdomain-id') + 1], 'domain')
+            self.assertEqual(command.count('--prefix'), 2)
+
+    def test_invalid_cli_and_read_only_preflight_leave_no_journal(self):
+        destination = self.directory / 'new-journal'
+        valid = ['register.py', '--state-dir', str(destination), '--context', 'kind-test',
+                 '--target', 'one', '--target', 'two', '--bmc-prefix', 'fd00:10:96::4010/124',
+                 '--bmc-password-file', self.state['bmc_password_file']]
+        cases = [valid + ['--resume'], [v if v != 'kind-test' else 'production' for v in valid],
+                 valid + ['--target', 'three'], [v if v != 'two' else 'one' for v in valid],
+                 [v if v != 'two' else 'Invalid' for v in valid], valid + ['--timeout', '0']]
+        for args in cases:
+            with self.subTest(args=args), patch.object(sys, 'argv', args), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                REG.main()
+            self.assertFalse(destination.exists())
+        with patch.object(sys, 'argv', valid), patch.object(REG, 'run', side_effect=ValueError('cluster unavailable')), \
+                self.assertRaisesRegex(ValueError, 'cluster unavailable'):
+            REG.main()
+        self.assertFalse(destination.exists())
+
     def test_prefix_plan_preserves_families_gateway_reservation_and_separation(self):
         for profile, families in [('ipv4', [4]), ('dual-stack', [4, 6]), ('ipv6-only', [6])]:
             segments, _ = REG.plan_targets(inventories(), profile, ['fd00:10:96::4010/124'], 'owner', 'domain')
             for s in segments[1:]:
                 self.assertEqual([REG.ipaddress.ip_network(p['prefix']).version for p in s['prefixes']], families)
                 self.assertTrue(all(p['reserve_first'] == 10 for p in s['prefixes']))
-        for change in ('overlap', 'gateway', 'identity'):
+        for change in ('overlap', 'gateway', 'identity', 'missing_ipv6'):
             inv = inventories()
             if change == 'overlap': inv['two']['bridgeAddressV6'] = inv['one']['bridgeAddressV6']
             elif change == 'gateway': inv['one']['bridgeAddressV6'] = 'fd42:8124:1::20/64'
-            else: inv['two']['mac'] = inv['one']['mac']
+            elif change == 'identity': inv['two']['mac'] = inv['one']['mac']
+            else: del inv['one']['bridgeAddressV6']
             with self.subTest(change=change), self.assertRaises(ValueError):
                 REG.plan_targets(inv, 'ipv6-only', ['fd00:10:96::4010/124'], 'owner', 'domain')
 

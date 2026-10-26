@@ -47,7 +47,10 @@ def plan_targets(inventories, profile, bmc_prefixes, owner, domain):
             raise ValueError('BMC address must be inside the supplied dedicated prefix, excluding its endpoints')
         networks = []
         for family in families:
-            interface = ipaddress.ip_interface(inv['bridgeAddress' if family == 4 else 'bridgeAddressV6'])
+            address = inv.get('bridgeAddress' if family == 4 else 'bridgeAddressV6')
+            if not address:
+                raise ValueError(f'target {release} has no IPv{family} bridge address')
+            interface = ipaddress.ip_interface(address)
             if interface.version != family or not 0 < int(interface.ip) - int(interface.network.network_address) < RESERVE_FIRST:
                 raise ValueError('bridge gateway must be among the first nine reserved addresses')
             networks.append(dict(prefix=str(interface.network), gateway=str(interface.ip) if family == 4 else None,
@@ -176,8 +179,8 @@ def main():
     parser.add_argument('--state-dir', type=Path, required=True)
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--context')
-    parser.add_argument('--namespace', help='Core namespace; default nico-system')
-    parser.add_argument('--target-namespace', help='target namespace; default bmc-lab')
+    parser.add_argument('--core-namespace', help='Core namespace; default nico-system')
+    parser.add_argument('--namespace', help='target namespace; default bmc-lab')
     parser.add_argument('--target', action='append', help='exactly two native target Helm releases')
     parser.add_argument('--network', choices=('ipv4', 'dual-stack', 'ipv6-only'), help='guest prefixes to register; default ipv4')
     parser.add_argument('--bmc-prefix', action='append', help='dedicated managed BMC Service prefix; at most one per family')
@@ -197,28 +200,27 @@ def main():
     os.umask(0o077)
     directory = args.state_dir.expanduser().resolve()
     if not args.resume:
+        cluster = json.loads(run(['kubectl', '--context', args.context, 'get', 'namespace', 'kube-system', '-o', 'json']))['metadata']['uid']
+        inventories = {r: target_inventory(args.context, args.namespace or 'bmc-lab', r, cluster) for r in args.target}
+        architectures = {i['architecture'] for i in inventories.values()}
+        if len(architectures) != 1:
+            raise ValueError('target architectures differ')
+        state = dict(version=1, context=args.context, namespace=args.core_namespace or 'nico-system', cluster=cluster,
+                     target_namespace=args.namespace or 'bmc-lab', owner='lab-' + uuid.uuid4().hex,
+                     architecture=next(iter(architectures)), timeout=args.timeout or 300,
+                     bmc_username=args.bmc_username or 'root', bmc_password_file=str(args.bmc_password_file.expanduser().resolve()))
+        journal = Registration(directory, state)
+        journal.verify_cluster()
+        domains = journal.admin('domain', 'show', read=True)['domains']
+        domains = [d for d in domains if d['name'] == (args.domain or 'local.nico') and not d.get('deleted')]
+        if len(domains) != 1:
+            raise ValueError('select exactly one existing live DNS domain')
+        state['segments'], state['targets'] = plan_targets(inventories, args.network or 'ipv4', args.bmc_prefix, state['owner'], domains[0]['id'])
         directory.mkdir(mode=0o700, exist_ok=False)
     with (directory / 'register.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if args.resume:
             state = json.loads((directory / 'state.json').read_text())
-        else:
-            cluster = json.loads(run(['kubectl', '--context', args.context, 'get', 'namespace', 'kube-system', '-o', 'json']))['metadata']['uid']
-            inventories = {r: target_inventory(args.context, args.target_namespace or 'bmc-lab', r, cluster) for r in args.target}
-            architectures = {i['architecture'] for i in inventories.values()}
-            if len(architectures) != 1:
-                raise ValueError('target architectures differ')
-            state = dict(version=1, context=args.context, namespace=args.namespace or 'nico-system', cluster=cluster,
-                         target_namespace=args.target_namespace or 'bmc-lab', owner='lab-' + uuid.uuid4().hex,
-                         architecture=next(iter(architectures)), timeout=args.timeout or 300,
-                         bmc_username=args.bmc_username or 'root', bmc_password_file=str(args.bmc_password_file.expanduser().resolve()))
-            journal = Registration(directory, state)
-            journal.verify_cluster()
-            domains = journal.admin('domain', 'show', read=True)['domains']
-            domains = [d for d in domains if d['name'] == (args.domain or 'local.nico') and not d.get('deleted')]
-            if len(domains) != 1:
-                raise ValueError('select exactly one existing live DNS domain')
-            state['segments'], state['targets'] = plan_targets(inventories, args.network or 'ipv4', args.bmc_prefix, state['owner'], domains[0]['id'])
         journal = Registration(directory, state)
         if not args.resume:
             journal.checkpoint()

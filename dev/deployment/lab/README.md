@@ -920,7 +920,7 @@ with those returned by your lab's Core API:
 
 ```bash
 python3 dev/deployment/lab/lifecycle.py \
-  --context kind-nico-tilt --state-dir /tmp/nico-lifecycle-run \
+  --context kind-nico-tilt --state-dir "$HOME/nico-lifecycle-run" \
   --target "target-one=$FIRST_MACHINE_ID" \
   --target "target-two=$SECOND_MACHINE_ID" \
   --vpc "$VPC_ID" --os-image "$OS_IMAGE_ID" --network ipv6-only
@@ -974,7 +974,7 @@ After a failed run, release only its recorded instances with:
 
 ```bash
 python3 dev/deployment/lab/lifecycle.py \
-  --state-dir /tmp/nico-lifecycle-run --release-only
+  --state-dir "$HOME/nico-lifecycle-run" --release-only
 ```
 
 Cleanup reads context and identities from the journal, revalidates target
@@ -982,7 +982,8 @@ ownership, and rejects replaced clusters, targets or instances. It attempts each
 target independently, reports all failures, and returns nonzero if any remain. Do not supply
 `--context`, `--target`, `--vpc` or `--os-image` with `--release-only`. Other run
 settings are read from the journal. Repeating cleanup after successful release
-is harmless. Run directories support cleanup, not resuming an interrupted test;
+is harmless. Keep journals in a persistent directory: a reboot may clear `/tmp`.
+Run directories support cleanup, not resuming an interrupted test;
 start a new directory for another run. Neither mode deletes VPCs, OS catalog
 entries, target PVCs, the stack or its credentials. Exit status is zero only when
 all selected checks or cleanup complete; failures return nonzero and retain
@@ -999,9 +1000,9 @@ IPv4 Scout/imager boot is expected to fail this guard:
 ```bash
 python3 dev/deployment/lab/traffic-guard.py \
   --context kind-nico-lab --target target-one --target target-two \
-  --output /tmp/nico-ipv6-traffic -- \
+  --output "$HOME/nico-ipv6-traffic" -- \
   python3 dev/deployment/lab/lifecycle.py \
-    --context kind-nico-lab --state-dir /tmp/nico-ipv6-lifecycle \
+    --context kind-nico-lab --state-dir "$HOME/nico-ipv6-lifecycle" \
     --target "target-one=$FIRST_MACHINE" --target "target-two=$SECOND_MACHINE" \
     --vpc "$VPC_ID" --os-image "$OS_IMAGE_ID" --network ipv6-only --cycles 2
 ```
@@ -1064,10 +1065,10 @@ VPC through the existing Core admin client:
 
 ```bash
 python3 dev/deployment/lab/catalog.py \
-  --context kind-nico-lab --state-dir /tmp/nico-lab-catalog \
+  --context kind-nico-lab --state-dir "$HOME/nico-lab-catalog" \
   --artifact-manifest /tmp/nico-os-validation/build-info.json \
   --pxe-origin http://carbide-pxe.forge:8080
-python3 dev/deployment/lab/catalog.py --state-dir /tmp/nico-lab-catalog --resume
+python3 dev/deployment/lab/catalog.py --state-dir "$HOME/nico-lab-catalog" --resume
 ```
 
 The IPv6 boot profile uses the origin above. For the default boot profile, use
@@ -1126,12 +1127,12 @@ provisioning networks and expected-machine identities through Core:
 
 ```bash
 python3 dev/deployment/lab/register.py \
-  --context kind-nico-lab --state-dir /tmp/nico-target-registration \
+  --context kind-nico-lab --state-dir "$HOME/nico-target-registration" \
   --target target-one --target target-two --network ipv6-only \
   --bmc-prefix fd00:10:96::4010/124 \
   --bmc-password-file /tmp/nico-lab-initial-bmc-password
 python3 dev/deployment/lab/register.py \
-  --state-dir /tmp/nico-target-registration --resume
+  --state-dir "$HOME/nico-target-registration" --resume
 ```
 
 Use the actual target release names and a dedicated prefix containing their BMC
@@ -1139,16 +1140,15 @@ Service addresses. The password file must already contain their initial BMC
 password as one nonempty line, be owned by the invoking user, and have no group
 or other permissions. Keep it private. The helper does not generate or replace
 BMC credentials. Its path is recorded; its contents are not saved in the journal.
-The admin CLI passes the initial credential as a process argument during first
-registration. Resume does not need that file after both registrations exist.
+During first registration, the initial credential appears in the process
+arguments of the host wrapper, kubectl and the admin CLI. Use a trusted lab host. Resume does not need that file after both registrations exist.
 
 Python 3.9+, Bash, jq, kubectl and the configured Core client wrapper are required.
 For a new journal, `--context`, two distinct `--target` values, `--bmc-prefix`,
 `--bmc-password-file` and `--state-dir` are required. The context must start with
 `kind-`; both targets must be native BMC deployments belonging to that cluster.
-Their architecture must match its single node. `--namespace` selects Core
-(default `nico-system`); `--target-namespace` selects both targets (default
-`bmc-lab`). `--bmc-username` defaults to `root`. `--domain` defaults to the existing
+Their architecture must match its single node. `--core-namespace` selects Core
+(default `nico-system`); `--namespace` selects both targets (default `bmc-lab`). `--bmc-username` defaults to `root`. `--domain` defaults to the existing
 `local.nico` DNS domain and must resolve to exactly one live Core domain.
 
 `--network` selects the guest prefixes to register: `ipv4` (default), `dual-stack`
