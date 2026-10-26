@@ -59,16 +59,19 @@ class TrafficGuardTests(unittest.TestCase):
             with self.subTest(expected=expected, packet=packet):
                 self.assertEqual(GUARD.classify(packet, MAC), expected)
 
-    def test_capture_retains_large_ipv6_frames_in_live_and_stop_drain_paths(self):
+    def test_capture_classifies_large_ipv6_frames_in_live_and_stop_drain_paths(self):
         inventory = dict(mac='02:00:00:03:00:02', bridge='test-bridge')
         packet = frame(0x86dd, b'\x60' + b'\0' * 3 + b'\xff\xff' + b'\0' * (34 + 65535))
         packets, stdin = Mock(), Mock()
         stdin.buffer.readline.return_value = json.dumps(inventory)
         received = iter([packet, packet])
-        def receive(size):
-            try: return next(received)[:size]
+        def receive(buffers, ancillary_size, flags):
+            self.assertEqual(flags, GUARD.socket.MSG_TRUNC)
+            try: data = next(received)
             except StopIteration: raise BlockingIOError()
-        packets.recv.side_effect = receive
+            buffers[0][:] = data[:len(buffers[0])]
+            return len(data), [], GUARD.socket.MSG_TRUNC, None
+        packets.recvmsg_into.side_effect = receive
         packets.getsockopt.return_value = b'\0' * 8
         output = io.StringIO()
         socket_context = Mock()
@@ -85,6 +88,14 @@ class TrafficGuardTests(unittest.TestCase):
         report = GUARD.assess([json.loads(line) for line in output.getvalue().splitlines()])
         self.assertEqual(report['counts']['ipv6'], 2)
         self.assertEqual(report['counts']['malformed'], 0)
+
+    def test_header_capture_checks_declared_lengths_against_original_wire_length(self):
+        for packet in (frame(0x86dd, b'\x60' + b'\0' * 3 + b'\xff\xff' + b'\0' * (34 + 65535)),
+                       frame(0x0800, ipv4(source=b'\x0a\0\0\1'))):
+            with self.subTest(protocol=packet[12:14]):
+                header = memoryview(packet)[:GUARD.CAPTURE_HEADER_BYTES]
+                self.assertEqual(GUARD.classify(header, MAC, len(packet)), GUARD.classify(packet, MAC))
+                self.assertEqual(GUARD.classify(header, MAC, len(packet) - 1), 'malformed')
 
     def test_incomplete_lossy_or_ipv4_observation_cannot_pass(self):
         good = {'event': 'finished', 'stop_requested': True, 'counts': dict.fromkeys(GUARD.COUNTERS, 0)}

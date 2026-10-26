@@ -24,12 +24,13 @@ PACKET_MR_PROMISC = 1
 SO_RCVBUFFORCE = 33
 ETH_P_ALL = 3
 STOP_GRACE_SECONDS = 300
-FRAME_BUFFER_BYTES = 262144
+CAPTURE_HEADER_BYTES = 128
 
 COUNTERS = ('ipv6', 'dhcp4_probe', 'ipv4', 'arp', 'other', 'malformed', 'dropped')
 
 
-def classify(frame, mac):
+def classify(frame, mac, wire_length=None):
+    wire_length = len(frame) if wire_length is None else wire_length
     if len(frame) < 14:
         return None
     guest_frame = mac in (frame[:6], frame[6:12])
@@ -49,7 +50,7 @@ def classify(frame, mac):
     if protocol == 0x86dd:
         if not guest_frame:
             return None
-        if len(packet) < 40 or packet[0] >> 4 != 6 or len(packet) < 40 + int.from_bytes(packet[4:6], 'big'):
+        if len(packet) < 40 or packet[0] >> 4 != 6 or wire_length - offset < 40 + int.from_bytes(packet[4:6], 'big'):
             return 'malformed'
         return 'ipv6'
     if protocol != 0x0800:
@@ -58,7 +59,7 @@ def classify(frame, mac):
         return 'malformed'
     header = (packet[0] & 15) * 4
     length = int.from_bytes(packet[2:4], 'big')
-    if header < 20 or length < header or len(packet) < length:
+    if header < 20 or length < header or wire_length - offset < length:
         return 'malformed'
     # Firmware may try DHCPv4 before IPv6. Replies, fragments and assigned-source
     # traffic are violations; these probes do not establish successful IPv4 use.
@@ -85,6 +86,12 @@ def capture():
         packets.getsockopt(SOL_PACKET, PACKET_STATISTICS, 8)
         print(json.dumps({'event': 'ready', 'mac': actual['mac'], 'bridge': actual['bridge']}), flush=True)
         last = start
+        header = bytearray(CAPTURE_HEADER_BYTES)
+        def receive():
+            # Linux reports the full frame length with MSG_TRUNC while copying
+            # only the headers needed for classification, including GSO frames.
+            size, _, _, _ = packets.recvmsg_into([header], 0, socket.MSG_TRUNC)
+            return classify(memoryview(header)[:min(size, len(header))], mac, size)
         while True:
             readable, _, _ = select.select([packets, sys.stdin.buffer], [], [], 1)
             if sys.stdin.buffer in readable:
@@ -95,7 +102,7 @@ def capture():
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
                     try:
-                        category = classify(packets.recv(FRAME_BUFFER_BYTES), mac)
+                        category = receive()
                     except BlockingIOError:
                         break
                     if category:
@@ -104,7 +111,7 @@ def capture():
                     raise TimeoutError('capture queue did not drain')
                 break
             if packets in readable:
-                category = classify(packets.recv(FRAME_BUFFER_BYTES), mac)
+                category = receive()
                 if category:
                     counts[category] += 1
             if time.monotonic() - last >= 1:
