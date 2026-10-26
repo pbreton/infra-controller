@@ -12,7 +12,7 @@ For an existing Ubuntu 22.04 or newer checkout on native ARM64 or AMD64, prepare
 packages and tools before creating the kind cluster:
 
 ```bash
-bash dev/deployment/setup-host.sh --user "$USER"
+bash dev/deployment/setup-host.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
