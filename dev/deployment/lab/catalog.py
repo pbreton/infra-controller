@@ -166,16 +166,16 @@ def main():
     os.umask(0o077)
     directory = args.state_dir.expanduser().resolve()
     if not args.resume:
+        cluster = json.loads(run(['kubectl', '--context', args.context, 'get', 'namespace', 'kube-system', '-o', 'json']))['metadata']['uid']
+        state = dict(version=1, context=args.context, namespace=args.namespace or 'nico-system', cluster=cluster,
+                     owner='lab-' + uuid.uuid4().hex, os_id=str(uuid.uuid4()), artifact=manifest,
+                     url=args.pxe_origin + manifest['pxe_path'])
+        Catalog(directory, state).verify_cluster()
         directory.mkdir(mode=0o700, parents=False, exist_ok=False)
     with (directory / 'catalog.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if args.resume:
             state = json.loads((directory / 'state.json').read_text())
-        else:
-            cluster = json.loads(run(['kubectl', '--context', args.context, 'get', 'namespace', 'kube-system', '-o', 'json']))['metadata']['uid']
-            state = dict(version=1, context=args.context, namespace=args.namespace or 'nico-system', cluster=cluster,
-                         owner='lab-' + uuid.uuid4().hex, os_id=str(uuid.uuid4()), artifact=manifest,
-                         url=args.pxe_origin + manifest['pxe_path'])
         catalog = Catalog(directory, state)
         if not args.resume:
             catalog.checkpoint()

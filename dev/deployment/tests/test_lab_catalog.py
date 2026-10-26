@@ -124,6 +124,19 @@ class CatalogTests(unittest.TestCase):
                 CAT.main()
             self.assertFalse(destination.exists())
 
+    def test_cluster_preflight_failure_does_not_consume_journal_path(self):
+        destination = self.directory / 'not-created'
+        manifest = self.directory / 'manifest.json'
+        manifest.write_text('{}')
+        args = ['catalog.py', '--state-dir', str(destination), '--context', 'kind-test',
+                '--artifact-manifest', str(manifest), '--pxe-origin', 'http://pxe']
+        with patch.object(sys, 'argv', args), patch.object(CAT, 'artifact', return_value={'pxe_path': '/image'}), \
+                patch.object(CAT, 'run', return_value='{"metadata":{"uid":"cluster"}}'), \
+                patch.object(CAT.Catalog, 'verify_cluster', side_effect=ValueError('wrong architecture')), \
+                self.assertRaisesRegex(ValueError, 'wrong architecture'):
+            CAT.main()
+        self.assertFalse(destination.exists())
+
     def test_manifest_and_origin_keep_image_path_and_credentials_out_of_catalog_inputs(self):
         manifest = dict(architecture='arm64', artifact_directory='aarch64', pxe_path='/public/blobs/internal/aarch64/ubuntu.img',
                         sha256='0' * 64, image_id='output', boot_artifact_image_id='parent')
