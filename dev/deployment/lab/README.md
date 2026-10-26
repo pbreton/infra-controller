@@ -6,6 +6,8 @@ Ordinary Tilt development with machine-a-tron does not require KVM or this check
 On macOS, run it inside the Linux VM that will host the guests; running it on the
 macOS client reports an unsupported platform.
 
+For an end-to-end fresh run, follow [fresh native lab validation](validation.md).
+
 ## Ubuntu host setup
 
 For an existing Ubuntu 22.04 or newer checkout on native ARM64 or AMD64, prepare
