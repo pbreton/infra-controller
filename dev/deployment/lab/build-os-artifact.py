@@ -10,6 +10,7 @@ import platform
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import urllib.parse
 import uuid
@@ -45,7 +46,7 @@ def digest_argument(value):
 
 
 def inspect(image):
-    return json.loads(run(['docker', 'image', 'inspect', image], capture_output=True).stdout)[0]
+    return json.loads(run(['docker', 'image', 'inspect', image], stdout=subprocess.PIPE).stdout)[0]
 
 
 def verify_image(path, expected):
@@ -60,7 +61,7 @@ def build(args):
     native = ARCHITECTURES.get(platform.machine())
     if not native or platform.system() not in ('Linux', 'Darwin'):
         raise ValueError('use a native ARM64 or AMD64 Linux/macOS client')
-    docker = json.loads(run(['docker', 'info', '--format', '{{json .}}'], capture_output=True).stdout)
+    docker = json.loads(run(['docker', 'info', '--format', '{{json .}}'], stdout=subprocess.PIPE).stdout)
     if docker['OSType'] != 'linux' or ARCHITECTURES.get(docker['Architecture']) != native:
         raise ValueError('Docker must be native Linux with the same architecture as the client')
     parent = inspect(args.boot_artifact_image)
@@ -69,7 +70,7 @@ def build(args):
     if parent['Os'] != 'linux' or parent['Architecture'] != native[0]:
         raise ValueError('boot-artifact image architecture does not match the native client')
     # Listing is authoritative; a failed inspect must not be treated as permission to overwrite.
-    tags = run(['docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}}'], capture_output=True).stdout.splitlines()
+    tags = run(['docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}}'], stdout=subprocess.PIPE).stdout.splitlines()
     if args.image in tags:
         raise ValueError('output image tag already exists; select a new tag')
     run(['docker', 'run', '--rm', '--network', 'none', '--entrypoint', '/bin/sh', parent['Id'], '-ec',
@@ -98,7 +99,10 @@ def build(args):
             (output / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n')
             payload.rename(output / 'ubuntu.img')
         finally:
-            run(['docker', 'image', 'rm', base_tag], stdout=subprocess.DEVNULL)
+            try:
+                run(['docker', 'image', 'rm', base_tag], stdout=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError) as error:
+                print(f'Warning: could not remove temporary tag {base_tag}: {error}', file=sys.stderr)
     print(json.dumps(info, indent=2))
 
 
@@ -110,11 +114,11 @@ def main():
     parser.add_argument('--image', required=True, help='new local output image name:tag; existing tags are refused')
     parser.add_argument('--output', required=True, type=Path, help='new output directory under an existing parent; retains image and manifest')
     args = parser.parse_args()
-    if not re.fullmatch(r'[a-z0-9]+(?:[._-][a-z0-9]+)*:[A-Za-z0-9_][A-Za-z0-9_.-]*', args.image):
+    if not re.fullmatch(r'[a-z0-9]+(?:[._-][a-z0-9]+)*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}', args.image):
         parser.error('--image must be an explicit local name:tag without a registry, namespace or digest')
     try:
         build(args)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, f'build-os-artifact: {error}\n')
 
 

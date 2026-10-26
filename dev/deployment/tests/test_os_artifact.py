@@ -46,6 +46,10 @@ class OsArtifactTest(unittest.TestCase):
             tags = [c for c in calls if c[1] == 'tag']
             self.assertEqual(len(tags), 1)
             self.assertEqual(tags[0][2], 'sha256:parent')
+            build = next(c for c in calls if c[1] == 'build')
+            self.assertIn('BOOT_ARTIFACT_IMAGE=' + tags[0][3], build)
+            payload_check = next(c for c in calls if c[1] == 'run')
+            self.assertIn('sha256:parent', payload_check)
             self.assertEqual(calls[-1], ['docker', 'image', 'rm', tags[0][3]])
 
     def test_failed_build_removes_only_the_temporary_parent_tag(self):
@@ -59,16 +63,18 @@ class OsArtifactTest(unittest.TestCase):
                 result = ''
                 if command[1] == 'info': result = json.dumps({'OSType': 'linux', 'Architecture': 'aarch64'})
                 elif command[0] == 'curl': Path(command[command.index('--output') + 1]).write_bytes(PAYLOAD)
-                elif command[1] == 'build': raise subprocess.CalledProcessError(1, command)
+                elif command[1] == 'build': raise subprocess.CalledProcessError(42, command)
+                elif command[1:3] == ['image', 'rm']: raise subprocess.CalledProcessError(43, command)
                 return subprocess.CompletedProcess(command, 0, stdout=result)
-            with patch.object(OS.platform, 'system', return_value='Linux'), patch.object(OS.platform, 'machine', return_value='aarch64'), patch.object(OS, 'inspect', return_value=parent), patch.object(OS, 'run', side_effect=run), self.assertRaises(subprocess.CalledProcessError):
+            with patch.object(OS.platform, 'system', return_value='Linux'), patch.object(OS.platform, 'machine', return_value='aarch64'), patch.object(OS, 'inspect', return_value=parent), patch.object(OS, 'run', side_effect=run), self.assertRaises(subprocess.CalledProcessError) as failure:
                 OS.build(args)
+            self.assertEqual(failure.exception.returncode, 42)
             tag = next(c[-1] for c in calls if c[1] == 'tag')
             self.assertEqual(calls[-1], ['docker', 'image', 'rm', tag])
             self.assertEqual(list(args.output.iterdir()), [])
 
     def test_cli_rejects_nonlocal_output_names_before_contacting_docker(self):
-        for name in ('name', 'registry:5000/name:tag', 'namespace/name:tag', 'name@sha256:' + '0' * 64):
+        for name in ('name', 'registry:5000/name:tag', 'namespace/name:tag', 'name@sha256:' + '0' * 64, 'name:' + 'x' * 129):
             with self.subTest(name=name):
                 result = subprocess.run(['python3', str(ROOT / 'lab/build-os-artifact.py'), '--boot-artifact-image', 'boot:fixture', '--source-url', 'https://images.example/image', '--sha256', '0' * 64, '--image', name, '--output', '/unused'], capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 2)
@@ -88,12 +94,16 @@ class OsArtifactTest(unittest.TestCase):
             args = argparse.Namespace(output=Path(directory) / 'output', boot_artifact_image='boot:fixture', image='os:fixture')
             for arch, parent_tags, tags, message in [('amd64', ['boot:fixture'], '', 'architecture'),
                                                        ('arm64', ['boot:fixture'], 'os:fixture\n', 'already exists'),
-                                                       ('arm64', [], '', 'untagged')]:
+                                                       ('arm64', [], '', 'untagged'),
+                                                       ('arm64', ['boot:fixture'], '', 'missing payload')]:
                 with self.subTest(message=message):
                     def run(command, **kwargs):
                         if command[1] == 'info': result = {'OSType': 'linux', 'Architecture': 'aarch64'}
                         elif command[1:3] == ['image', 'inspect']: result = [{'Id': 'parent', 'Os': 'linux', 'Architecture': arch, 'RepoTags': parent_tags}]
                         elif command[1:3] == ['image', 'ls']: return subprocess.CompletedProcess(command, 0, stdout=tags)
+                        elif command[1] == 'run':
+                            self.assertIn('parent', command)
+                            raise ValueError('missing payload')
                         else: self.fail('unexpected mutation: ' + str(command))
                         return subprocess.CompletedProcess(command, 0, stdout=json.dumps(result))
                     with patch.object(OS.platform, 'system', return_value='Linux'), patch.object(OS.platform, 'machine', return_value='aarch64'), patch.object(OS, 'run', side_effect=run), self.assertRaisesRegex(ValueError, message): OS.build(args)
