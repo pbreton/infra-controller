@@ -33,6 +33,13 @@ class ImagerArtifactsTest(unittest.TestCase):
                 self.assertEqual((staged / 'mkosi.extra/etc/systemd/resolved.conf.d/90-nico-lab.conf').read_text(),
                                  '[Resolve]\nDNS=10.96.0.10\nDomains=~cluster.local\n')
 
+    def test_ipv6_profile_does_not_pin_an_ipv4_cluster_resolver(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            profile = IMAGER.stage_profile(ROOT, work, 'x86_64', ipv6_endpoints=True)
+            self.assertFalse((work / 'mkosi.profiles' / profile /
+                'mkosi.extra/etc/systemd/resolved.conf.d/90-nico-lab.conf').exists())
+
     def test_existing_output_is_rejected_before_staging(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

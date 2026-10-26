@@ -39,9 +39,10 @@ Do not remove the endpoint flag from a running lab: this chart does not support
 an in-place transition of its clients to a different DNS or service topology.
 
 Guests need `network.dhcpv6.defaultRoute: true` on their target or a separate
-route to the IPv6 Service CIDR. The lab-built Scout/imager still use internal
-`cluster.local` URLs and an IPv4 resolver for that domain. Exposing these
-compatibility names does not reconfigure those clients.
+route to the IPv6 Service CIDR. Build Scout and imager with `--ipv6-endpoints` and use the matching Tilt profile
+so boot clients use these names and DHCP-provided DNS. Default artifacts retain
+their internal `cluster.local` URLs and IPv4 resolver; changing the DNS release
+does not rebuild or reconfigure existing artifacts.
 
 See the [Tilt profile](../../dev/deployment/tilt/README.md#ipv6-provisioning-endpoints)
 for integration. IPv6 DNS and HTTP/TLS reachability are prerequisites; they do

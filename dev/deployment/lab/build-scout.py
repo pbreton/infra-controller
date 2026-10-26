@@ -43,7 +43,7 @@ def vm_config(config):
     )
 
 
-def stage_profiles(repo, work, package, architecture):
+def stage_profiles(repo, work, package, architecture, ipv6_endpoints=False):
     pxe = repo / "pxe"
     shutil.copy2(pxe / "mkosi.conf", work / "mkosi.conf")
     shutil.copytree(pxe / "mkosi.extra", work / "mkosi.extra", symlinks=True)
@@ -53,13 +53,14 @@ def stage_profiles(repo, work, package, architecture):
         config = destination / "mkosi.conf"
         config.write_text(vm_config(config.read_text()))
         extra = destination / "mkosi.extra"
-        # systemd-resolved otherwise reserves .local for multicast DNS. These
-        # VM images use the dedicated kind cluster's Service DNS in both stages.
-        resolved = extra / "etc/systemd/resolved.conf.d"
-        resolved.mkdir(parents=True, exist_ok=True)
-        (resolved / "90-nico-lab.conf").write_text(
-            "[Resolve]\nDNS=10.96.0.10\nDomains=~cluster.local\n"
-        )
+        # IPv6 endpoints use .forge aliases and the DHCP-provided resolver.
+        # The default profile still needs an explicit .local routing domain.
+        if not ipv6_endpoints:
+            resolved = extra / "etc/systemd/resolved.conf.d"
+            resolved.mkdir(parents=True, exist_ok=True)
+            (resolved / "90-nico-lab.conf").write_text(
+                "[Resolve]\nDNS=10.96.0.10\nDomains=~cluster.local\n"
+            )
         (extra / "opt/forge").mkdir(parents=True, exist_ok=True)
         shutil.copy2(pxe / "common_files/forge-scout-network.sh", extra / "opt/forge")
         if profile == f"scout-loader-{architecture}":
@@ -68,7 +69,8 @@ def stage_profiles(repo, work, package, architecture):
             if loader.count(legacy) != 1:
                 raise ValueError("Scout loader no longer has the expected rootfs fallback")
             (extra / "etc/rc.local").write_text(loader.replace(
-                legacy, 'http://nico-pxe.nico-system.svc.cluster.local/public/blobs/internal/'
+                legacy, ('http://carbide-static-pxe.forge:8080/public/blobs/internal/' if ipv6_endpoints
+                         else 'http://nico-pxe.nico-system.svc.cluster.local/public/blobs/internal/')
             ))
             (extra / "etc/rc.local").chmod(0o755)
         else:
@@ -111,6 +113,8 @@ def main():
         required=True,
         help="new or empty directory for Scout payloads and retained mkosi build workspace",
     )
+    parser.add_argument('--ipv6-endpoints', action='store_true',
+                        help='use the lab IPv6 DNS/PXE endpoints and DHCP-provided DNS')
     args = parser.parse_args()
     architecture = platform.machine()
     if architecture not in ('aarch64', 'x86_64'):
@@ -140,7 +144,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     work = output / "build"
     work.mkdir()
-    stage_profiles(REPO, work, package, architecture)
+    stage_profiles(REPO, work, package, architecture, args.ipv6_endpoints)
     built = work / "output"
     for profile in profiles(architecture):
         subprocess.run(
@@ -169,6 +173,7 @@ def main():
                 "scout_package_version": version,
                 "architecture": architecture,
                 "kernel_package": "linux-image-virtual",
+                "ipv6_endpoints": args.ipv6_endpoints,
                 "payload_sha256": {
                     name: sha256(payload / name)
                     for name in ("scout.efi", "scout.squashfs")

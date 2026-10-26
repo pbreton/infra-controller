@@ -151,8 +151,11 @@ class ScoutWiringTest(unittest.TestCase):
         self.assertEqual(env['enabled_resources'], ['nico-lab-dns'])
         self.assertEqual(calls[0]['resource_deps'], ['nico-api', 'nico-pxe'])
         pxe_calls, _ = self.profile(True, ipv6_endpoints=True)
+        env_values = pxe_calls[0]['values']['config']['extraEnvData']
+        self.assertEqual(env_values['CARBIDE_API_URL'], 'https://carbide-api.forge:1079')
+        self.assertEqual(env_values['CARBIDE_PXE_URL'], 'http://carbide-pxe.forge:8080')
         for component, settings, port in [('nico-api', {'global': values['global'], **env['nico_api_values']}, 1079),
-                                           ('nico-pxe', {**pxe_calls[0]['values'], 'global': values['global']}, 80)]:
+                                           ('nico-pxe', {**pxe_calls[0]['values'], 'global': values['global']}, 8080)]:
             with self.subTest(component=component):
                 settings.pop('global_values', None)
                 result = subprocess.run(

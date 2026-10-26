@@ -940,11 +940,11 @@ if bmc_lab:
             'externalService': {
                 'enabled': ipv6_endpoints, 'type': 'ClusterIP', 'externalTrafficPolicy': '',
                 'ipFamilyPolicy': 'SingleStack', 'ipFamilies': ['IPv6'],
-                'port': 80, 'alternatePort': 0, 'sharedIpAnnotation': '',
+                'port': 8080, 'alternatePort': 0, 'sharedIpAnnotation': '',
             },
             'config': {'extraEnvData': {
-                'CARBIDE_API_URL': 'https://nico-api.%s.svc.cluster.local:1079' % core_namespace,
-                'CARBIDE_PXE_URL': 'http://nico-pxe.%s.svc.cluster.local' % core_namespace,
+                'CARBIDE_API_URL': 'https://carbide-api.forge:1079' if ipv6_endpoints else 'https://nico-api.%s.svc.cluster.local:1079' % core_namespace,
+                'CARBIDE_PXE_URL': 'http://carbide-pxe.forge:8080' if ipv6_endpoints else 'http://nico-pxe.%s.svc.cluster.local' % core_namespace,
             }},
             'bootArtifactContainers': [{
                 'name': 'scout-artifacts', 'image': boot_artifact_image, 'imagePullPolicy': 'IfNotPresent',

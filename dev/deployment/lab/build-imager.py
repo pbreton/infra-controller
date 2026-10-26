@@ -15,7 +15,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 
 
-def stage_profile(repo, work, architecture):
+def stage_profile(repo, work, architecture, ipv6_endpoints=False):
     pxe = repo / 'pxe'
     profile = 'qcow-imager-aarch64' if architecture == 'aarch64' else 'qcow-imager'
     shutil.copy2(pxe / 'mkosi.conf', work / 'mkosi.conf')
@@ -25,16 +25,19 @@ def stage_profile(repo, work, architecture):
     extra = destination / 'mkosi.extra'
     (extra / 'opt/forge').mkdir(parents=True, exist_ok=True)
     shutil.copy2(pxe / 'common_files/disk_imaging.sh', extra / 'opt/forge')
-    # The kind Service domain ends in .local, which resolved otherwise treats as mDNS.
-    resolved = extra / 'etc/systemd/resolved.conf.d'
-    resolved.mkdir(parents=True, exist_ok=True)
-    (resolved / '90-nico-lab.conf').write_text('[Resolve]\nDNS=10.96.0.10\nDomains=~cluster.local\n')
+    # IPv6 endpoints use DHCP DNS; only the default profile needs .local routing.
+    if not ipv6_endpoints:
+        resolved = extra / 'etc/systemd/resolved.conf.d'
+        resolved.mkdir(parents=True, exist_ok=True)
+        (resolved / '90-nico-lab.conf').write_text('[Resolve]\nDNS=10.96.0.10\nDomains=~cluster.local\n')
     return profile
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True, help='new or empty output directory')
+    parser.add_argument('--ipv6-endpoints', action='store_true',
+                        help='use DHCP-provided DNS with the lab IPv6 provisioning endpoints')
     args = parser.parse_args()
     architecture = platform.machine()
     if platform.system() != 'Linux' or os.geteuid() != 0 or architecture not in ('aarch64', 'x86_64'):
@@ -47,7 +50,7 @@ def main():
         parser.error('--output must be new or empty; prior artifacts are never overwritten')
     work = output / 'build'
     work.mkdir(parents=True)
-    profile = stage_profile(REPO, work, architecture)
+    profile = stage_profile(REPO, work, architecture, args.ipv6_endpoints)
     subprocess.run([str(mkosi), '--profile', profile, f'--output-dir={work / "output"}',
                     f'--package-cache-directory={work / "package-cache"}', 'build'], cwd=work, check=True)
     source = work / 'output/qcow-imager.efi'
@@ -63,7 +66,7 @@ def main():
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(block)
     (output / 'build-info.json').write_text(json.dumps({
-        'architecture': architecture, 'profile': profile, 'payload_sha256': {image.name: digest.hexdigest()},
+        'architecture': architecture, 'profile': profile, 'ipv6_endpoints': args.ipv6_endpoints, 'payload_sha256': {image.name: digest.hexdigest()},
         'installer_sha256': hashlib.sha256((REPO / 'pxe/common_files/disk_imaging.sh').read_bytes()).hexdigest(),
     }, indent=2) + '\n')
     print(f'Imager payload: {image}')

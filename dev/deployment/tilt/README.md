@@ -773,7 +773,7 @@ The ordinary MAT workflow is unchanged.
 ### IPv6 provisioning endpoints
 
 Add `--ipv6-endpoints` alongside `--dhcpv6` to expose IPv6 companion Services
-for API port 1079 and PXE HTTP port 80 and to deploy the lab resolver. The flag
+for API port 1079 and PXE HTTP port 8080 and to deploy the lab resolver. The flag
 is false by default and requires the same BMC lab and dual-stack kind cluster
 as `--dhcpv6`. It leaves the internal Kubernetes Services in place.
 
@@ -781,10 +781,15 @@ The resolver's IPv6 ClusterIP is allocated by Kubernetes. Set
 `nico-dhcp.dhcp.v6DnsServers` to that address in `values.yaml` before provisioning
 guests, then explicitly trigger the manual `nico-dhcp` resource in Tilt. Set `network.dhcpv6.defaultRoute: true` on each
 target, or provide a separate route from the guest to the IPv6 Service CIDR.
-Configure the target's DHCPv6 relay separately. The flag only exposes endpoints;
-it does not change the lab's IPv4-oriented Scout/imager URLs or pinned
-`cluster.local` resolver, firmware boot, BMC management or installed guest
-configuration. Use the [lab DNS chart](../../../helm/nico-lab-dns/README.md) for its
+Configure the target's DHCPv6 relay separately. The profile supplies client-facing
+`https://carbide-api.forge:1079` and `http://carbide-pxe.forge:8080` URLs. Build
+both Scout and imager with their `--ipv6-endpoints` option before packaging the
+boot-artifact image; those artifacts use DHCP-provided DNS instead of the
+IPv4 cluster resolver. Set `nico-dhcp.dhcp.v6ProvisioningServer` to the IPv6
+PXE companion address so firmware receives the port-8080 boot URL.
+
+The flag does not change firmware boot order, BMC management addresses or
+installed guest configuration. Use the [lab DNS chart](../../../helm/nico-lab-dns/README.md) for its
 name-resolution and lifecycle contract.
 
 Keep the flag enabled for the lifetime of the dedicated lab cluster. Changing
