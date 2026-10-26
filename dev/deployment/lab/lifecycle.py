@@ -20,9 +20,9 @@ HERE = Path(__file__).resolve().parent
 ADMIN = HERE.parent / 'core-admin.sh'
 
 
-def run(command, timeout=90, env=None):
+def run(command, timeout=90, env=None, errors="strict"):
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
+                               stderr=subprocess.PIPE, text=True, errors=errors, env=env, start_new_session=True)
     try:
         output, error = process.communicate(timeout=timeout)
         if process.returncode:
@@ -92,15 +92,16 @@ class Lifecycle:
         return self.admin('--cloud-unsafe-op', 'Validate owned native lab lifecycle', *args)
 
     def kube(self, target, *args):
-        return run(['kubectl', '--context', self.state['context'], '-n', target['namespace'], *args])
+        return run(['kubectl', '--context', self.state['context'], '-n', target['namespace'], *args],
+                   errors='replace' if '/data/logs/console.log' in args else 'strict')
 
-    def verify_ownership(self):
+    def verify_ownership(self, targets=None):
         if self.state['version'] != 1 or not self.state['context'].startswith('kind-'):
             raise ValueError('unsupported journal version or non-kind context')
         cluster = json.loads(run(['kubectl', '--context', self.state['context'], 'get', 'namespace', 'kube-system', '-o', 'json']))['metadata']['uid']
         if cluster != self.state['cluster']:
             raise ValueError('cluster identity changed; refusing retained-state adoption')
-        for target in self.state['targets']:
+        for target in self.state['targets'] if targets is None else targets:
             deployment = json.loads(self.kube(target, 'get', 'deployment', target['release'], '-o', 'json'))
             if deployment['metadata']['labels'].get('app.kubernetes.io/name') != 'nico-bmc-target':
                 raise ValueError('selected deployment is not a native BMC target')
@@ -110,6 +111,22 @@ class Lifecycle:
             if target.get('inventory') and target['inventory'] != inventory:
                 raise ValueError('target identity or configuration changed since recording the run')
             target['inventory'] = inventory
+
+    def preflight_network(self):
+        if self.state['network'] != 'ipv4' and any(not t['inventory'].get('bridgeAddressV6') for t in self.state['targets']):
+            raise ValueError('IPv6 guest profile requires an IPv6 bridge on both targets')
+
+    def cleanup(self):
+        failures = []
+        for target in self.state['targets']:
+            try:
+                self.verify_ownership([target])
+                self.release(target)
+            except Exception as error:
+                failures.append(target['release'] + ': ' + str(error))
+        if failures:
+            self.diagnostics()
+            raise RuntimeError('cleanup incomplete: ' + '; '.join(failures))
 
     def wait(self, label, operation):
         deadline = time.monotonic() + self.state['timeout']
@@ -250,6 +267,7 @@ class Lifecycle:
 
     def exercise(self):
         self.verify_ownership()
+        self.preflight_network()
         # A retained journal is deliberately cleanup-only; do not replay allocations or adopt guests.
         for generation in range(1, self.state['cycles'] + 1):
             self.state['generation'] = generation
@@ -302,9 +320,7 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         state = json.loads((directory / 'state.json').read_text())
         lab = Lifecycle(directory, state)
-        lab.verify_ownership()
-        for target in state['targets']:
-            lab.release(target)
+        lab.cleanup()
         return
     if not args.context or not args.context.startswith('kind-') or not args.vpc or not args.os_image or len(args.target or []) != 2:
         parser.error('require --context kind-..., --vpc, --os-image and two --target RELEASE=MACHINE pairs')
@@ -329,12 +345,13 @@ def main():
     lab.checkpoint()
     try:
         lab.verify_ownership()
+        lab.preflight_network()
         for target in targets:
             if not lab.ready(target):
                 raise ValueError('both targets must start Ready with live Scout')
         run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'nico-lab-test', '-f', str(directory / 'id_ed25519')])
         lab.exercise()
-    except Exception:
+    except (Exception, KeyboardInterrupt):
         lab.diagnostics()
         raise
 

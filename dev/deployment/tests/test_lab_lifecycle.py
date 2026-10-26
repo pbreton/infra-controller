@@ -102,6 +102,31 @@ class LifecycleTest(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         LAB.selected_addresses(instance, 'ipv6-only', inventory)
 
+    def test_cleanup_attempts_the_peer_after_one_target_fails(self):
+        for boundary in ('ownership', 'release'):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as directory:
+                second = dict(self.target, release='two', machine='machine-two')
+                lab = LAB.Lifecycle(Path(directory), dict(self.state, targets=[self.target, second]))
+                lab.verify_ownership = Mock(side_effect=[ValueError('wrong target'), None] if boundary == 'ownership' else None)
+                lab.release = Mock(side_effect=[TimeoutError('still cleaning'), None] if boundary == 'release' else None)
+                lab.diagnostics = Mock()
+                with self.assertRaisesRegex(RuntimeError, 'cleanup incomplete'):
+                    lab.cleanup()
+                self.assertEqual(lab.verify_ownership.call_count, 2)
+                self.assertEqual(lab.release.call_args.args, (second,))
+                lab.diagnostics.assert_called_once()
+
+    def test_ipv6_preflight_rejects_missing_bridge_without_any_command(self):
+        target = dict(self.target, inventory={'bridgeAddress': '10.0.0.1/24'})
+        lab = LAB.Lifecycle(Path('/unused'), dict(self.state, targets=[target]))
+        with patch.object(LAB, 'run') as run, self.assertRaisesRegex(ValueError, 'IPv6 bridge'):
+            lab.preflight_network()
+        run.assert_not_called()
+
+    def test_console_preserves_readable_evidence_for_non_utf8_bytes(self):
+        output = LAB.run([__import__('sys').executable, '-c', 'import sys; sys.stdout.buffer.write(b"prefix\\xffsuffix")'], errors='replace')
+        self.assertEqual(output, 'prefix' + chr(0xfffd) + 'suffix')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -809,7 +809,7 @@ the [retained-state restart](../../../helm/nico-bmc-target/README.md#configurati
 Target readiness checks the runtime, not DHCP lease availability. Run the guest
 address and connectivity checks after this recovery.
 
-### Repeat the instance lifecycle
+## Repeat the instance lifecycle
 
 `lifecycle.py` operates on two explicitly selected, already admitted no-DPU lab
 machines. Deploy the stack and targets, register the native OS image with its
@@ -855,7 +855,8 @@ peer source addresses. IPv6-only guests must have no non-loopback IPv4 address o
 route and must fail an IPv4 Internet ping. Each guest is then rebooted through
 Core: its disk marker must persist and its boot ID must change while its peer's
 boot ID stays unchanged. Connectivity is checked again. The runner releases the
-first guest while checking its peer, then releases the second, waiting for Ready
+first guest and checks that its peer remains reachable with the same boot ID,
+then releases the second, waiting for Ready
 and live Scout after each release. A second cycle repeats allocation from these
 released machines. This does not rebuild the stack or prove a fresh-cluster run.
 
@@ -875,7 +876,8 @@ python3 dev/deployment/lab/lifecycle.py \
 ```
 
 Cleanup reads context and identities from the journal, revalidates target
-ownership, and rejects replaced clusters, targets or instances. Do not supply
+ownership, and rejects replaced clusters, targets or instances. It attempts each
+target independently, reports all failures, and returns nonzero if any remain. Do not supply
 `--context`, `--target`, `--vpc` or `--os-image` with `--release-only`. Other run
 settings are read from the journal. Repeating cleanup after successful release
 is harmless. Run directories support cleanup, not resuming an interrupted test;
