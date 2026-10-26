@@ -20,11 +20,17 @@ IMAGE_READY = 3
 
 
 def origin(value):
-    parsed = urllib.parse.urlsplit(value)
-    if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password
-            or parsed.path not in ('', '/') or parsed.query or parsed.fragment):
-        raise argparse.ArgumentTypeError('use an HTTP(S) origin without path, credentials, query or fragment')
-    return value.rstrip('/')
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        port = parsed.port
+        if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None
+                or parsed.password is not None or parsed.path not in ('', '/')
+                or '?' in value or '#' in value or any(c.isspace() for c in value)
+                or port == 0):
+            raise ValueError('invalid origin')
+    except ValueError as error:
+        raise argparse.ArgumentTypeError('use an HTTP(S) origin with a valid port and without path, credentials, query or fragment') from error
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, '', '', ''))
 
 
 def artifact(value):

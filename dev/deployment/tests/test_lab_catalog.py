@@ -102,6 +102,28 @@ class CatalogTests(unittest.TestCase):
                 lab.apply()
             lab.admin.assert_not_called()
 
+    def test_admin_wrapper_preserves_global_arguments_and_creation_logs(self):
+        lab = CAT.Catalog(self.directory, self.state)
+        with patch.object(CAT, 'run', return_value='[]') as command:
+            self.assertEqual(lab.admin('os-image', 'show', read=True), [])
+            self.assertEqual(command.call_args.args[0], ['bash', str(ROOT.parent / 'core-admin.sh'), '-f', 'json', 'os-image', 'show'])
+            lab.admin('vpc', 'create', '--org-id', 'lab-test', operation='vpc-create')
+            self.assertEqual(command.call_args.args[0], ['bash', str(ROOT.parent / 'core-admin.sh'), '--cloud-unsafe-op',
+                             'Initialize owned native lab catalog', 'vpc', 'create', '--org-id', 'lab-test'])
+            self.assertEqual(command.call_args.kwargs['log_path'], self.directory / 'vpc-create.log')
+            self.assertEqual(command.call_args.kwargs['env']['LOCAL_DEV_KUBE_CONTEXT'], 'kind-test')
+
+    def test_public_resume_options_and_non_kind_context_fail_before_journal_creation(self):
+        cases = [['--context', 'production', '--artifact-manifest', '/missing', '--pxe-origin', 'http://pxe']]
+        cases += [['--resume', flag, value] for flag, value in [('--context', 'kind-test'), ('--namespace', 'other'),
+                                                              ('--artifact-manifest', '/missing'), ('--pxe-origin', 'http://pxe')]]
+        for options in cases:
+            destination = self.directory / 'not-created'
+            with self.subTest(options=options), patch.object(sys, 'argv',
+                    ['catalog.py', '--state-dir', str(destination), *options]), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                CAT.main()
+            self.assertFalse(destination.exists())
+
     def test_manifest_and_origin_keep_image_path_and_credentials_out_of_catalog_inputs(self):
         manifest = dict(architecture='arm64', artifact_directory='aarch64', pxe_path='/public/blobs/internal/aarch64/ubuntu.img',
                         sha256='0' * 64, image_id='output', boot_artifact_image_id='parent')
@@ -111,6 +133,11 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(CAT.origin('http://[fd00::1]:8080/'), 'http://[fd00::1]:8080')
         for url in ('https://user:password@host', 'http://host/path', 'http://host?token=x'):
             with self.subTest(url=url), self.assertRaises(CAT.argparse.ArgumentTypeError): CAT.origin(url)
+
+    def test_origin_rejects_empty_delimiters_credentials_and_invalid_ports(self):
+        for value in ('http://pxe?', 'http://pxe/#', 'http://@pxe', 'http://pxe:abc', 'http://pxe:99999', 'http://pxe:0', 'http://pxe\n'):
+            with self.subTest(value=value), self.assertRaises(CAT.argparse.ArgumentTypeError): CAT.origin(value)
+        self.assertEqual(CAT.origin('http://[fd00::1]:8080/'), 'http://[fd00::1]:8080')
 
 
 if __name__ == '__main__':

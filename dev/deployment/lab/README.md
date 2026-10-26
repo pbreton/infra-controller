@@ -908,7 +908,7 @@ address and connectivity checks after this recovery.
 
 `lifecycle.py` operates on two explicitly selected, already admitted no-DPU lab
 machines. Deploy the stack and targets, register the native OS image with its
-SHA-256 digest, and create a flat VPC using the preceding instructions first.
+SHA-256 digest, and create a flat VPC with the [catalog helper](#owned-os-and-vpc-catalog) first.
 Both machines must be Ready with live Scout connections. The OS image must
 support the Ubuntu/networkd cloud-init fixture; the root disk must be `/dev/vda`.
 For IPv6 guests, deploy the managed DHCPv6 relay, resolver and routes first.
@@ -1071,14 +1071,15 @@ python3 dev/deployment/lab/catalog.py --state-dir /tmp/nico-lab-catalog --resume
 ```
 
 The IPv6 boot profile uses the origin above. For the default boot profile, use
-`http://nico-pxe.nico-system.svc.cluster.local`. The origin must be reachable by
+`http://nico-pxe.nico-system.svc.cluster.local` for the default Core namespace;
+substitute the selected namespace when using `--namespace`. The origin must be reachable by
 the guests; this helper does not upload or serve the image or test its download.
 The manifest comes from `build-os-artifact.py`; its SHA256 and native PXE path
 become the catalog entry. The kind cluster must contain one node matching the
 manifest's architecture. Core and its admin-client credentials must already be
 ready; [the Core client wrapper](../core-admin.sh) supplies that connection.
 
-Python 3.9+ and kubectl are required. For a new catalog, `--context` must name a
+Python 3.9+, Bash, jq and kubectl are required. For a new catalog, `--context` must name a
 kind context; `--artifact-manifest`, `--pxe-origin` and `--state-dir` are required.
 `--namespace` optionally selects the Core namespace, default `nico-system`.
 `--pxe-origin` accepts HTTP or HTTPS with an optional port and trailing slash,
@@ -1105,8 +1106,12 @@ Core generates VPC IDs and does not treat the name as an idempotency key. After
 an interrupted create, resume adopts only a uniquely matching visible result.
 If none is visible, it stops with an unknown-outcome diagnostic and never repeats
 the create. Inspect the retained log and Core, then resume after the result is
-known. A deliberately removed resource is also not silently recreated. Keep the
-journal; deleting it and rerunning can create duplicates.
+visible. If creation is confirmed absent, this journal remains stopped: start a
+new catalog directory, preferably after recreating the disposable cluster. Any
+resources already created by the old journal remain in that cluster until its
+explicit removal. A deliberately removed resource is not silently recreated.
+Keep the old journal as evidence; rerunning with a new directory in the same
+cluster creates a separate catalog.
 
 The catalog and VPC live for the lifetime of this dedicated disposable cluster.
 The helper provides no remote deletion operation: release all owned instances
