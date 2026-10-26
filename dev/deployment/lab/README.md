@@ -865,7 +865,9 @@ keys, allocated identities, network observations and an atomic `state.json`
 journal. Treat it as private; do not commit or share it. Only one process may use
 a journal at a time. Allocation intent is saved before the API call, so a lost
 response can be reconciled without adopting an unrelated instance. A failure
-retains the journal and collects target consoles and machine state; it never
+retains the journal and allocation output, and collects target consoles and
+machine state in a new diagnostic directory without overwriting prior evidence.
+Diagnostic collection skips targets whose ownership cannot be verified; it never
 force-clears Core state or silently retries allocation.
 
 After a failed run, release only its recorded instances with:

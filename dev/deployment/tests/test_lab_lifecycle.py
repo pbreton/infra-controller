@@ -127,6 +127,46 @@ class LifecycleTest(unittest.TestCase):
         output = LAB.run([__import__('sys').executable, '-c', 'import sys; sys.stdout.buffer.write(b"prefix\\xffsuffix")'], errors='replace')
         self.assertEqual(output, 'prefix' + chr(0xfffd) + 'suffix')
 
+    def test_cleanup_of_a_completed_journal_does_not_require_live_targets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = dict(self.target)
+            target.pop('intent')
+            lab = LAB.Lifecycle(Path(directory), dict(self.state, targets=[target]))
+            lab.verify_ownership = Mock(side_effect=ValueError('gone'))
+            lab.release = Mock()
+            lab.cleanup()
+            lab.verify_ownership.assert_not_called()
+            lab.release.assert_not_called()
+
+    def test_failed_allocation_preserves_the_cli_explanation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = dict(self.target, inventory={'mac': '02:00:00:03:00:02'})
+            lab = LAB.Lifecycle(Path(directory), dict(self.state, targets=[target], run='lab-test', os_image=INSTANCE, vpc=INSTANCE))
+            lab.wait = Mock(return_value=True)
+            lab.kube = Mock(return_value='')
+            lab.mutation = Mock(return_value='No available machines')
+            lab.instance = Mock(side_effect=RuntimeError('Unknown Instance ID'))
+            with patch.object(LAB, 'run', return_value='{}'), self.assertRaises(RuntimeError):
+                lab.allocate(target)
+            self.assertEqual((Path(directory) / 'allocate-1-one.log').read_text(), 'No available machines')
+
+    def test_diagnostics_preserve_prior_snapshots_and_skip_replaced_targets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lab = LAB.Lifecycle(Path(directory), self.state)
+            lab.verify_ownership = Mock()
+            lab.kube = Mock(return_value='first console')
+            lab.admin = Mock(return_value={'state': 'first'})
+            lab.diagnostics()
+            first = next(Path(directory).glob('diagnostics-*'))
+            lab.verify_ownership.side_effect = ValueError('replaced')
+            lab.kube.reset_mock()
+            lab.admin.reset_mock()
+            lab.diagnostics()
+            self.assertEqual(len(list(Path(directory).glob('diagnostics-*'))), 2)
+            self.assertEqual((first / 'one-console.log').read_text(), 'first console')
+            lab.kube.assert_not_called()
+            lab.admin.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

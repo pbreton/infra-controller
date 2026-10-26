@@ -119,6 +119,8 @@ class Lifecycle:
     def cleanup(self):
         failures = []
         for target in self.state['targets']:
+            if not target.get('intent'):
+                continue
             try:
                 self.verify_ownership([target])
                 self.release(target)
@@ -173,8 +175,9 @@ class Lifecycle:
         config = json.loads(run([sys.executable, str(HERE / 'guest-config.py'), '--os-image-id', self.state['os_image'],
                                 '--mac', target['inventory']['mac'], '--public-key', str(self.directory / 'id_ed25519.pub'),
                                 '--generation', target['intent'], '--network', self.state['network']]))
-        self.mutation('instance', 'allocate', '--prefix-name', target['intent'], '--machine-id', target['machine'],
+        output = self.mutation('instance', 'allocate', '--prefix-name', target['intent'], '--machine-id', target['machine'],
                       '--flat-vpc-id', self.state['vpc'], '--os', json.dumps(config))
+        (self.directory / f'allocate-{self.state["generation"]}-{target["release"]}.log').write_text(output)
         current = self.instance(target)
         target['instance'] = current['id']
         target['addresses'] = selected_addresses(current, self.state['network'], target['inventory'])
@@ -257,11 +260,14 @@ class Lifecycle:
         self.checkpoint()
 
     def diagnostics(self):
+        directory = self.directory / ('diagnostics-' + uuid.uuid4().hex)
+        directory.mkdir()
         for target in self.state['targets']:
             try:
+                self.verify_ownership([target])
                 output = self.kube(target, 'exec', 'deployment/' + target['release'], '--', 'cat', '/data/logs/console.log')
-                (self.directory / (target['release'] + '-console.log')).write_text(output)
-                save(self.directory / (target['release'] + '-machine.json'), self.admin('machine', 'show', target['machine'], json_output=True))
+                (directory / (target['release'] + '-console.log')).write_text(output)
+                save(directory / (target['release'] + '-machine.json'), self.admin('machine', 'show', target['machine'], json_output=True))
             except Exception as error:
                 print('Diagnostic collection failed: ' + str(error), file=sys.stderr)
 
