@@ -53,7 +53,7 @@ def verify_image(path, expected):
         raise ValueError('OS image SHA256 mismatch; no image was built')
     with path.open('rb') as stream:
         if stream.read(4) != b'QFI\xfb':
-            raise ValueError('the native disk imager requires a qcow2 source')
+            raise ValueError('this native lab fixture requires a qcow2 source')
 
 
 def build(args):
@@ -64,6 +64,8 @@ def build(args):
     if docker['OSType'] != 'linux' or ARCHITECTURES.get(docker['Architecture']) != native:
         raise ValueError('Docker must be native Linux with the same architecture as the client')
     parent = inspect(args.boot_artifact_image)
+    if not parent.get('RepoTags'):
+        raise ValueError('boot-artifact input must retain a local tag; untagged images are not adopted')
     if parent['Os'] != 'linux' or parent['Architecture'] != native[0]:
         raise ValueError('boot-artifact image architecture does not match the native client')
     # Listing is authoritative; a failed inspect must not be treated as permission to overwrite.

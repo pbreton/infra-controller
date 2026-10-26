@@ -633,7 +633,7 @@ image, extend a locally built Scout/imager bundle:
 
 ```bash
 python3 dev/deployment/lab/build-os-artifact.py \
-  --boot-artifact-image nico-boot-artifacts:dev \
+  --boot-artifact-image nico-boot-artifacts:imager \
   --source-url "$OS_IMAGE_URL" --sha256 "$OS_IMAGE_SHA256" \
   --image nico-lab-os:validation --output /tmp/nico-os-validation
 ```
@@ -642,7 +642,9 @@ All five options are required and may appear in any order. Run on a native Linux
 or macOS ARM64/AMD64 client whose selected Linux Docker daemon has the same
 architecture. Python 3.9+, curl, Docker with local-image build support, and an
 existing parent bundle containing `ipxe.efi`, `scout.efi`, `scout.squashfs` and
-`qcow-imager.efi` are required. The command does not pull or rebuild the parent.
+`qcow-imager.efi` are required. The command does not pull or rebuild the parent. The parent must retain a local
+tag; dangling images without tags are rejected so temporary-tag cleanup cannot
+remove the input image.
 The caller supplies an architecture-correct Ubuntu image with cloud-init and
 systemd-networkd; a digest and qcow2 header cannot prove its operating-system or
 CPU compatibility.
@@ -667,8 +669,10 @@ Use a new output directory and tag for a fresh retry after inspection.
 
 Load the resulting bundle into the selected kind cluster and use that image as
 Tilt's `--boot-artifact-image`. The existing PXE init step copies its contents;
-register the manifest's PXE URL and SHA256 with `os-image create` as described
-above, using the endpoint and port for the chosen provisioning profile. This
+append the manifest's `pxe_path` to the default origin
+`http://nico-pxe.nico-system.svc.cluster.local` or, for `--ipv6-boot`,
+`http://carbide-pxe.forge:8080`. Register that URL and the manifest's `sha256`
+with `os-image create` as described above. This
 step packages bytes only; it creates no catalog entry, VPC or instance.
 
 ## Two-instance IPv4 connectivity

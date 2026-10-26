@@ -29,7 +29,7 @@ class OsArtifactTest(unittest.TestCase):
                 result = ''
                 if command[1] == 'info': result = json.dumps({'OSType': 'linux', 'Architecture': 'aarch64'})
                 elif command[1:3] == ['image', 'inspect']:
-                    result = json.dumps([{'Id': 'sha256:parent' if command[3] == 'boot:fixture' else 'sha256:built', 'Os': 'linux', 'Architecture': 'arm64'}])
+                    result = json.dumps([{'Id': 'sha256:parent' if command[3] == 'boot:fixture' else 'sha256:built', 'Os': 'linux', 'Architecture': 'arm64', 'RepoTags': ['boot:fixture']}])
                 elif command[0] == 'curl': Path(command[command.index('--output') + 1]).write_bytes(PAYLOAD)
                 elif command[1] == 'build':
                     self.assertEqual(sorted(p.name for p in Path(command[-1]).iterdir()), ['ubuntu.img'])
@@ -48,6 +48,32 @@ class OsArtifactTest(unittest.TestCase):
             self.assertEqual(tags[0][2], 'sha256:parent')
             self.assertEqual(calls[-1], ['docker', 'image', 'rm', tags[0][3]])
 
+    def test_failed_build_removes_only_the_temporary_parent_tag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = argparse.Namespace(output=Path(directory) / 'output', boot_artifact_image='boot:fixture',
+                                      image='os:fixture', source_url='https://images.example/image', sha256=hashlib.sha256(PAYLOAD).hexdigest())
+            parent = {'Id': 'sha256:parent', 'Os': 'linux', 'Architecture': 'arm64', 'RepoTags': ['boot:fixture']}
+            calls = []
+            def run(command, **kwargs):
+                calls.append(command)
+                result = ''
+                if command[1] == 'info': result = json.dumps({'OSType': 'linux', 'Architecture': 'aarch64'})
+                elif command[0] == 'curl': Path(command[command.index('--output') + 1]).write_bytes(PAYLOAD)
+                elif command[1] == 'build': raise subprocess.CalledProcessError(1, command)
+                return subprocess.CompletedProcess(command, 0, stdout=result)
+            with patch.object(OS.platform, 'system', return_value='Linux'), patch.object(OS.platform, 'machine', return_value='aarch64'), patch.object(OS, 'inspect', return_value=parent), patch.object(OS, 'run', side_effect=run), self.assertRaises(subprocess.CalledProcessError):
+                OS.build(args)
+            tag = next(c[-1] for c in calls if c[1] == 'tag')
+            self.assertEqual(calls[-1], ['docker', 'image', 'rm', tag])
+            self.assertEqual(list(args.output.iterdir()), [])
+
+    def test_cli_rejects_nonlocal_output_names_before_contacting_docker(self):
+        for name in ('name', 'registry:5000/name:tag', 'namespace/name:tag', 'name@sha256:' + '0' * 64):
+            with self.subTest(name=name):
+                result = subprocess.run(['python3', str(ROOT / 'lab/build-os-artifact.py'), '--boot-artifact-image', 'boot:fixture', '--source-url', 'https://images.example/image', '--sha256', '0' * 64, '--image', name, '--output', '/unused'], capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn('explicit local name:tag', result.stderr)
+
     def test_untrusted_or_wrong_format_payload_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             image = Path(directory) / 'image'
@@ -64,7 +90,7 @@ class OsArtifactTest(unittest.TestCase):
                 with self.subTest(message=message):
                     def run(command, **kwargs):
                         if command[1] == 'info': result = {'OSType': 'linux', 'Architecture': 'aarch64'}
-                        elif command[1:3] == ['image', 'inspect']: result = [{'Id': 'parent', 'Os': 'linux', 'Architecture': arch}]
+                        elif command[1:3] == ['image', 'inspect']: result = [{'Id': 'parent', 'Os': 'linux', 'Architecture': arch, 'RepoTags': ['boot:fixture']}]
                         elif command[1:3] == ['image', 'ls']: return subprocess.CompletedProcess(command, 0, stdout=tags)
                         else: self.fail('unexpected mutation: ' + str(command))
                         return subprocess.CompletedProcess(command, 0, stdout=json.dumps(result))
