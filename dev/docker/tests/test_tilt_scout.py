@@ -20,7 +20,7 @@ TILT = ROOT / 'dev/deployment/tilt/Tiltfile'
 
 
 class ScoutWiringTest(unittest.TestCase):
-    def profile(self, bmc, arch='aarch64'):
+    def profile(self, bmc, arch='aarch64', ipv6_endpoints=False):
         tree = ast.parse(TILT.read_text())
         calls = []
         values = yaml.safe_load((TILT.parent / 'values.yaml').read_text())
@@ -28,7 +28,7 @@ class ScoutWiringTest(unittest.TestCase):
                     and isinstance(n.test, ast.Name) and n.test.id == 'bmc_lab'
                     and any(isinstance(x, ast.Call) and getattr(x.func, 'id', '') == 'helm_chart'
                             for x in ast.walk(n))]
-        env = dict(bmc_lab=bmc, nico_api_values=values['nico-api'], all_values=values,
+        env = dict(bmc_lab=bmc, ipv6_endpoints=ipv6_endpoints, nico_api_values=values['nico-api'], all_values=values,
                    core_global=values['global'], core_namespace='nico-system',
                    core_charts=str(ROOT / 'helm/charts'), tilt_dir=str(TILT.parent), os=os,
                    read_file=lambda p: Path(p).read_text(), compiler_arch=arch,
@@ -137,6 +137,46 @@ class ScoutWiringTest(unittest.TestCase):
         self.assertEqual(kea['server-id']['identifier'], '020000001234')
         self.assertEqual([kea[k] for k in ('preferred-lifetime', 'valid-lifetime', 'renew-timer', 'rebind-timer')],
                          [120, 180, 30, 60])
+
+    def test_ipv6_endpoints_render_existing_service_contracts_and_enable_dns(self):
+        tree = ast.parse(TILT.read_text())
+        nodes = [n for n in tree.body if isinstance(n, ast.If)
+                 and isinstance(n.test, ast.Name) and n.test.id == 'ipv6_endpoints']
+        values = yaml.safe_load((TILT.parent / 'values.yaml').read_text())
+        calls = []
+        env = dict(ipv6_endpoints=True, nico_api_values=values['nico-api'],
+                   core_namespace='nico-system', repo_root=str(ROOT), os=os,
+                   helm_chart=lambda **kw: calls.append(kw), enabled_resources=[])
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), 'Tiltfile', 'exec'), env)
+        self.assertEqual(env['enabled_resources'], ['nico-lab-dns'])
+        self.assertEqual(calls[0]['resource_deps'], ['nico-api', 'nico-pxe'])
+        pxe_calls, _ = self.profile(True, ipv6_endpoints=True)
+        for component, settings, port in [('nico-api', {'global': values['global'], **env['nico_api_values']}, 1079),
+                                           ('nico-pxe', {**pxe_calls[0]['values'], 'global': values['global']}, 80)]:
+            with self.subTest(component=component):
+                settings.pop('global_values', None)
+                result = subprocess.run(
+                    ['helm', 'template', component, str(ROOT / 'helm/charts' / component),
+                     '--namespace', 'nico-system', '--values', '-', '--show-only', 'templates/external-service.yaml'],
+                    input=yaml.safe_dump(settings), capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                resources = list(yaml.safe_load_all(result.stdout))
+                self.assertEqual(len(resources), 1)
+                service = resources[0]['spec']
+                self.assertEqual(service['type'], 'ClusterIP')
+                self.assertEqual(service['ipFamilies'], ['IPv6'])
+                self.assertEqual(service['ports'][0]['port'], port)
+                self.assertNotIn('externalTrafficPolicy', service)
+
+    def test_ipv6_endpoints_require_managed_dhcpv6(self):
+        tree = ast.parse(TILT.read_text())
+        guards = [n for n in tree.body if isinstance(n, ast.If) and isinstance(n.test, ast.BoolOp)
+                  and any(isinstance(x, ast.Name) and x.id == 'ipv6_endpoints' for x in ast.walk(n.test))]
+        def fail(message):
+            raise ValueError(message)
+        with self.assertRaisesRegex(ValueError, 'requires --dhcpv6'):
+            exec(compile(ast.Module(body=guards, type_ignores=[]), 'Tiltfile', 'exec'),
+                 dict(ipv6_endpoints=True, dhcpv6=False, fail=fail))
 
     def test_bmc_mode_does_not_enable_mat_or_its_readiness_resource(self):
         tree = ast.parse(TILT.read_text())

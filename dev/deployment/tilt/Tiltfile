@@ -38,12 +38,16 @@ config.define_bool('observability')
 config.define_bool('persistent-vault')
 config.define_bool('bmc-lab')
 config.define_bool('dhcpv6')
+config.define_bool('ipv6-endpoints')
 config.define_string('boot-artifact-image')
 options = config.parse()
 persistent_vault = options.get('persistent-vault', False)
 bmc_lab = options.get('bmc-lab', False)
 boot_artifact_image = options.get('boot-artifact-image', '')
 dhcpv6 = options.get('dhcpv6', False)
+ipv6_endpoints = options.get('ipv6-endpoints', False)
+if ipv6_endpoints and not dhcpv6:
+    fail('--ipv6-endpoints requires --dhcpv6')
 if dhcpv6:
     if not bmc_lab:
         fail('--dhcpv6 requires --bmc-lab')
@@ -901,6 +905,18 @@ rest_image(
 core_global = all_values['global']
 nico_api_values = component_values(core_global, all_values['nico-api'])
 nico_api_dependencies = ['local-site-mode', 'nico-core-prereqs', 'nico-postgres', 'vault-admin-ca']
+if ipv6_endpoints:
+    nico_api_values['externalService'] = {
+        'enabled': True, 'type': 'ClusterIP', 'externalTrafficPolicy': '',
+        'ipFamilyPolicy': 'SingleStack', 'ipFamilies': ['IPv6'], 'port': 1079,
+    }
+    helm_chart(
+        name='nico-lab-dns',
+        chart=os.path.join(repo_root, 'helm/nico-lab-dns'),
+        namespace=core_namespace,
+        values={},
+        resource_deps=['nico-api', 'nico-pxe'],
+    )
 if bmc_lab:
     # A separate site configuration keeps simulated hardware shortcuts out of
     # real Scout admission. This mode is for a fresh, dedicated kind cluster.
@@ -921,6 +937,11 @@ if bmc_lab:
         values=component_values(core_global, {
             'legacyAlias': {'enabled': False},
             'service': {'clusterIP': '10.96.0.30', 'port': 8080, 'bootPort': 80},
+            'externalService': {
+                'enabled': ipv6_endpoints, 'type': 'ClusterIP', 'externalTrafficPolicy': '',
+                'ipFamilyPolicy': 'SingleStack', 'ipFamilies': ['IPv6'],
+                'port': 80, 'alternatePort': 0, 'sharedIpAnnotation': '',
+            },
             'config': {'extraEnvData': {
                 'CARBIDE_API_URL': 'https://nico-api.%s.svc.cluster.local:1079' % core_namespace,
                 'CARBIDE_PXE_URL': 'http://nico-pxe.%s.svc.cluster.local' % core_namespace,
@@ -1206,6 +1227,8 @@ if bmc_lab:
     enabled_resources = [name for name in enabled_resources if name not in [
         'stack-ready', 'nico-machine-a-tron', 'nico-ssh-console-rs',
     ]] + ['nico-pxe']
+if ipv6_endpoints:
+    enabled_resources.append('nico-lab-dns')
 if persistent_vault:
     enabled_resources.append('vault-bootstrap')
 if enable_observability:

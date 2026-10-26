@@ -769,3 +769,17 @@ IPv6-only guests. These values use the same contract as the
 
 Configure the target relay and managed RA through shared chart values; see [managed DHCPv6 guests](../lab/README.md#managed-dhcpv6-guests).
 The ordinary MAT workflow is unchanged.
+
+### IPv6 provisioning endpoints
+
+Add `--ipv6-endpoints` alongside `--dhcpv6` to expose IPv6 companion Services
+for API port 1079 and PXE HTTP port 80 and to deploy the lab resolver. The flag
+is false by default and requires the same BMC lab and dual-stack kind cluster
+as `--dhcpv6`. It leaves the internal Kubernetes Services in place.
+
+The resolver's IPv6 ClusterIP is allocated by Kubernetes. Set
+`nico-dhcp.dhcp.v6DnsServers` to that address in `values.yaml` before provisioning
+guests, then reconcile Tilt. Configure the target's DHCPv6 relay separately.
+The flag alone does not switch firmware, BMC management or installed guests
+to IPv6. Use the [lab DNS chart](../../../helm/nico-lab-dns/README.md) for its
+name-resolution and lifecycle contract.
