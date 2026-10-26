@@ -69,7 +69,12 @@ defaults to `dev/docker/kea.version`. Both architectures install the hook at
 `/usr/lib/kea/hooks/libdhcp.so`; configure that path when deploying the image
 outside Tilt. Building the DHCPv6 binary does not enable IPv6 in a deployment.
 The DHCP image also includes `iproute2` and `curl` for the chart's IPv6 address
-selection and startup/readiness checks.
+selection and startup/readiness checks. If the selected build image supplies
+`/opt/kea/kea-common.deb`, the DHCP runtime installs that package after checking
+its package name, pinned Kea version and native architecture. An invalid supplied
+package fails the build; absence retains the distribution library. See the
+[lease-handoff dependency](../../dev/deployment/tilt/README.md#dhcpv6-lease-handoff-build-dependency)
+for IPv6 lifecycle validation.
 
 After building the DHCP image, check its packaged tools and hook loading:
 
@@ -77,8 +82,12 @@ After building the DHCP image, check its packaged tools and hook loading:
 dev/docker/tests/smoke_dhcp_image.sh nico-dev-dhcp:latest
 ```
 
-The script requires exactly one image reference, available in the selected Docker
-daemon; use the value of `DEV_IMAGE` if overridden. Missing or extra arguments
+The script requires an image reference available in the selected Docker daemon;
+use the value of `DEV_IMAGE` if overridden. An optional second argument names a
+local `kea-common.deb` file. It is mounted read-only and must match the installed
+package name, version and native architecture; every packaged `libkea*.so*`
+regular file must match the runtime bytes. A missing file or mismatch fails.
+Omitting the package skips those comparisons. Zero or more than two arguments
 print usage and exit with status 2. It runs a temporary container with
 `--network none`, enables IPv6 loopback inside that container's network namespace,
 checks `ip`, `ss` and `curl`, and starts each real Kea server with the NICo hook.

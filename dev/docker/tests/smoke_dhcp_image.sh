@@ -16,7 +16,7 @@ if [[ $# == 2 ]]; then
     package_mount=(--mount "type=bind,src=$package_path,dst=/tmp/expected-kea.deb,readonly")
 fi
 
-docker run --rm --network none "${package_mount[@]}" \
+docker run --rm --network none ${package_mount[@]+"${package_mount[@]}"} \
     --sysctl net.ipv6.conf.all.disable_ipv6=0 \
     --sysctl net.ipv6.conf.default.disable_ipv6=0 \
     --entrypoint sh -i "$1" -eu <<'CONTAINER'

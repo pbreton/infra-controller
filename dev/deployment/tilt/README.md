@@ -827,7 +827,7 @@ to match and compares every packaged `libkea*.so*` regular file with the runtime
 copy. It mounts the package read-only into a disposable container with networking
 disabled. This packaging check does not replace the real instance lifecycle.
 
-## IPv6 boot profile
+### IPv6 boot profile
 
 For a fresh lab dedicated to IPv6 provisioning, also select `--ipv6-boot`.
 The registered OS image URL must also be reachable over IPv6 by the imager.
