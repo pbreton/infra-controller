@@ -340,8 +340,35 @@ then stops libvirt. Saving is best-effort and bounded to 150 seconds; a timeout
 or storage failure can lose guest memory even during graceful shutdown. The
 boot and retention checks use 4 GiB guests. Larger guests need enough storage
 throughput to save within that deadline. The replacement leaves the guest off; Redfish `On` restores
-saved state. Autostart is rejected. Forced termination can lose guest memory and
-unflushed writes; retained disks are not a backup. A missing initialized disk,
+saved state. Autostart is rejected. For a Core-managed target, use its recorded
+machine ID and the matching lab context to resume the saved guest. Core uses the
+retained, rotated BMC credential:
+
+```bash
+export LOCAL_DEV_KUBE_CONTEXT=kind-your-lab
+export LOCAL_DEV_NAMESPACE=nico-system
+bash dev/deployment/core-admin.sh --cloud-unsafe-op 'Resume owned lab target' \
+  bmc-machine admin-power-control --machine MACHINE_ID --action on
+```
+
+Run these commands from the repository root. Replace `kind-your-lab` and
+`MACHINE_ID` with the existing lab context and target ID; set
+`LOCAL_DEV_NAMESPACE` to the Core namespace if it differs from `nico-system`.
+If the guest was running an installed instance, resume that instance or use the
+[recorded-instance cleanup](../../dev/deployment/lab/README.md#repeat-the-instance-lifecycle)
+before starting a new lifecycle run. A released target must be `Ready` with a
+successful live Scout ping before the runner allocates instances:
+
+```bash
+bash dev/deployment/core-admin.sh scout-stream ping MACHINE_ID
+```
+
+The ping applies to Scout, not an installed tenant OS. A healthy runtime pod alone
+does not establish guest readiness. A standalone target has no Core machine ID
+and uses Redfish `On` with its configured BMC credential.
+
+Forced termination can lose guest memory and unflushed writes; retained disks
+are not a backup. A missing initialized disk,
 firmware file, domain or BMC state fails startup and requires restoring the data.
 
 ## Huge-page lifecycle
