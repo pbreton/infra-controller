@@ -9,3 +9,7 @@
 !x86_64/scout.squashfs
 !aarch64/qcow-imager.efi
 !x86_64/qcow-imager.efi
+!aarch64/scout.network-profile
+!aarch64/qcow-imager.network-profile
+!x86_64/scout.network-profile
+!x86_64/qcow-imager.network-profile

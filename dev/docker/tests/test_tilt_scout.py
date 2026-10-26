@@ -201,6 +201,13 @@ class ScoutWiringTest(unittest.TestCase):
                 if not success:
                     self.assertIn('boot artifact network profile mismatch', result.stderr)
 
+    def test_packaging_retains_both_boot_profile_markers(self):
+        rules = (ROOT / 'dev/deployment/lab/Dockerfile.boot-artifacts.dockerignore').read_text().splitlines()
+        for arch in ('aarch64', 'x86_64'):
+            for name in ('scout', 'qcow-imager'):
+                with self.subTest(architecture=arch, payload=name):
+                    self.assertIn('!' + arch + '/' + name + '.network-profile', rules)
+
     def test_ipv6_boot_is_explicit_and_requires_companion_endpoints(self):
         calls, _ = self.profile(True, ipv6_endpoints=True, ipv6_boot=True)
         values = calls[0]['values']

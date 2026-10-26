@@ -242,6 +242,7 @@ cp "/tmp/nico-scout-artifacts/ipxe/$(uname -m)/ipxe.efi" \
   "/tmp/nico-boot-image/$(uname -m)/"
 cp "/tmp/nico-scout-artifacts/boot/$(uname -m)/scout.efi" \
   "/tmp/nico-scout-artifacts/boot/$(uname -m)/scout.squashfs" \
+  "/tmp/nico-scout-artifacts/boot/$(uname -m)/scout.network-profile" \
   "/tmp/nico-boot-image/$(uname -m)/"
 docker build -f dev/deployment/lab/Dockerfile.boot-artifacts \
   -t nico-boot-artifacts:local /tmp/nico-boot-image
@@ -377,6 +378,7 @@ docker run --rm --privileged \
   --workdir /src nico-scout-builder:local \
   python3 dev/deployment/lab/build-imager.py --output /state/imager
 cp "/tmp/nico-scout-artifacts/imager/$(uname -m)/qcow-imager.efi" \
+  "/tmp/nico-scout-artifacts/imager/$(uname -m)/qcow-imager.network-profile" \
   "/tmp/nico-boot-image/$(uname -m)/"
 docker build -f dev/deployment/lab/Dockerfile.boot-artifacts \
   -t nico-boot-artifacts:imager /tmp/nico-boot-image
