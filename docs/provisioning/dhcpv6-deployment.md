@@ -132,10 +132,15 @@ lease timing. A changed DHCPv6 configuration triggers its existing pod rollout.
 Clients with an existing lease keep the previously supplied timers until they
 receive an updated lease; changing the chart does not force an immediate renewal.
 Lease expiry also reaches Core through the DHCP hook. When Core's
-`dhcp_lease_expiry_handling` setting is enabled, expiry can remove the matching
-DHCP-assigned machine-interface address and refresh its DNS records. That
-setting defaults to disabled; these Helm values do not enable it. Account for
-this interaction before shortening leases, especially for powered-off hosts.
+`dhcp_lease_expiry_handling` setting in the site TOML
+(`nico-api.siteConfig.nicoApiSiteConfig`) is enabled, expiry can remove the
+matching DHCP-assigned machine-interface address and refresh its DNS records.
+The hook skips this notification when it cannot identify the client's MAC.
+The setting defaults to disabled; these Helm values do not enable it. Losing a
+BMC address can invalidate its recorded topology, and the controller does not
+support all transitions involving an addressless interface. Leave expiry
+handling disabled unless the site's lifecycle supports these transitions;
+shorter leases make powered-off hosts reach expiry sooner.
 
 For an isolated lab that needs to observe real client renewals quickly, use:
 
