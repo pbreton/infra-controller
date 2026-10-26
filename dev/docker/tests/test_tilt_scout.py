@@ -156,8 +156,10 @@ class ScoutWiringTest(unittest.TestCase):
         env_values = pxe_calls[0]['values']['config']['extraEnvData']
         self.assertEqual(env_values['CARBIDE_API_URL'], 'https://nico-api.nico-system.svc.cluster.local:1079')
         self.assertEqual(env_values['CARBIDE_PXE_URL'], 'http://nico-pxe.nico-system.svc.cluster.local')
+        boot_calls, _ = self.profile(True, ipv6_endpoints=True, ipv6_boot=True)
         for component, settings, port in [('nico-api', {'global': values['global'], **env['nico_api_values']}, 1079),
-                                           ('nico-pxe', {**pxe_calls[0]['values'], 'global': values['global']}, 80)]:
+                                           ('nico-pxe', {**pxe_calls[0]['values'], 'global': values['global']}, 80),
+                                           ('nico-pxe', {**boot_calls[0]['values'], 'global': values['global']}, 8080)]:
             with self.subTest(component=component):
                 settings.pop('global_values', None)
                 result = subprocess.run(
@@ -176,6 +178,7 @@ class ScoutWiringTest(unittest.TestCase):
     def test_artifact_init_checks_profile_before_copying_payloads(self):
         cases = [
             (False, None, None, True),
+            (False, 'default', 'default', True),
             (True, None, None, False),
             (True, 'ipv6', 'ipv6', True),
             (True, 'ipv6', 'default', False),

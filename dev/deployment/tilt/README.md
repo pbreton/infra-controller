@@ -773,7 +773,8 @@ The ordinary MAT workflow is unchanged.
 ### IPv6 provisioning endpoints
 
 Add `--ipv6-endpoints` alongside `--dhcpv6` to expose IPv6 companion Services
-for API port 1079 and PXE HTTP port 80 and to deploy the lab resolver. The flag
+for API port 1079 and PXE HTTP port 80 and to deploy the lab resolver. The
+[IPv6 boot profile](#ipv6-boot-profile) changes the PXE port to 8080. The flag
 is false by default and requires the same BMC lab and dual-stack kind cluster
 as `--dhcpv6`. It leaves the internal Kubernetes Services in place.
 
@@ -819,7 +820,8 @@ explicitly trigger `nico-dhcp`. Do this before powering on targets. BMC Service
 addresses and installed guest configuration are independent settings. Use the
 [lab DNS chart](../../../helm/nico-lab-dns/README.md) for name-resolution details.
 
-Keep the flag enabled for the lifetime of the dedicated lab cluster. Changing
+Keep both `--ipv6-endpoints` and `--ipv6-boot` enabled for the lifetime of the
+dedicated IPv6 boot lab cluster. Changing
 this profile in place is outside its support boundary: live Tilt argument
 changes and stopping/restarting Tilt can handle removed resources differently.
 Release the instances, then follow the
