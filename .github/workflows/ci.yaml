@@ -2267,6 +2267,7 @@ jobs:
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_guest_connectivity.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_guest_config.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_lab_lifecycle.py'
+          /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_traffic_guard.py'
           PYTHONPATH=dev/deployment/vfkit /usr/bin/python3 -B -m unittest discover -s dev/deployment/vfkit/tests
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_os_artifact.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_imager_artifacts.py'

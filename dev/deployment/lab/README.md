@@ -987,3 +987,53 @@ start a new directory for another run. Neither mode deletes VPCs, OS catalog
 entries, target PVCs, the stack or its credentials. Exit status is zero only when
 all selected checks or cleanup complete; failures return nonzero and retain
 evidence.
+
+## Continuous IPv6 traffic guard
+
+Wrap the two-target lifecycle command so observation starts before allocation
+and ends after release and Scout cleanup:
+
+```bash
+python3 dev/deployment/lab/traffic-guard.py \
+  --context kind-nico-lab --target target-one --target target-two \
+  --output /tmp/nico-ipv6-traffic -- \
+  python3 dev/deployment/lab/lifecycle.py \
+    --context kind-nico-lab --state-dir /tmp/nico-ipv6-lifecycle \
+    --target "target-one=$FIRST_MACHINE" --target "target-two=$SECOND_MACHINE" \
+    --vpc "$VPC_ID" --os-image "$OS_IMAGE_ID" --network ipv6-only --cycles 2
+```
+
+Use the selected lab's actual context, releases and IDs. The wrapper requires
+Python 3.9+, kubectl, an accessible kind cluster and two running native BMC target
+pods with Python and Linux raw-packet access (`CAP_NET_RAW`). It verifies the
+cluster UID, target ownership, distinct guest MACs and bridges, and captures
+inside each selected pod. The command runs locally only after both captures are
+ready. `--namespace` defaults to `bmc-lab`; both releases must use it.
+`--output` is a required new directory under an existing parent, created with
+private permissions. `--timeout` is the wrapped command's positive duration in
+seconds, 60–86400 inclusive, default 14400. Put all wrapper options before `--`;
+the remaining arguments form the command, without shell expansion by the wrapper.
+The command receives no stdin. Timeout or interruption terminates its process group.
+
+Each target's `.jsonl` file contains readiness, periodic cumulative counters and
+an explicit completion record. `.stderr` retains observer errors; `report.json`
+records the command outcome and guard result. No packet payloads are stored.
+Only frames with that guest MAC as source or destination count. IPv6 must be
+observed on both targets; ARP, other IPv4 traffic, malformed IP frames, kernel
+capture drops, early observer exit, or target/cluster replacement fail the guard.
+Other Ethernet protocols are counted separately. An empty capture cannot pass.
+
+Firmware may broadcast DHCPv4 client probes before trying IPv6. Unfragmented
+UDP 68-to-67 frames sent by the guest from `0.0.0.0` to `255.255.255.255` are
+reported as `dhcp4_probe`, not successful IPv4 use. Replies and assigned-source
+IPv4 are violations. This exception describes the transport tuple; the observer
+does not decode DHCP message options. The guest's IPv4 address/route checks and
+negative control remain part of the lifecycle runner.
+
+Captures drain queued frames at the stop boundary; inability to drain produces
+incomplete evidence. Failure retains all logs and does not release instances or
+remove infrastructure. Use the lifecycle journal's `--release-only` procedure
+for recovery. A short observer smoke run proves capture wiring only: full-window
+evidence requires wrapping the entire lifecycle command. Guest-bridge evidence
+does not establish IPv6-only BMC or control-plane transport, DPU forwarding, or
+Internet reachability; those require their separate checks.
