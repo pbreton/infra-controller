@@ -213,7 +213,7 @@ PYTHON
 
 Make that edit **before** deploying either target. It selects unused IPv4 BMC
 Services `10.96.40.12` and `10.96.40.13`, within kind's Service CIDR; verify they
-are free in the new cluster. Build/load the native target image and deploy both
+are free in the new cluster and that `10.96.40.8/29` contains no unrelated Services. Build/load the native target image and deploy both
 releases with their generated values:
 
 ```bash
@@ -230,7 +230,7 @@ done
 ```
 
 Follow the registration step with `--network dual-stack` and
-`--bmc-prefix 10.96.40.0/24` in place of its IPv6-only profile and IPv6 BMC prefix.
+`--bmc-prefix 10.96.40.8/29` in place of its IPv6-only profile and IPv6 BMC prefix.
 Both address families are registered for the guests; the BMCs use IPv4. Never
 change a registered target's BMC identity in place.
 
