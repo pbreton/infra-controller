@@ -72,7 +72,8 @@ class GuestConfigTest(unittest.TestCase):
                  (['--generation', ''], KEY),
                  (['--generation', 'generation\u2028two'], KEY),
                  (['--network', 'ipv6-only'], '-----BEGIN OPENSSH PRIVATE KEY-----'),
-                 (['--network', 'ipv6-only'], 'ssh-ed25519 malformed')]
+                 (['--network', 'ipv6-only'], 'ssh-ed25519 malformed'),
+                 (['--network', 'ipv6-only'], KEY + ' lab\x7fcomment')]
         with tempfile.TemporaryDirectory() as directory:
             for args, key in cases:
                 with self.subTest(args=args, key_type=key.split()[0]):

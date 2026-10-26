@@ -476,8 +476,10 @@ python3 dev/deployment/lab/guest-config.py \
   --network ipv6-only > /tmp/nico-instance-os.json
 ```
 
-The image UUID, guest MAC, public key file and nonempty single-line generation
-marker are required. The MAC must be a nonzero unicast Ethernet address. The key
+The image UUID, guest MAC, public key file and nonempty printable generation marker are required.
+The marker and public key line must contain only characters accepted by
+Python's `str.isprintable()` (ASCII space is allowed); a whitespace-only marker
+is rejected. The MAC must be a nonzero unicast Ethernet address. The key
 file must contain one OpenSSH public key; `ssh-keygen` validates it. Private keys
 are rejected. The command only prints JSON: it does not contact Core, create
 files or allocate resources. Redirect its output to your chosen OS configuration

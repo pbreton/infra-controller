@@ -51,16 +51,16 @@ def main():
     parser.add_argument('--os-image-id', required=True, type=uuid.UUID, help='registered native OS image UUID')
     parser.add_argument('--mac', required=True, type=mac_address, help='target guest NIC MAC')
     parser.add_argument('--public-key', required=True, type=Path, help='one OpenSSH public key file')
-    parser.add_argument('--generation', required=True, help='nonempty single-line disk generation marker')
+    parser.add_argument('--generation', required=True, help='nonempty printable disk generation marker')
     parser.add_argument('--network', choices=PROFILES, default='ipv4', help='installed OS networking (default: ipv4)')
     args = parser.parse_args()
     if not args.generation.strip() or not args.generation.isprintable():
-        parser.error('--generation must be a nonempty single line without control characters')
+        parser.error('--generation must contain non-whitespace printable characters')
     try:
         key = args.public_key.read_text().strip()
         # Reject private-key files before invoking any key parser or writing output.
-        if '\n' in key or not key.startswith(('ssh-', 'ecdsa-', 'sk-')):
-            parser.error('--public-key must contain one OpenSSH public key')
+        if not key.isprintable() or not key.startswith(('ssh-', 'ecdsa-', 'sk-')):
+            parser.error('--public-key must contain one printable OpenSSH public key')
         subprocess.run(['ssh-keygen', '-l', '-f', str(args.public_key)], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
     except (OSError, UnicodeError, subprocess.SubprocessError):
