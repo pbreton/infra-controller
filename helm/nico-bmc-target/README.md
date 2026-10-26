@@ -80,7 +80,8 @@ YAML
 A fresh target can use an IPv6 `service.clusterIP`, for example
 `fd00:10:96::4010` when that address belongs to the cluster's IPv6 Service CIDR.
 The chart selects a single-stack IPv6 Service and the test client brackets the
-address in Redfish URLs. Use an IPv6 or dual-stack cluster whose selected node reports an IPv6 InternalIP,
+address in Redfish URLs. Use the shared `setup-kind.sh --ip-family dual` option and a selected node that
+reports an IPv6 InternalIP,
 so Kubernetes can give the host-network pod an IPv6 endpoint. Startup checks
 both the IPv6 listener and local IPv6 connectivity before claiming storage.
 Core's BMC proxy must also be able to reach that Service. For Core admission,
