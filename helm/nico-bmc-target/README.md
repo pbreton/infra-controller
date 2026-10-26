@@ -347,7 +347,7 @@ retained, rotated BMC credential:
 ```bash
 export LOCAL_DEV_KUBE_CONTEXT=kind-your-lab
 export LOCAL_DEV_NAMESPACE=nico-system
-bash dev/deployment/core-admin.sh --cloud-unsafe-op 'Resume owned lab target' \
+bash dev/deployment/core-admin.sh \
   bmc-machine admin-power-control --machine MACHINE_ID --action on
 ```
 
