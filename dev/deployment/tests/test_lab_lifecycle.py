@@ -56,22 +56,38 @@ class LifecycleTest(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 LAB.validate_target(self.target, dict(inventory, **changes), machine, 'cluster')
 
-    def test_disk_readiness_does_not_pin_a_previous_generation_or_the_imager(self):
-        previous = 'disk_imaging.sh\nRebooting\nDatasource DataSourceNoCloud\n'
+    def test_disk_readiness_pins_only_verified_generation_without_console_history(self):
         with tempfile.TemporaryDirectory() as directory:
             lab = LAB.Lifecycle(Path(directory), self.state)
-            target = dict(self.target, console_offset=len(previous))
-            lab.ssh = Mock(return_value=INSTANCE + '\n')
+            target = dict(self.target, console_offset=2000000)
+            lab.kube = Mock(side_effect=AssertionError('rotated console is not a readiness contract'))
             lab.checkpoint = Mock()
-            for current in ('', 'disk_imaging.sh\nDatasource DataSourceNoCloud\n', 'disk_imaging.sh\nRebooting\n'):
-                with self.subTest(current=current):
-                    lab.kube = Mock(return_value=previous + current)
-                    self.assertFalse(lab.installed(target))
-                    lab.ssh.assert_not_called()
-            lab.kube = Mock(return_value=previous + 'disk_imaging.sh\nRebooting\nDatasource DataSourceNoCloud\n')
+            pinned = Path(directory) / f'known-hosts-{self.state["generation"]}-{target["release"]}'
+            for outcome in ('wrong disk or generation', 'invalid boot ID', 'missing host key', 'success'):
+                def ssh(target, command, known_hosts=None):
+                    self.assertNotEqual(known_hosts, pinned)
+                    self.assertIn('findmnt -no SOURCE /', command)
+                    self.assertIn('cloud-init status --wait', command)
+                    self.assertIn('test ! -e /etc/nico-peer-retained', command)
+                    self.assertIn(target['intent'], command)
+                    known_hosts.write_text('' if outcome == 'missing host key' else 'verified-host-key\n')
+                    if outcome == 'wrong disk or generation':
+                        raise RuntimeError('guest verification failed')
+                    return 'invalid' if outcome == 'invalid boot ID' else INSTANCE + '\n'
+                lab.ssh = Mock(side_effect=ssh)
+                with self.subTest(outcome=outcome):
+                    if outcome == 'success':
+                        self.assertTrue(lab.installed(target))
+                        self.assertEqual(pinned.read_text(), 'verified-host-key\n')
+                    else:
+                        with self.assertRaises((RuntimeError, ValueError)):
+                            lab.installed(target)
+                        self.assertFalse(pinned.exists())
+                    self.assertFalse(list(Path(directory).glob('probe-*')))
+            lab.ssh = Mock(return_value=INSTANCE + '\n')
             self.assertTrue(lab.installed(target))
-            lab.ssh.assert_called_once()
-            self.assertIn('test ! -e /etc/nico-peer-retained', lab.ssh.call_args.args[1])
+            self.assertEqual(lab.ssh.call_args.kwargs['known_hosts'], pinned)
+            self.assertEqual(pinned.read_text(), 'verified-host-key\n')
 
     def test_allocation_intent_survives_lost_response(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -86,7 +102,6 @@ class LifecycleTest(unittest.TestCase):
                 lab.allocate(target)
             saved = json.loads((Path(directory) / 'state.json').read_text())['targets'][0]
             self.assertEqual(saved['intent'], 'lab-test-1-one')
-            self.assertEqual(saved['console_offset'], len('previous console'))
             self.assertNotIn('instance', saved)
             lab.instance.assert_not_called()
 

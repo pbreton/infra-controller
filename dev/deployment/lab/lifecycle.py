@@ -14,6 +14,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -164,19 +165,22 @@ class Lifecycle:
             raise ValueError('allocated instance was replaced; refusing to operate')
         return current
 
-    def ssh(self, target, command):
+    def host_keys(self, target):
+        return self.directory / f'known-hosts-{self.state["generation"]}-{target["release"]}'
+
+    def ssh(self, target, command, known_hosts=None):
         addresses = target['addresses']
         address = addresses.get('6', addresses.get('4'))
         return run([sys.executable, str(HERE / 'ssh-guest.py'), '--context', self.state['context'],
                     '--namespace', target['namespace'], '--release', target['release'], '--address', address,
                     '--identity', str(self.directory / 'id_ed25519'), '--known-hosts',
-                    str(self.directory / f'known-hosts-{self.state["generation"]}-{target["release"]}'), '--', command])
+                    str(known_hosts if known_hosts is not None else self.host_keys(target)), '--', command])
 
     def allocate(self, target):
         self.wait(target['release'] + ' Ready/Scout', lambda: self.ready(target))
         target['intent'] = self.state['run'] + '-' + str(self.state['generation']) + '-' + target['release']
         target.pop('instance', None)
-        target['console_offset'] = len(self.kube(target, 'exec', 'deployment/' + target['release'], '--', 'cat', '/data/logs/console.log'))
+        target.pop('boot_id', None)
         self.checkpoint()  # Persist intent before a potentially successful but timed-out allocation.
         config = json.loads(run([sys.executable, str(HERE / 'guest-config.py'), '--os-image-id', self.state['os_image'],
                                 '--mac', target['inventory']['mac'], '--public-key', str(self.directory / 'id_ed25519.pub'),
@@ -190,15 +194,20 @@ class Lifecycle:
         self.checkpoint()
 
     def installed(self, target):
-        # Never pin an imager SSH key. A new image generation must have reached its disk cloud-init.
-        console = self.kube(target, 'exec', 'deployment/' + target['release'], '--', 'cat', '/data/logs/console.log')
-        console = console[target['console_offset']:]
-        reboot = console.rfind('Rebooting')
-        if reboot < console.rfind('disk_imaging.sh') or reboot < 0 or 'Datasource DataSourceNoCloud' not in console[reboot:]:
-            return False
-        output = self.ssh(target, 'set -e; test "$(findmnt -no SOURCE /)" = /dev/vda1; sudo cloud-init status --wait >/dev/null; '
-                          'test ! -e /etc/nico-peer-retained; test "$(cat /etc/nico-lab-generation)" = ' + shlex.quote(target['intent']) + '; cat /proc/sys/kernel/random/boot_id')
-        target['boot_id'] = str(uuid.UUID(output.strip()))
+        # Libvirt rotates serial logs. Verify the disk generation over SSH before
+        # persisting its host key, so an imager or previous OS cannot poison pins.
+        pinned = self.host_keys(target)
+        with tempfile.TemporaryDirectory(prefix='probe-', dir=self.directory) as temporary:
+            known_hosts = pinned if pinned.exists() and pinned.stat().st_size else Path(temporary) / 'known-hosts'
+            output = self.ssh(target, 'set -e; test "$(findmnt -no SOURCE /)" = /dev/vda1; sudo cloud-init status --wait >/dev/null; '
+                              'test ! -e /etc/nico-peer-retained; test "$(cat /etc/nico-lab-generation)" = ' + shlex.quote(target['intent']) + '; cat /proc/sys/kernel/random/boot_id',
+                              known_hosts=known_hosts)
+            boot_id = str(uuid.UUID(output.strip()))
+            if known_hosts != pinned:
+                if not known_hosts.read_bytes().strip():
+                    raise ValueError('verified guest did not persist its SSH host key')
+                known_hosts.replace(pinned)
+        target['boot_id'] = boot_id
         self.checkpoint()
         return True
 

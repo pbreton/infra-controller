@@ -860,6 +860,11 @@ then releases the second, waiting for Ready
 and live Scout after each release. A second cycle repeats allocation from these
 released machines. This does not rebuild the stack or prove a fresh-cluster run.
 
+Readiness verifies the disk root, cloud-init completion and allocation generation
+over SSH using provisional host keys. Only a successful verification persists
+the generation's key; failed probes cannot pin an imager or previous guest.
+Serial-log rotation does not affect readiness. Existing pins remain authoritative.
+
 The directory contains a newly generated SSH key, per-generation pinned host
 keys, allocated identities, network observations and an atomic `state.json`
 journal. Treat it as private; do not commit or share it. Only one process may use
