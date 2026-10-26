@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import platform
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -52,6 +53,16 @@ run_as_user() { printf 'USER <%s>\\n' "$*"; }
 
     @unittest.skipIf(os.geteuid() == 0 or platform.system() != 'Linux', 'non-root Linux sudo forwarding')
     def test_non_root_invoker_takes_precedence_over_inherited_sudo_user(self):
+        release_path = Path('/etc/os-release')
+        if not release_path.exists():
+            self.skipTest('sudo forwarding requires Ubuntu 22.04+')
+        os_release = dict(line.split('=', 1) for line in
+                          release_path.read_text().splitlines()
+                          if '=' in line and not line.startswith('#'))
+        distro = shlex.split(os_release.get('ID', ''))
+        version = shlex.split(os_release.get('VERSION_ID', ''))
+        if distro != ['ubuntu'] or not version or tuple(map(int, version[0].split('.'))) < (22, 4):
+            self.skipTest('sudo forwarding requires Ubuntu 22.04+')
         with tempfile.TemporaryDirectory() as directory:
             sudo = Path(directory) / 'sudo'
             sudo.write_text('#!/bin/sh\nprintf "<%s>\\n" "$@"\n')
