@@ -263,8 +263,8 @@ release, Tilt reads both files, checks their architecture against the native
 Docker runtime, and rejects repeated PVC, index, BMC address, listener-port or
 guest bridge-address values (including the default IPv4 bridge). Address comparison here is textual; the chart and runtime perform the
 actual address and route validation. These checks do not reserve capacity or
-replace host preflight. Updates run serially so each bridge setup observes the
-previous target’s routes. Tilt builds each distinct image repository once and
+replace host preflight. Tilt schedules one update at a time; this does not
+serialize independent kubelet restarts or other deployment tools. Tilt builds each distinct image repository once and
 injects its result into the releases selecting that repository. A failure deploying one release can leave
 the other running; inspect both releases and retain their original values/PVCs.
 The manifest is not an atomic transaction or a cleanup instruction.
@@ -274,8 +274,8 @@ or either values file reevaluates the configuration. Removing or renaming a
 release in the manifest is not a supported target migration: stop it explicitly
 using the documented [network cleanup procedure](#verify-target-network-cleanup) before
 changing the selection. That procedure covers Core-managed targets and preserving
-their existing PVCs; replacing or reusing their disks requires the linked full
-lab discard procedure.
+their existing PVCs; replacing or reusing their disks requires the
+[full lab discard procedure](../../dev/deployment/lab/README.md#stop-restart-and-discard-the-bmc-lab).
 PVC creation, instance registration, release and disk deletion remain explicit
 separate operations.
 

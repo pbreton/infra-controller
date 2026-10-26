@@ -121,6 +121,13 @@ class LabTiltTests(unittest.TestCase):
             self.assertEqual(call.kwargs['flags'][:2], ['--values', '/lab/' + name + '.json'])
             self.assertEqual(call.kwargs['image_deps'], ['nico-bmc-target'])
 
+    def test_distinct_repositories_keep_their_release_image_binding(self):
+        self.values['/lab/two.json']['image'] = {'repository': 'second-target'}
+        self.evaluate({'targets': '/lab/pair.json'})
+        self.assertEqual([call.args[0] for call in self.build.call_args_list], ['nico-bmc-target', 'second-target'])
+        self.assertEqual([call.kwargs['image_deps'] for call in self.deploy.call_args_list],
+                         [['nico-bmc-target'], ['second-target']])
+
     def test_single_target_defaults(self):
         self.evaluate({'values': '/lab/one.json'})
         self.deploy.assert_called_once()
@@ -136,6 +143,7 @@ class LabTiltTests(unittest.TestCase):
             ('arity', {'targets': '/lab/pair.json'}, {'one': 'one.json'}, None),
             ('path', {'targets': '/lab/pair.json'}, {'one': 42, 'two': 'two.json'}, None),
             ('release', {'targets': '/lab/pair.json'}, {'1one': 'one.json', 'two': 'two.json'}, None),
+            ('required', {'targets': '/lab/pair.json'}, None, ('storage', {})),
             ('architecture', {'targets': '/lab/pair.json'}, None, ('architecture', 'amd64')),
             ('claim', {'targets': '/lab/pair.json'}, None, ('storage', {'existingClaim': 'one-data'})),
             ('index', {'targets': '/lab/pair.json'}, None, ('target', {'instanceIndex': 1})),
