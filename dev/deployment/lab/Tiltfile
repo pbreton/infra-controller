@@ -4,7 +4,8 @@
 load('ext://helm_resource', 'helm_resource')
 
 # Allow Helm's five-minute wait to cover guest save and pod replacement.
-update_settings(k8s_upsert_timeout_secs=360)
+# Serialize bridge creation so the next target observes the first target's routes.
+update_settings(k8s_upsert_timeout_secs=360, max_parallel_updates=1)
 
 if not k8s_context().startswith('kind-'):
     fail('The native target lab requires a selected kind context')
@@ -37,7 +38,7 @@ architecture = str(local(['docker', 'info', '--format', '{{.Architecture}}'], qu
 architectures = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64', 'amd64': 'amd64'}
 targets = []
 images = []
-identities = {'claim': [], 'index': [], 'bmc': [], 'port': []}
+identities = {'claim': [], 'index': [], 'bmc': [], 'port': [], 'bridge': [], 'bridge6': []}
 # Validate every target before registering builds or deployments.
 for release, values_file in target_files.items():
     if not release or len(release) > 53 or release[0] not in 'abcdefghijklmnopqrstuvwxyz' or release[-1] == '-' or any([c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in [release[i] for i in range(len(release))]]):
@@ -50,7 +51,10 @@ for release, values_file in target_files.items():
         'index': values.get('target', {}).get('instanceIndex', 1),
         'bmc': values.get('service', {}).get('clusterIP', ''),
         'port': values.get('service', {}).get('targetPort', 2443),
+        'bridge': values.get('network', {}).get('bridgeAddress', '10.84.40.1/24'),
     }
+    if values.get('network', {}).get('bridgeAddressV6'):
+        identity['bridge6'] = values['network']['bridgeAddressV6']
     if not identity['claim'] or not identity['bmc']:
         fail('Each target requires an existing PVC and an explicit BMC Service address')
     for key, value in identity.items():

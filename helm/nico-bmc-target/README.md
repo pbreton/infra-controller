@@ -260,11 +260,12 @@ tilt ci -f dev/deployment/lab/Tiltfile -- \
 `--targets` has no default and cannot be combined with `--values` or `--release`.
 The namespace still defaults to `bmc-lab`. Before registering any build or
 release, Tilt reads both files, checks their architecture against the native
-Docker runtime, and rejects repeated PVC, index, BMC address or listener-port
-values. Address comparison here is textual; the chart and runtime perform the
+Docker runtime, and rejects repeated PVC, index, BMC address, listener-port or
+guest bridge-address values (including the default IPv4 bridge). Address comparison here is textual; the chart and runtime perform the
 actual address and route validation. These checks do not reserve capacity or
-replace host preflight. Tilt builds each distinct image repository once and
-injects its result into both releases. A failure deploying one release can leave
+replace host preflight. Updates run serially so each bridge setup observes the
+previous target’s routes. Tilt builds each distinct image repository once and
+injects its result into the releases selecting that repository. A failure deploying one release can leave
 the other running; inspect both releases and retain their original values/PVCs.
 The manifest is not an atomic transaction or a cleanup instruction.
 
@@ -272,8 +273,9 @@ Use `tilt up` with the same arguments for interactive work. Editing the manifest
 or either values file reevaluates the configuration. Removing or renaming a
 release in the manifest is not a supported target migration: stop it explicitly
 using the documented [network cleanup procedure](#verify-target-network-cleanup) before
-changing the selection. Core-managed targets instead require the
-[full lab discard procedure](../../dev/deployment/lab/README.md#stop-restart-and-discard-the-bmc-lab).
+changing the selection. That procedure covers Core-managed targets and preserving
+their existing PVCs; replacing or reusing their disks requires the linked full
+lab discard procedure.
 PVC creation, instance registration, release and disk deletion remain explicit
 separate operations.
 

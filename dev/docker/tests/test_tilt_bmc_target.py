@@ -89,18 +89,20 @@ class LabTiltTests(unittest.TestCase):
     def setUp(self):
         self.values = {
             '/lab/one.json': dict(architecture='arm64', storage={'existingClaim': 'one-data'},
+                                 network={'bridgeAddress': '10.84.40.1/24', 'bridgeAddressV6': 'fd42:8124:40::1/64'},
                                  target={'instanceIndex': 1}, service={'clusterIP': 'fd00::10', 'targetPort': 2443}),
             '/lab/two.json': dict(architecture='arm64', storage={'existingClaim': 'two-data'},
+                                 network={'bridgeAddress': '10.84.41.1/24', 'bridgeAddressV6': 'fd42:8124:41::1/64'},
                                  target={'instanceIndex': 2}, service={'clusterIP': 'fd00::11', 'targetPort': 2444}),
         }
-        self.build, self.deploy = Mock(), Mock()
+        self.build, self.deploy, self.settings = Mock(), Mock(), Mock()
 
     def evaluate(self, options, plan=None):
         # Tilt joins path components without Python's absolute-path reset.
         tilt_os = SimpleNamespace(path=SimpleNamespace(
             realpath=os.path.realpath, dirname=os.path.dirname, abspath=os.path.abspath,
             join=lambda *parts: os.path.normpath('/'.join(parts))))
-        environment = dict(__file__=str(TILTFILE), os=tilt_os, load=Mock(), update_settings=Mock(),
+        environment = dict(__file__=str(TILTFILE), os=tilt_os, load=Mock(), update_settings=self.settings,
                            k8s_context=lambda: 'kind-lab', fail=fail, custom_build=self.build,
                            helm_resource=self.deploy, read_yaml=lambda path: self.values[path],
                            read_json=lambda path: plan or {'one': 'one.json', 'two': '/lab/two.json'},
@@ -112,6 +114,7 @@ class LabTiltTests(unittest.TestCase):
     def test_pair_shares_build_and_preserves_direct_helm_values(self):
         self.evaluate({'targets': '/lab/pair.json', 'namespace': 'chosen'})
         self.build.assert_called_once()
+        self.settings.assert_called_once_with(k8s_upsert_timeout_secs=360, max_parallel_updates=1)
         self.assertEqual([call.args[0] for call in self.deploy.call_args_list], ['one', 'two'])
         for call, name in zip(self.deploy.call_args_list, ['one', 'two']):
             self.assertEqual(call.kwargs['namespace'], 'chosen')
@@ -127,6 +130,9 @@ class LabTiltTests(unittest.TestCase):
     def test_invalid_pair_stops_before_any_build_or_deploy(self):
         cases = [
             ('mixed', {'targets': '/lab/pair.json', 'values': '/lab/one.json'}, None, None),
+            ('mixed-release', {'targets': '/lab/pair.json', 'release': 'one'}, None, None),
+            ('bridge', {'targets': '/lab/pair.json'}, None, ('network', {})),
+            ('bridge6', {'targets': '/lab/pair.json'}, None, ('network', {'bridgeAddress': '10.84.41.1/24', 'bridgeAddressV6': 'fd42:8124:40::1/64'})),
             ('arity', {'targets': '/lab/pair.json'}, {'one': 'one.json'}, None),
             ('path', {'targets': '/lab/pair.json'}, {'one': 42, 'two': 'two.json'}, None),
             ('release', {'targets': '/lab/pair.json'}, {'1one': 'one.json', 'two': 'two.json'}, None),
