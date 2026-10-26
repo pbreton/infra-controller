@@ -272,7 +272,7 @@ class TargetTest(unittest.TestCase):
                 self.assertEqual(list(root.iterdir()), [])
 
     def test_bmc_stops_before_guest_save_and_libvirt_shutdown(self):
-        for hugepages, saved in ((False, False), (False, True), (True, True)):
+        for hugepages, saved in ((False, False), (False, True), (True, False), (True, True)):
             with self.subTest(hugepages=hugepages, saved=saved):
                 events = []
                 config = TARGET.configuration(dict(CONFIG, hugepages=hugepages))
