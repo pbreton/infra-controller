@@ -29,7 +29,8 @@ def run(command, timeout=90, env=None, errors="strict", log_path=None):
         try:
             output, error = process.communicate(timeout=timeout)
             if process.returncode:
-                raise RuntimeError(f'{Path(command[0]).name} exited {process.returncode}: {(error or (log_path.read_text(errors='replace') if log_path else output))[-2000:]}')
+                detail = error or (log_path.read_text(errors='replace') if log_path else output)
+                raise RuntimeError(f'{Path(command[0]).name} exited {process.returncode}: {detail[-2000:]}')
             return output or ''
         finally:
             process.poll()
@@ -206,8 +207,10 @@ class Lifecycle:
             info = json.loads(self.ssh(target, 'ip -j address'))
         for address in target['addresses'].values():
             leases = [a for i in info for a in i.get('addr_info', []) if a.get('local') == address]
-            if len(leases) != 1 or leases[0]['valid_life_time'] == 4294967295:
+            if not leases:
                 return False
+            if len(leases) != 1 or leases[0]['valid_life_time'] == 4294967295:
+                raise ValueError('allocated address is not a unique finite DHCP lease')
         return True
 
     def verify_network(self, target):

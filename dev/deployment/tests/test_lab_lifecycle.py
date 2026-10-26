@@ -172,6 +172,26 @@ class LifecycleTest(unittest.TestCase):
         lab.reboot(target, dict(target, release='two'))
         self.assertEqual(lab.ssh.call_count, 7)
 
+    def test_allocation_command_failure_and_timeout_keep_partial_diagnostics(self):
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / 'allocate.log'
+            for suffix, error in [('sys.exit(3)', RuntimeError), ('__import__("time").sleep(30)', subprocess.TimeoutExpired)]:
+                with self.subTest(suffix=suffix), self.assertRaises(error) as raised:
+                    LAB.run([sys.executable, '-c', 'import sys; print("allocation refused", file=sys.stderr, flush=True); ' + suffix], timeout=1, log_path=log)
+                self.assertEqual(log.read_text(), 'allocation refused\n')
+                if error is RuntimeError:
+                    self.assertIn('allocation refused', str(raised.exception))
+
+    def test_invalid_lease_fails_immediately_instead_of_waiting(self):
+        target = dict(self.target, addresses={'6': 'fd00::a'})
+        lab = LAB.Lifecycle(Path('/unused'), self.state)
+        finite = {'local': 'fd00::a', 'valid_life_time': 180}
+        for leases in ([dict(finite, valid_life_time=4294967295)], [finite, finite]):
+            with self.subTest(leases=leases), self.assertRaisesRegex(ValueError, 'unique finite'):
+                lab.leases_ready(target, [{'addr_info': leases}])
+
     def test_diagnostics_preserve_prior_snapshots_and_skip_replaced_targets(self):
         with tempfile.TemporaryDirectory() as directory:
             lab = LAB.Lifecycle(Path(directory), self.state)
