@@ -32,9 +32,11 @@ Helm owns the resolver ConfigMap, Deployment and Service. ConfigMap changes
 roll out the pod; an unchanged upgrade retains it. Deleting and reinstalling
 the release can allocate a different ClusterIP. Update the DHCPv6 DNS option
 before booting guests after that operation. Existing clients may need a network
-reconfiguration or reboot to adopt a changed resolver. Keep the release while consumers use it. Removing Tilt's endpoint flag does not
-uninstall this separate release; first move consumers away and clear or replace
-the DHCPv6 DNS option, then uninstall the resolver from the Core namespace.
+reconfiguration or reboot to adopt a changed resolver. Keep the release while consumers use it. The supported Tilt topology change is
+to release the instances and discard the dedicated lab cluster through the
+[Scout lab cleanup procedure](../../dev/deployment/lab/README.md#connect-scout-to-the-tilt-stack).
+Do not remove the endpoint flag from a running lab: this chart does not support
+an in-place transition of its clients to a different DNS or service topology.
 
 Guests need `network.dhcpv6.defaultRoute: true` on their target or a separate
 route to the IPv6 Service CIDR. The lab-built Scout/imager still use internal

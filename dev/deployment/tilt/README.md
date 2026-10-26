@@ -779,7 +779,7 @@ as `--dhcpv6`. It leaves the internal Kubernetes Services in place.
 
 The resolver's IPv6 ClusterIP is allocated by Kubernetes. Set
 `nico-dhcp.dhcp.v6DnsServers` to that address in `values.yaml` before provisioning
-guests, then reconcile Tilt. Set `network.dhcpv6.defaultRoute: true` on each
+guests, then explicitly trigger the manual `nico-dhcp` resource in Tilt. Set `network.dhcpv6.defaultRoute: true` on each
 target, or provide a separate route from the guest to the IPv6 Service CIDR.
 Configure the target's DHCPv6 relay separately. The flag only exposes endpoints;
 it does not change the lab's IPv4-oriented Scout/imager URLs or pinned
@@ -787,8 +787,9 @@ it does not change the lab's IPv4-oriented Scout/imager URLs or pinned
 configuration. Use the [lab DNS chart](../../../helm/nico-lab-dns/README.md) for its
 name-resolution and lifecycle contract.
 
-Before removing the flag, move any consumers off these endpoints and clear or
-replace `nico-dhcp.dhcp.v6DnsServers`. Removing the flag and reconciling Tilt
-removes the companion Services but leaves the separately owned `nico-lab-dns`
-Helm release. Uninstall that release from the Core namespace after its consumers
-have stopped. A fresh cluster is the supported way to change the lab topology.
+Keep the flag enabled for the lifetime of the dedicated lab cluster. Changing
+this profile in place is outside its support boundary: live Tilt argument
+changes and stopping/restarting Tilt can handle removed resources differently.
+Release the instances, stop the BMC targets, and discard the dedicated cluster
+using the linked Scout lab cleanup procedure. Create a fresh cluster for a
+different topology; do not remove the resolver while guests depend on it.
