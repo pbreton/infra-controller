@@ -378,8 +378,7 @@ def main():
         lab.verify_ownership()
         lab.preflight_network()
         for target in targets:
-            if not lab.ready(target):
-                raise ValueError('both targets must start Ready with live Scout')
+            lab.wait(target['release'] + ' initial Ready/Scout', lambda: lab.ready(target))
         run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'nico-lab-test', '-f', str(directory / 'id_ed25519')])
         lab.exercise()
     except (Exception, KeyboardInterrupt):

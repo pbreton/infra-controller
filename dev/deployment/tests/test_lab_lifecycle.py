@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import importlib.util
+import sys
 import json
 from pathlib import Path
 import tempfile
@@ -47,6 +48,26 @@ class LifecycleTest(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         lab.release(target)
                     lab.mutation.assert_not_called()
+
+    def test_initial_readiness_waits_for_reconnecting_scout_before_allocation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / 'run'
+            lab = LAB.Lifecycle(destination, dict(self.state, targets=[self.target], timeout=60))
+            lab.verify_ownership = Mock()
+            lab.preflight_network = Mock()
+            lab.ready = Mock(side_effect=[RuntimeError('Scout is reconnecting'), False, True, True])
+            lab.exercise = Mock()
+            lab.diagnostics = Mock()
+            args = ['lifecycle.py', '--context', 'kind-test', '--state-dir', str(destination),
+                    '--target', 'one=machine-one', '--target', 'two=machine-two',
+                    '--os-image', INSTANCE, '--vpc', INSTANCE]
+            with patch.object(sys, 'argv', args), patch.object(LAB, 'Lifecycle', return_value=lab), \
+                    patch.object(LAB, 'run', return_value='{"metadata":{"uid":"cluster"}}'), \
+                    patch.object(LAB.time, 'sleep'):
+                LAB.main()
+            self.assertEqual(lab.ready.call_count, 4)
+            lab.exercise.assert_called_once()
+            lab.diagnostics.assert_not_called()
 
     def test_inventory_rejects_cross_cluster_and_wrong_bmc_before_adoption(self):
         inventory = dict(clusterUID='cluster', owner='bmc-lab/one', bmcAddress='fd00::12', instanceIndex=3)

@@ -983,6 +983,10 @@ target independently, reports all failures, and returns nonzero if any remain. D
 `--context`, `--target`, `--vpc` or `--os-image` with `--release-only`. Other run
 settings are read from the journal. Repeating cleanup after successful release
 is harmless. Keep journals in a persistent directory: a reboot may clear `/tmp`.
+Before allocating, the runner waits for both targets to be Ready with live Scout
+streams, using the same per-target `--timeout` as later lifecycle waits. This
+allows Scout to reconnect after recovery; a recorded Ready state alone is not
+sufficient. No allocation starts if either initial wait fails.
 Run directories support cleanup, not resuming an interrupted test;
 start a new directory for another run. Neither mode deletes VPCs, OS catalog
 entries, target PVCs, the stack or its credentials. Exit status is zero only when
