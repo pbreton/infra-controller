@@ -16,7 +16,8 @@ EOF
 }
 log() { printf '[setup-host] %s\n' "$*"; }
 die() { printf '[setup-host] %s\n' "$*" >&2; exit 1; }
-DEV_USER="${SUDO_USER:-${USER:-}}"
+DEV_USER="${USER:-}"
+if [[ $EUID -eq 0 ]]; then DEV_USER="${SUDO_USER:-}"; fi
 while (($#)); do
   case "$1" in
     --user) [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || die '--user requires a value'; DEV_USER="$2"; shift 2 ;;
@@ -26,7 +27,8 @@ while (($#)); do
 done
 [[ -n "${DEV_USER}" && "${DEV_USER}" != -* ]] || die 'select a developer with --user'
 if [[ $EUID -ne 0 ]]; then exec sudo bash "$0" --user "${DEV_USER}"; fi
-[[ "$(id -u "${DEV_USER}")" != 0 ]] || die '--user must be a non-root account'
+developer_uid="$(id -u "${DEV_USER}" 2>/dev/null)" || die "user does not exist: ${DEV_USER}"
+[[ "${developer_uid}" != 0 ]] || die '--user must be a non-root account'
 case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) die 'native ARM64 or AMD64 is required' ;; esac
 # shellcheck source=/dev/null
 source /etc/os-release
@@ -54,7 +56,7 @@ if command -v docker >/dev/null 2>&1 || command -v containerd >/dev/null 2>&1; t
   existing=1
 fi
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git jq openssh-client python3 rsync
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-upgrade ca-certificates curl git jq openssh-client python3 rsync
 # shellcheck source=docker-host.sh
 source "${SCRIPT_DIR}/docker-host.sh"
 if [[ ${existing} == 0 ]]; then

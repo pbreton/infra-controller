@@ -313,8 +313,10 @@ image preloading and DevSpace deployment steps. The shared helper rejects a
 cluster with multiple nodes, a different native architecture or incompatible
 pod IP families instead of rebuilding it. Kind cleans up a failed creation;
 preexisting clusters are not deleted. The selected checkout must contain
-`dev/deployment/setup-kind.sh` and `dev/deployment/install-tools.py`, including
-when using `--repo-ref`. Tool installation uses the selected checkout and refuses
+`dev/deployment/setup-kind.sh`, `dev/deployment/install-tools.py` and
+`dev/deployment/docker-host.sh`, including
+when using `--repo-ref`. Select a trusted checkout: its Docker host helper runs
+as root, and the developer account receives Docker daemon access. Tool installation uses the selected checkout and refuses
 symlinks and other nonregular destinations in `~/.local/bin`; remove or relocate
 those entries explicitly
 before retrying. See the [installer contract](../install-tools.md). Cluster names

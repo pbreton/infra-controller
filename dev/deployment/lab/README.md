@@ -22,7 +22,7 @@ arguments fail; `--help` prints usage without changes. The script invokes sudo
 when needed. Start a new login session afterward for Docker group membership.
 
 Setup installs Git, curl, jq, Python 3, rsync, OpenSSH client and CA certificates
-through apt, and the [pinned native tools](../install-tools.md) in that user's
+through apt without upgrading already-installed host packages, and the [pinned native tools](../install-tools.md) in that user's
 `~/.local/bin`. With no Docker/containerd installation, it adds Docker's Ubuntu
 apt repository and installs Docker CE, containerd and Buildx/Compose plugins.
 It enables the services, configures `GODEBUG=tlsmlkem=0` in their systemd drop-ins

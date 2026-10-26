@@ -46,6 +46,17 @@ run_as_user() { printf 'USER <%s>\\n' "$*"; }
                 if allowed:
                     self.assertIn('USER <python3 ' + directory + '/install-tools.py>', result.stdout)
 
+    @unittest.skipIf(os.geteuid() == 0, 'non-root sudo forwarding')
+    def test_non_root_invoker_takes_precedence_over_inherited_sudo_user(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sudo = Path(directory) / 'sudo'
+            sudo.write_text('#!/bin/sh\nprintf "<%s>\\n" "$@"\n')
+            sudo.chmod(0o755)
+            result = subprocess.run(['bash', str(SCRIPT)], env={**os.environ, 'USER': 'developer', 'SUDO_USER': 'different', 'PATH': directory + os.pathsep + os.environ['PATH']}, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('<--user>\n<developer>', result.stdout)
+            self.assertNotIn('different', result.stdout)
+
     def test_public_argument_errors_precede_sudo(self):
         for arguments in (['--user'], ['--user', '--help'], ['--unknown']):
             with self.subTest(arguments=arguments):
