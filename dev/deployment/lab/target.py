@@ -278,7 +278,7 @@ def serve(config, networking=None):
             if networking is not None:
                 networking.refresh()
             if any(child.poll() is not None for child in children):
-                raise RuntimeError('libvirt runtime exited during startup')
+                raise RuntimeError('target child process exited during startup')
             try:
                 virsh('list', '--all')
                 break

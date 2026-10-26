@@ -410,6 +410,17 @@ class ProvisioningNetworkTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'DHCPv6'):
             TARGET.Network(config, Mock(), default_route_v6=True)
 
+    def test_dhcpv6_only_preflight_requires_matching_kube_proxy_backend(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        run = Mock(return_value='')
+        network = TARGET.Network(config, run, server_v6='fd00::20', pod_cidr_v6='fd00:10:244::/64')
+        with patch('network.Path.read_text', return_value='1'), patch('network.Path.exists', return_value=False):
+            with self.assertRaisesRegex(ValueError, 'DHCPv6 requires kube-proxy'):
+                network.preflight()
+            run.return_value = ':KUBE-POSTROUTING - [0:0]'
+            network.preflight()
+        self.assertTrue(all(call.args[0] == 'ip6tables-save' for call in run.call_args_list))
+
     def test_dhcpv6_partial_start_stops_relay_before_removing_owned_network(self):
         config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
         network = TARGET.Network(config, Mock(return_value=''), server='10.96.0.20', pod_cidr='10.244.0.0/24', server_v6='fd00::20', pod_cidr_v6='fd00:10:244::/64')

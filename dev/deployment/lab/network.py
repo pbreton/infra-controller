@@ -77,6 +77,8 @@ class Network:
                 if path.exists() and path.read_text().strip() != '0':
                     raise ValueError('IPv6 must be enabled on the node and guest bridge')
             self.owned_rules('ip6tables', self.subnet_v6)
+        if self.server_v6 is not None and ':KUBE-POSTROUTING ' not in self.run('ip6tables-save', '-t', 'nat'):
+            raise ValueError("DHCPv6 requires kube-proxy in iptables mode on the image's nf_tables backend")
         if not self.enabled:
             return
         if Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':

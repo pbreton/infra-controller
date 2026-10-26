@@ -271,6 +271,16 @@ tests:
           pattern: bridgeAddressV6
   - it: adds managed DHCPv6 independently from IPv4 relay
     template: deployment.yaml
+    kubernetesProvider:
+      scheme:
+        v1/Node:
+          gvr: {version: v1, resource: nodes}
+          namespaced: false
+      objects:
+        - apiVersion: v1
+          kind: Node
+          metadata: {name: lab-control-plane}
+          spec: {podCIDRs: ['10.244.0.0/24', 'fd00:10:244::/64']}
     set:
       network.bridgeAddressV6: fd42:84:40::1/64
       network.dhcpv6.server: fd00::20
@@ -310,3 +320,43 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: network.dhcpv6.podCIDR requires network.dhcpv6.server
+  - it: rejects an IPv6 CIDR absent from the live node
+    template: deployment.yaml
+    set:
+      nodeName: lab-control-plane
+      network.bridgeAddressV6: fd42:84:40::1/64
+      network.dhcpv6.server: fd00::20
+      network.dhcpv6.podCIDR: fd00:10:245::/64
+    kubernetesProvider:
+      scheme:
+        v1/Node:
+          gvr: {version: v1, resource: nodes}
+          namespaced: false
+      objects:
+        - apiVersion: v1
+          kind: Node
+          metadata: {name: lab-control-plane}
+          spec: {podCIDRs: ['10.244.0.0/24', 'fd00:10:244::/64']}
+    asserts:
+      - failedTemplate:
+          errorMessage: DHCPv6 podCIDR must match the selected node
+  - it: rejects a different node for a DHCPv6-only relay
+    template: deployment.yaml
+    set:
+      nodeName: different-node
+      network.bridgeAddressV6: fd42:84:40::1/64
+      network.dhcpv6.server: fd00::20
+      network.dhcpv6.podCIDR: fd00:10:244::/64
+    kubernetesProvider:
+      scheme:
+        v1/Node:
+          gvr: {version: v1, resource: nodes}
+          namespaced: false
+      objects:
+        - apiVersion: v1
+          kind: Node
+          metadata: {name: lab-control-plane}
+          spec: {podCIDRs: ['10.244.0.0/24', 'fd00:10:244::/64']}
+    asserts:
+      - failedTemplate:
+          errorMessage: target nodeName must match the selected node

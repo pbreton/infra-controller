@@ -735,3 +735,10 @@ The lease-handoff behavior is tracked independently in
 Record the DHCP image's source revision when validating transitions between
 firmware, Scout, imager and installed-OS identities. Enabling the deployment
 alone does not prove that those transitions work.
+
+The DHCPv6 Service address is allocated by Kubernetes. After recreating that
+Service (including removal and redeployment of the DHCP chart), read its address
+again and update each target's `network.dhcpv6.server` through Helm. This triggers
+the documented retained-state restart; resume the saved guests through Redfish.
+Target readiness checks the runtime, not DHCP lease availability. Run the guest
+address and connectivity checks after this recovery.

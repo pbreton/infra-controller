@@ -165,6 +165,13 @@ The server and advertisement settings may change through a normal retained-state
 restart; the bridge identity and prefix remain immutable. See the
 [managed DHCPv6 lab procedure](../../dev/deployment/lab/README.md#managed-dhcpv6-guests).
 
+The DHCPv6 Service address is allocated by Kubernetes. After recreating that
+Service (including removal and redeployment of the DHCP chart), read its address
+again and update each target's `network.dhcpv6.server` through Helm. This triggers
+the documented retained-state restart; resume the saved guests through Redfish.
+Target readiness checks the runtime, not DHCP lease availability. Run the guest
+address and connectivity checks after this recovery.
+
 ## Build and deploy
 
 The standalone Tilt entrypoint builds through the same Make target and installs

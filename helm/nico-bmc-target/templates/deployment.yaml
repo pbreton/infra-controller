@@ -14,7 +14,10 @@
 {{- fail "provisioning requires a single-node kind cluster" -}}
 {{- end -}}
 {{- $node := index $nodes.items 0 -}}
-{{- if or (ne $node.metadata.name .Values.nodeName) (and $provisioning.enabled (ne $node.spec.podCIDR $provisioning.podCIDR)) -}}
+{{- if ne $node.metadata.name .Values.nodeName -}}
+{{- fail "target nodeName must match the selected node" -}}
+{{- end -}}
+{{- if and $provisioning.enabled (ne $node.spec.podCIDR $provisioning.podCIDR) -}}
 {{- fail "provisioning podCIDR must match the selected node" -}}
 {{- end -}}
 {{- if and $dhcpv6.server (not (has $dhcpv6.podCIDR ($node.spec.podCIDRs | default list))) -}}
