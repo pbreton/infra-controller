@@ -135,9 +135,11 @@ def exchange(operation, *args):
         return operation(*args)
     except OSError as error:
         # Connected UDP reports ICMP errors during server restarts or route recovery.
+        # Netfilter rejection can also report EPERM/EACCES while a Service has no endpoints.
         # Clients retry DHCP; an upstream outage must not restart the target guest.
         if error.errno not in {errno.ECONNREFUSED, errno.ENETUNREACH, errno.EHOSTUNREACH,
-                               errno.ENETDOWN, errno.ETIMEDOUT, errno.ENOBUFS}:
+                               errno.ENETDOWN, errno.ETIMEDOUT, errno.ENOBUFS,
+                               errno.EPERM, errno.EACCES}:
             raise
         print(f"DHCPv6 packet deferred: {error}", flush=True)
         return None

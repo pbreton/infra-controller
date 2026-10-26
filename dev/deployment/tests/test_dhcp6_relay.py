@@ -67,7 +67,7 @@ class RelayTests(unittest.TestCase):
 
     def test_transient_upstream_failure_keeps_relay_available_for_client_retry(self):
         upstream = Mock()
-        upstream.send.side_effect = [ConnectionRefusedError(errno.ECONNREFUSED, 'no endpoints'), 60]
+        upstream.send.side_effect = [PermissionError(errno.EPERM, 'Service rejected packet'), 60]
         self.run_events([self.client_event(), (1, 'server', ConnectionRefusedError(errno.ECONNREFUSED, 'restarting')),
                          self.client_event(2), self.server_event(3)], upstream)
         self.assertEqual(upstream.send.call_count, 2)
