@@ -824,6 +824,9 @@ Helm values supply `dhcp.v6ProvisioningServer` and `dhcp.v6DnsServers`; this pro
 ignores explicit values for those two fields in `values.yaml`. Other DHCP
 settings, including lease timers, retain their existing precedence. Trigger the
 manual `nico-pxe` and `nico-dhcp` resources before powering on targets.
+After replacing either Service during a Tilt session, trigger
+`ipv6-boot-endpoints` successfully before triggering `nico-dhcp`; dependency
+ordering does not automatically rerun the exporter after a Service replacement.
 
 Direct Helm uses the same exporter after deploying the IPv6 PXE and DNS Services:
 
