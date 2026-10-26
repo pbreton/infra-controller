@@ -28,7 +28,7 @@ class GatewayImageTests(unittest.TestCase):
             cached.with_suffix(".iso.asc").write_text("invalid signature")
             with patch.object(gateway, "IMAGES", images), \
                     patch.object(gateway, "run", side_effect=AssertionError("unexpected download")), \
-                    self.assertRaisesRegex(ValueError, "signature"):
+                    self.assertRaisesRegex(ValueError, "signature verification failed"):
                 gateway.stock_iso()
 
     def test_unverified_download_is_not_published(self):
@@ -43,7 +43,7 @@ class GatewayImageTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 0, hashlib.sha256(content).hexdigest())
 
             with patch.object(gateway, "IMAGES", images), patch.object(gateway, "run", side_effect=download), \
-                    self.assertRaisesRegex(ValueError, "signature"):
+                    self.assertRaisesRegex(ValueError, "signature verification failed"):
                 gateway.stock_iso()
             self.assertEqual(list((images / "downloads").iterdir()), [])
 
@@ -76,13 +76,13 @@ class SignatureTests(unittest.TestCase):
         # The signing home contains both keys; verification must ignore GNUPGHOME.
         with patch.dict("os.environ", {"GNUPGHOME": str(self.home)}):
             gateway.image_verification.verify_signature(self.data, self.signature, self.root / "publisher.asc")
-            with self.assertRaisesRegex(ValueError, "signature"):
+            with self.assertRaisesRegex(ValueError, "signature verification failed"):
                 gateway.image_verification.verify_signature(self.data, self.signature, self.root / "substitute.asc")
 
     def test_signed_bytes_cannot_be_changed(self):
         tampered = self.root / "tampered"
         tampered.write_bytes(self.data.read_bytes() + b"changed")
-        with self.assertRaisesRegex(ValueError, "signature"):
+        with self.assertRaisesRegex(ValueError, "signature verification failed"):
             gateway.image_verification.verify_signature(tampered, self.signature, self.root / "publisher.asc")
 
     def test_valid_cached_iso_works_offline(self):

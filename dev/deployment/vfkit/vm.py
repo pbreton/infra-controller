@@ -453,7 +453,7 @@ class VM:
         raise ValueError("SSH did not become ready; inspect serial.log and cloud-init")
 
     def sync(self):
-        self.ssh("mkdir", "-p", GUEST_REPO)
+        self.ssh("mkdir", "-p", GUEST_REPO, stdin=subprocess.DEVNULL)
         # Transfer tracked and untracked, nonignored files, including local edits.
         # Excluding .git avoids dangling worktree pointers and copying host credentials.
         files = host_git("ls-files", "-z", "--cached", "--others",
@@ -477,7 +477,7 @@ class VM:
         # repository is a working snapshot, not the host's linked worktree.
         self.ssh("bash", "-c", 'if ! git -C "$1" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$1" init -q && '
                  'git -C "$1" -c user.name="NICo VM" -c user.email="nico@localhost" '
-                 'commit -q --allow-empty -m "Initialize VM workspace"; fi', "_", GUEST_REPO)
+                 'commit -q --allow-empty -m "Initialize VM workspace"; fi', "_", GUEST_REPO, stdin=subprocess.DEVNULL)
         self.sync_build_version()
 
     def sync_build_version(self):
@@ -505,7 +505,7 @@ class VM:
                 probe = ["curl", f"-{family}", "--fail", "--silent", "--show-error",
                          "--connect-timeout", "10", "--max-time", "20", "-o", "/dev/null",
                          lab_manager.HTTPS_PROBE]
-                self.ssh(*probe)
+                self.ssh(*probe, stdin=subprocess.DEVNULL)
             print("Managed lab: IPv4/IPv6 HTTPS verified from Ubuntu")
 
     def stop(self):

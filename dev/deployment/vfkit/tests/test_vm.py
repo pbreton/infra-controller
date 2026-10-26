@@ -179,6 +179,14 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(call.kwargs["stdin"], subprocess.DEVNULL)
         self.assertIs(ssh.call_args_list[-1].kwargs["stdout"], vm.sys.stderr)
 
+    def test_vm_verification_preserves_caller_input(self):
+        self.machine.config = {"network": "lab"}
+        with patch.object(self.machine, "ssh") as ssh:
+            self.machine.verify()
+        self.assertEqual(len(ssh.call_args_list), 3)
+        for call in ssh.call_args_list[1:]:
+            self.assertEqual(call.kwargs["stdin"], subprocess.DEVNULL)
+
     def test_checksum_failure_never_publishes_root_disk(self):
         image = self.root / "image.raw"
         image.write_bytes(b"not the requested image")

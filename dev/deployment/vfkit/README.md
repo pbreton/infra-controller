@@ -14,7 +14,9 @@ physical network.
 
 - Apple Silicon macOS; the lab launcher requires macOS 13 or newer and vfkit
   0.6.2 or newer.
-- Python 3, vfkit, curl, OpenSSH, xorriso, OpenSSL and GnuPG on the host.
+- Python 3, vfkit, qemu-img, curl, OpenSSH, xorriso, OpenSSL and GnuPG on the host.
+  The managed Ubuntu VM also requires hardware and macOS support for nested
+  virtualization; check this before downloading its image.
 - Internet access for initial image/package downloads and the gateway's
   IPv4/IPv6 HTTPS readiness checks.
 - For bridged WAN, install
@@ -25,7 +27,7 @@ physical network.
 Run the examples **from this directory**, in the same shell:
 
 ```bash
-command -v vfkit python3 curl ssh ssh-keygen xorriso openssl gpg gpgv
+command -v vfkit qemu-img python3 curl ssh ssh-keygen xorriso openssl gpg gpgv
 vfkit --version
 python3 vm.py --help
 lab_root="$HOME/.vfkit-labs"

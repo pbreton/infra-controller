@@ -261,7 +261,8 @@ class Lab:
         for family in (4, 6):
             try:
                 self.ssh(f"curl -{family} --fail --silent --show-error --connect-timeout 10 "
-                         f"--max-time 20 -o /dev/null {shlex.quote(HTTPS_PROBE)}", timeout=30)
+                         f"--max-time 20 -o /dev/null {shlex.quote(HTTPS_PROBE)}",
+                         stdin=subprocess.DEVNULL, timeout=30)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
                 raise ValueError(f"lab gateway IPv{family} HTTPS failed; NAT requires working upstream IPv6. "
                                  "Use a bridged lab on a suitable interface; no automatic fallback is performed") from error
@@ -276,7 +277,8 @@ class Lab:
         else:
             # Direct Linux boot does not reliably deliver the virtual power-button
             # request to Alpine. Return the SSH acknowledgement before powering off.
-            self.ssh("nohup sh -c 'sleep 1; exec poweroff' </dev/null >/dev/null 2>&1 &", timeout=10)
+            self.ssh("nohup sh -c 'sleep 1; exec poweroff' </dev/null >/dev/null 2>&1 &",
+                     stdin=subprocess.DEVNULL, timeout=10)
         for _ in range(60):
             if not self.pid("gateway"):
                 return

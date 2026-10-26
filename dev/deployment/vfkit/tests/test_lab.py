@@ -132,6 +132,7 @@ class LabTests(unittest.TestCase):
             self.lab.stop_gateway()
         self.assertIn("exec poweroff", ssh.call_args.args[0])
         self.assertEqual(ssh.call_args.kwargs["timeout"], 10)
+        self.assertEqual(ssh.call_args.kwargs["stdin"], subprocess.DEVNULL)
         sleep.assert_called_once_with(1)
 
     def test_force_stop_without_gateway_ssh_preserves_state_and_checks_clients(self):
@@ -164,6 +165,8 @@ class LabTests(unittest.TestCase):
                 self.lab.verify()
         self.assertIn("curl -4", ssh.call_args_list[0].args[0])
         self.assertIn("curl -6", ssh.call_args_list[1].args[0])
+        for call in ssh.call_args_list:
+            self.assertEqual(call.kwargs["stdin"], subprocess.DEVNULL)
 
     def test_configuration_reuse_does_not_rebuild_a_running_lab(self):
         self.configure()
