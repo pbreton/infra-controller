@@ -98,18 +98,18 @@ class CatalogTests(unittest.TestCase):
             lab = CAT.Catalog(self.directory, self.state)
             lab.admin = Mock()
             outputs = [json.dumps({'metadata': {'uid': uid}}), json.dumps({'items': [{'status': {'nodeInfo': {'architecture': architecture}}}]})]
-            with self.subTest(uid=uid, architecture=architecture), patch.object(CAT, 'run', side_effect=outputs), self.assertRaises(ValueError):
+            with self.subTest(uid=uid, architecture=architecture), patch('core_journal.run', side_effect=outputs), self.assertRaises(ValueError):
                 lab.apply()
             lab.admin.assert_not_called()
 
     def test_admin_wrapper_preserves_global_arguments_and_creation_logs(self):
         lab = CAT.Catalog(self.directory, self.state)
-        with patch.object(CAT, 'run', return_value='[]') as command:
+        with patch('core_journal.run', return_value='[]') as command:
             self.assertEqual(lab.admin('os-image', 'show', read=True), [])
             self.assertEqual(command.call_args.args[0], ['bash', str(ROOT.parent / 'core-admin.sh'), '-f', 'json', 'os-image', 'show'])
             lab.admin('vpc', 'create', '--org-id', 'lab-test', operation='vpc-create')
             self.assertEqual(command.call_args.args[0], ['bash', str(ROOT.parent / 'core-admin.sh'), '--cloud-unsafe-op',
-                             'Initialize owned native lab catalog', 'vpc', 'create', '--org-id', 'lab-test'])
+                             'Initialize owned native lab resources', 'vpc', 'create', '--org-id', 'lab-test'])
             self.assertEqual(command.call_args.kwargs['log_path'], self.directory / 'vpc-create.log')
             self.assertEqual(command.call_args.kwargs['env']['LOCAL_DEV_KUBE_CONTEXT'], 'kind-test')
 

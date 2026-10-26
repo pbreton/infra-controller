@@ -1118,3 +1118,66 @@ The helper provides no remote deletion operation: release all owned instances
 through the lifecycle runner, then explicitly remove the dedicated cluster when
 its evidence has been collected. Retained journals cannot be reused with a
 replacement cluster; create a new catalog there. No database editing is involved.
+
+## Register owned target networks and machines
+
+After deploying two native BMC targets in a dedicated kind lab, register their
+provisioning networks and expected-machine identities through Core:
+
+```bash
+python3 dev/deployment/lab/register.py \
+  --context kind-nico-lab --state-dir /tmp/nico-target-registration \
+  --target target-one --target target-two --network ipv6-only \
+  --bmc-prefix fd00:10:96::4010/124 \
+  --bmc-password-file /tmp/nico-lab-initial-bmc-password
+python3 dev/deployment/lab/register.py \
+  --state-dir /tmp/nico-target-registration --resume
+```
+
+Use the actual target release names and a dedicated prefix containing their BMC
+Service addresses. The password file must already contain their initial BMC
+password as one nonempty line, be owned by the invoking user, and have no group
+or other permissions. Keep it private. The helper does not generate or replace
+BMC credentials. Its path is recorded; its contents are not saved in the journal.
+The admin CLI passes the initial credential as a process argument during first
+registration. Resume does not need that file after both registrations exist.
+
+Python 3.9+, Bash, jq, kubectl and the configured Core client wrapper are required.
+For a new journal, `--context`, two distinct `--target` values, `--bmc-prefix`,
+`--bmc-password-file` and `--state-dir` are required. The context must start with
+`kind-`; both targets must be native BMC deployments belonging to that cluster.
+Their architecture must match its single node. `--namespace` selects Core
+(default `nico-system`); `--target-namespace` selects both targets (default
+`bmc-lab`). `--bmc-username` defaults to `root`. `--domain` defaults to the existing
+`local.nico` DNS domain and must resolve to exactly one live Core domain.
+
+`--network` selects the guest prefixes to register: `ipv4` (default), `dual-stack`
+or `ipv6-only`. Prefixes come from each target's saved bridge configuration.
+Each gateway must be among its subnet's first nine addresses, which remain
+reserved by `--reserve-first 10`. IPv4 segments have their bridge gateway;
+IPv6 routing comes from the target's managed advertisements. At most one
+`--bmc-prefix` is accepted per address family. Each BMC must be inside its
+corresponding prefix, excluding both endpoints. All selected prefixes and target
+identities must be distinct; overlaps with existing external segments fail.
+This helper does not configure Services, bridges, DHCP relays, RA, DNS resolvers
+or routes. Configure those through the target chart and stack before registration.
+
+The helper saves generated resource IDs and creation intents in a new private
+state directory, verifies target ownership and checks existing Core resources
+before writing. It creates the BMC underlay and each HostInband segment, waits for
+Ready, then creates expected machines with DPU policy `ignore` and DPF disabled.
+`--timeout` bounds segment readiness polling in seconds (default 300, range
+60–1800); individual API calls can extend the final poll. Registration starts
+normal Core discovery and provisioning. Success prints release and expected-ID
+pairs, not a claim that machines are Ready. Obtain machine IDs with
+`machine show`, then require Ready and live Scout before the lifecycle runner.
+
+`--resume` accepts only the existing `--state-dir` and rechecks the saved cluster,
+target inventories and resource configuration. It never updates expected
+machines, resets rotated credentials or repeats an uncertain create. If a
+recorded create is absent, retain the journal and inspect Core; a later visible
+matching resource can be adopted. A confirmed-absent result requires a new lab
+or registration journal; partially created resources remain until their
+explicit cleanup or destruction of the disposable cluster. Changed, conflicting
+or replaced resources fail without adoption. The directory is locked against
+concurrent invocation. Neither mode deletes resources or target disks.
