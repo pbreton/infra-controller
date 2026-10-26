@@ -187,8 +187,8 @@ class LifecycleTests(unittest.TestCase):
         link = b"160000 " + b"1" * 40 + b" 0\tpxe/tool\0"
         with patch.object(self.machine, "ssh", return_value=subprocess.CompletedProcess([], 0, stdout=b"")) as ssh, \
                 patch.object(self.machine, "sync_build_version"), \
-                patch.object(vm, "host_git", side_effect=[subprocess.CompletedProcess([], 0, stdout=b""),
-                                                         subprocess.CompletedProcess([], 0, stdout=link)]), \
+                patch.object(vm, "host_git", side_effect=[subprocess.CompletedProcess([], 0, stdout=link),
+                                                         subprocess.CompletedProcess([], 0, stdout=b"")]), \
                 patch.object(vm.subprocess, "Popen", return_value=launch):
             self.machine.sync()
         self.assertEqual(len(ssh.call_args_list), 5)
@@ -198,6 +198,15 @@ class LifecycleTests(unittest.TestCase):
         self.assertIs(ssh.call_args_list[1].kwargs["stdin"], archive.stdout)
         self.assertEqual(ssh.call_args_list[2].kwargs["stdin"], subprocess.DEVNULL)
         archive.stdout.close.assert_called_once()
+
+    def test_conflicted_submodule_blocks_sync_before_guest_mutation(self):
+        conflict = b"160000 " + b"1" * 40 + b" 2\tpxe/tool\0"
+        with patch.object(vm, 'host_git', return_value=subprocess.CompletedProcess([], 0, stdout=conflict)), \
+                patch.object(self.machine, 'ssh') as ssh, patch.object(vm.subprocess, 'Popen') as tar, \
+                self.assertRaisesRegex(ValueError, 'index conflicts'):
+            self.machine.sync()
+        ssh.assert_not_called()
+        tar.assert_not_called()
 
     def test_synced_gitlink_can_initialize_pinned_submodule_without_host_git_metadata(self):
         source, dependency, guest = (self.root / name for name in ('source', 'dependency', 'guest'))
@@ -222,7 +231,7 @@ class LifecycleTests(unittest.TestCase):
                                   check=True, env=environment, **kwargs)
         with patch.object(vm, 'REPO', source), patch.object(vm, 'GUEST_REPO', str(guest)), \
                 patch.object(self.machine, 'ssh', side_effect=guest_command):
-            self.machine.sync_submodules()
+            self.machine.sync_submodules(vm.source_gitlinks())
         git(guest, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', 'pxe/tool')
         self.assertEqual((guest / 'pxe/tool/payload').read_text(), 'pinned payload')
         self.assertEqual(git(guest / 'pxe/tool', 'rev-parse', 'HEAD').stdout,
@@ -231,7 +240,7 @@ class LifecycleTests(unittest.TestCase):
         (guest / '.gitmodules').write_text('')
         with patch.object(vm, 'REPO', source), patch.object(vm, 'GUEST_REPO', str(guest)), \
                 patch.object(self.machine, 'ssh', side_effect=guest_command):
-            self.machine.sync_submodules()
+            self.machine.sync_submodules(vm.source_gitlinks())
         self.assertEqual(git(guest, 'ls-files', '--stage').stdout, '')
         git(guest, '-c', 'protocol.file.allow=always', 'submodule', 'update', '--init')
         self.assertTrue((guest / 'pxe/tool/payload').exists())
@@ -250,6 +259,7 @@ class LifecycleTests(unittest.TestCase):
                                         env=dict(os.environ, HOME=str(self.root)), check=True, capture_output=True, text=True)
             expected = checkout if initialized else self.root
             self.assertEqual(result.stdout, f'{expected} v1.2.3-4-gabcdef00 abcdef00')
+            self.assertEqual('checkout unavailable' in result.stderr, not initialized)
 
     def test_vm_verification_preserves_caller_input(self):
         self.machine.config = {"network": "lab"}

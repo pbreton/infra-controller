@@ -45,6 +45,14 @@ def host_git(*args, **kwargs):
     return run(["git", "-C", REPO, *args], env=environment, **kwargs)
 
 
+def source_gitlinks():
+    entries = host_git("ls-files", "--stage", "-z", capture_output=True).stdout
+    links = [entry for entry in entries.split(b"\0") if entry.startswith(b"160000 ")]
+    if any(entry.split(b"\t", 1)[0].split()[2] != b"0" for entry in links):
+        raise ValueError("resolve submodule index conflicts before syncing")
+    return links
+
+
 def guest_shell_setup():
     return ('if [ -r "$HOME/.config/nico/vfkit-source-version.sh" ]; then '
             '. "$HOME/.config/nico/vfkit-source-version.sh"; fi; '
@@ -461,6 +469,7 @@ class VM:
         raise ValueError("SSH did not become ready; inspect serial.log and cloud-init")
 
     def sync(self):
+        links = source_gitlinks()
         self.ssh("mkdir", "-p", GUEST_REPO, stdin=subprocess.DEVNULL)
         # Transfer tracked and untracked, nonignored files, including local edits.
         # Excluding .git avoids dangling worktree pointers and copying host credentials.
@@ -486,16 +495,12 @@ class VM:
         self.ssh("bash", "-c", 'if ! git -C "$1" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$1" init -q && '
                  'git -C "$1" -c user.name="NICo VM" -c user.email="nico@localhost" '
                  'commit -q --allow-empty -m "Initialize VM workspace"; fi', "_", GUEST_REPO, stdin=subprocess.DEVNULL)
-        self.sync_submodules()
+        self.sync_submodules(links)
         self.sync_build_version()
 
-    def sync_submodules(self):
+    def sync_submodules(self, links):
         # Preserve gitlinks so submodule update can fetch the pinned commits in
         # the synthetic guest checkout without copying the host's Git metadata.
-        entries = host_git("ls-files", "--stage", "-z", capture_output=True).stdout
-        links = [entry for entry in entries.split(b"\0") if entry.startswith(b"160000 ")]
-        if any(entry.split(b"\t", 1)[0].split()[2] != b"0" for entry in links):
-            raise ValueError("resolve submodule index conflicts before syncing")
         paths = {entry.split(b"\t", 1)[1] for entry in links}
         guest_entries = self.ssh("git", "-C", GUEST_REPO, "ls-files", "--stage", "-z",
                                  stdin=subprocess.DEVNULL, capture_output=True).stdout
