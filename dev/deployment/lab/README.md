@@ -465,6 +465,46 @@ JSON file, substituting the registered image UUID and your public SSH key:
 }
 ```
 
+For a native Ubuntu 24.04 image using systemd-networkd, the shared generator
+produces this OS configuration and its on-disk network profile:
+
+```bash
+python3 dev/deployment/lab/guest-config.py \
+  --os-image-id "$os_image_id" --mac 02:00:00:01:00:02 \
+  --public-key /tmp/nico-instance-key.pub --generation generation-2 \
+  --network ipv6-only > /tmp/nico-instance-os.json
+```
+
+The image UUID, guest MAC, public key file and nonempty single-line generation
+marker are required. The MAC must be a nonzero unicast Ethernet address. The key
+file must contain one OpenSSH public key; `ssh-keygen` validates it. Private keys
+are rejected. The command only prints JSON: it does not contact Core, create
+files or allocate resources. Redirect its output to your chosen OS configuration
+file and use that file with the allocation command below.
+
+`--network` accepts `ipv4` (default), `dual-stack` and `ipv6-only`. The profiles
+select DHCPv4, DHCPv4 plus DHCPv6, and DHCPv6 respectively. IPv6 profiles accept
+router advertisements and explicitly solicit DHCPv6; they require the
+[managed DHCPv6 target setup](#managed-dhcpv6-guests). IPv4 link-local fallback is
+disabled in every profile. No static address or DNS server is supplied; DNS must
+come from the lab's DHCP/RA configuration. No SLAAC addresses are requested by
+this lab's router advertisements.
+
+The generated cloud-init creates user `lab` with passwordless sudo and the
+provided public key, writes `/etc/nico-lab-generation`, and installs
+`/etc/systemd/network/05-nico-lab.network` matched to the guest MAC. That file
+takes precedence over the image's generated networkd file. Cloud-init reloads
+networkd after writing it; first-boot networking can use the image's defaults
+until that reload. Subsequent disk boots use the persistent selected profile.
+These profiles do not alter firmware, Scout or imager provisioning networking.
+Other operating systems or network managers require their own configuration.
+
+For `ipv6-only`, connect using Core's allocated IPv6 address, wait for cloud-init
+to finish, and verify that `ip -j address` has no IPv4 address outside loopback
+and that `ip -4 route show table all` has no non-loopback route. Repeat those
+checks after Core reboot. Keep a separate known-hosts file for the new generation
+and confirm that the old generation's disk marker is absent.
+
 With `machine_id`, `vpc_id` and `os_config` set to the selected host ID, VPC ID
 and JSON file path:
 
