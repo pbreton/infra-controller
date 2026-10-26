@@ -93,10 +93,11 @@ class ScoutWiringTest(unittest.TestCase):
                     and isinstance(n.test, ast.Name) and n.test.id == 'dhcpv6']
         def fail(message):
             raise ValueError(message)
-        for bmc, cidrs, error in [(False, ['10.244.0.0/24', 'fd00:10::/64'], '--bmc-lab'),
-                                  (True, ['10.244.0.0/24'], 'dual-stack'),
-                                  (True, ['10.244.0.0/24', 'fd00:10::/64'], '')]:
-            values = {'nico-dhcp': {}}
+        for bmc, cidrs, error, initial in [(False, ['10.244.0.0/24', 'fd00:10::/64'], '--bmc-lab', {}),
+                                          (True, ['10.244.0.0/24'], 'dual-stack', {}),
+                                          (True, ['10.244.0.0/24', 'fd00:10::/64'], '', {}),
+                                          (True, ['fd00:10::/64'], '', {'dhcp': None})]:
+            values = {'nico-dhcp': initial}
             env = dict(dhcpv6=True, bmc_lab=bmc, cluster_context='kind-lab', all_values=values,
                        fail=fail, decode_json=json.loads,
                        local=lambda *a, **kw: json.dumps({'items': [{'spec': {'podCIDRs': cidrs}}]}))

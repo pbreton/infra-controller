@@ -735,7 +735,8 @@ For DHCPv6, create the dedicated lab cluster with `setup-kind.sh --ip-family dua
 and pass `--dhcpv6` with the existing `--bmc-lab --persistent-vault
 --boot-artifact-image IMAGE` Tilt options. The flag requires BMC mode and exactly
 one node with an IPv6 pod CIDR. It enables the existing `nico-dhcp` chart's
-DHCPv6 deployment with stable development server identifier `020000000006`.
+DHCPv6 deployment, defaulting to stable development server identifier
+`020000000006` unless `nico-dhcp.dhcp.v6ServerIdentifier` is configured.
 The DHCP image contains both daemons on AMD64 and ARM64; no upstream IPv6 route
 is needed for private guest-to-guest tests.
 

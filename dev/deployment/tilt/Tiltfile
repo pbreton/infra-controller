@@ -50,7 +50,8 @@ if dhcpv6:
     nodes = decode_json(str(local(['kubectl', '--context', cluster_context, 'get', 'nodes', '-o', 'json'], quiet=True)))
     if len(nodes['items']) != 1 or not any([':' in cidr for cidr in nodes['items'][0]['spec'].get('podCIDRs', [])]):
         fail('--dhcpv6 requires a single-node dual-stack kind cluster')
-    dhcp_values = all_values['nico-dhcp'].setdefault('dhcp', {})
+    dhcp_values = all_values['nico-dhcp'].get('dhcp') or {}
+    all_values['nico-dhcp']['dhcp'] = dhcp_values
     dhcp_values['v6Enabled'] = True
     dhcp_values.setdefault('v6ServerIdentifier', '020000000006')
 if bmc_lab and (not persistent_vault or not boot_artifact_image):
