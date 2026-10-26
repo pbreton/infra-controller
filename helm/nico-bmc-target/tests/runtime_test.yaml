@@ -360,3 +360,18 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: target nodeName must match the selected node
+
+  - it: selects IPv6 for an explicitly reserved BMC Service address
+    template: service.yaml
+    set:
+      service.clusterIP: fd00:10:96::4010
+    asserts:
+      - equal:
+          path: spec.ipFamilies
+          value: [IPv6]
+      - equal:
+          path: spec.ipFamilyPolicy
+          value: SingleStack
+      - equal:
+          path: spec.clusterIP
+          value: fd00:10:96::4010

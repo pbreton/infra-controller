@@ -22,7 +22,8 @@ request=json.load(sys.stdin)
 config=json.loads(Path('/data/inventory.json').read_text())
 body=json.dumps(request['body']).encode() if request['body'] is not None else None
 headers={'Authorization':'Basic '+base64.b64encode((request['username']+':'+request['password']).encode()).decode(),'Content-Type':'application/json'}
-req=urllib.request.Request('https://'+config['bmcAddress']+request['path'],data=body,headers=headers,method=request['method'])
+authority='['+config['bmcAddress']+']' if ':' in config['bmcAddress'] else config['bmcAddress']
+req=urllib.request.Request('https://'+authority+request['path'],data=body,headers=headers,method=request['method'])
 with urllib.request.urlopen(req,context=ssl._create_unverified_context(),timeout=15) as response:
  print(response.read().decode() or '{}')
 '''

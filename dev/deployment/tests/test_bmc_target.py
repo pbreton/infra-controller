@@ -28,6 +28,33 @@ CONFIG = {'nodeName': 'node', 'bmcAddress': '10.96.40.10', 'clusterUID': 'cluste
 
 
 class TargetTest(unittest.TestCase):
+    def test_ipv6_bmc_address_is_canonical_and_part_of_retained_identity(self):
+        config = TARGET.configuration({**CONFIG, 'bmcAddress': 'fd00:10:96:0::4010'})
+        self.assertEqual(config['bmcAddress'], 'fd00:10:96::4010')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            TARGET.claim(root, config)
+            with self.assertRaisesRegex(ValueError, 'retained target'):
+                TARGET.claim(root, TARGET.configuration(CONFIG))
+        for address in ('::', '::1', 'ff02::1', 'fe80::1%eth0', '::ffff:10.96.40.10'):
+            with self.subTest(address=address), self.assertRaises(ValueError):
+                TARGET.configuration({**CONFIG, 'bmcAddress': address})
+
+    def test_redfish_smoke_request_serializes_both_address_families(self):
+        import io
+        import urllib.request
+        spec = importlib.util.spec_from_file_location('test_target', LAB / 'test-target.py')
+        smoke = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(smoke)
+        payload = dict(username='test', password='test', method='GET', path='/redfish/v1/Systems', body=None)
+        for address, authority in [('10.96.40.10', '10.96.40.10'), ('fd00:10:96::4010', '[fd00:10:96::4010]')]:
+            with self.subTest(address=address), patch.object(Path, 'read_text', return_value=json.dumps({'bmcAddress': address})), \
+                    patch.object(sys, 'stdin', io.StringIO(json.dumps(payload))), \
+                    patch.object(urllib.request, 'urlopen') as open_url, patch('builtins.print'):
+                open_url.return_value.__enter__.return_value.read.return_value = b'{}'
+                exec(smoke.REQUEST, {})
+                self.assertEqual(open_url.call_args.args[0].full_url, 'https://' + authority + '/redfish/v1/Systems')
+
     def test_ipv6_bridge_is_optional_canonical_and_immutable(self):
         legacy = TARGET.configuration(CONFIG)
         self.assertEqual(TARGET.configuration({**CONFIG, 'bridgeAddressV6': ''}), legacy)
@@ -297,6 +324,12 @@ class TargetTest(unittest.TestCase):
                         self.assertEqual(create.call_args.args[0], socket.AF_INET)
                         if failure == 'setup-v6':
                             ipv6.close.assert_called_once()
+
+    def test_ipv6_bmc_cannot_fall_back_to_an_ipv4_listener(self):
+        with patch.object(TARGET.socket, 'socket', side_effect=OSError(errno.EAFNOSUPPORT, 'no IPv6')) as create:
+            with self.assertRaisesRegex(ValueError, 'requires an IPv6 listener'):
+                TARGET.check_bmc_port({**CONFIG, 'bmcAddress': 'fd00:10:96::4010'})
+            self.assertEqual(create.call_count, 1)
 
     def test_bad_network_or_busy_port_does_not_claim_fresh_storage(self):
         create_socket = socket.socket

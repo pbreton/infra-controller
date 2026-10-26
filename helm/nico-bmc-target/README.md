@@ -55,7 +55,7 @@ The existing claim must support POSIX locks and remain on the selected node.
 The chart never creates or deletes it. Kind's default local-path storage survives
 release removal, but **deleting the cluster deletes that storage**.
 
-Create a values file outside the repository. Choose an unused IPv4 Service
+Create a values file outside the repository. Choose an unused IPv4 or IPv6 Service
 address in the cluster's Service CIDR and a guest subnet that overlaps no route
 in the node. The example assumes the default kind Service CIDR.
 
@@ -74,6 +74,23 @@ network:
   bridgeAddress: 10.84.40.1/24
 YAML
 ```
+
+## IPv6 BMC management
+
+A fresh target can use an IPv6 `service.clusterIP`, for example
+`fd00:10:96::4010` when that address belongs to the cluster's IPv6 Service CIDR.
+The chart selects a single-stack IPv6 Service and the test client brackets the
+address in Redfish URLs. The selected node and its host-network pod must have
+IPv6 connectivity; startup fails if an IPv6 listener cannot be created.
+Core's BMC proxy must also be able to reach that Service.
+
+The BMC address is part of the retained target identity. Do not change it on
+an existing PVC; use a new target/PVC for a different address or family. This
+setting affects management traffic only. The guest's bridge and DHCP settings
+remain independent, and the smoke test still checks DHCPv4 firmware traffic.
+Use the same `prepare` and `retained` test phases described below for either
+BMC address family. The image's self-signed test certificate is accepted only
+by that isolated smoke client; it is not a production trust configuration.
 
 ## Optional IPv6 guest routing
 
@@ -221,7 +238,7 @@ The service is for isolated development only.
 | `network.provisioning.dhcpServer` | Empty | Required when enabled: existing unicast IPv4 DHCP Service address outside the guest subnet. |
 | `network.provisioning.podCIDR` | Empty | Required when enabled: selected node's IPv4 pod CIDR, separate from the guest subnet and not `/0`. Checked against live Nodes by Helm; offline templates cannot check it. |
 | `network.provisioning.uplink` | `eth0` | Existing up node interface, separate from the guest bridge; 1–15 letters, digits, underscores, periods, colons or hyphens. |
-| `service.clusterIP` | Empty, required | Unused IPv4 address in the cluster's Service CIDR. |
+| `service.clusterIP` | Empty, required | Unused IPv4 or unscoped ULA/global IPv6 address in the cluster's corresponding Service CIDR. The Service is single-stack in that family. |
 | `service.targetPort` | `2443` | Integer 1024–65535; must be unused on the selected node. Service port stays 443. |
 | `resources` | Requests: 2 CPUs; ordinary RAM derived from guest sizing | Default ordinary RAM is guest RAM + 1024 MiB, or 1024 MiB with huge pages. Explicit ordinary requests/limits override defaults. Huge-page requests and limits are derived from target sizing; manual `hugepages-*` resource entries are rejected. |
 

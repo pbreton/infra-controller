@@ -58,7 +58,11 @@ def configuration(value):
     for key in ('clusterUID', 'owner', 'nodeName'):
         if not isinstance(value[key], str) or not value[key] or len(value[key]) > 253:
             raise ValueError(f'{key} must be a nonempty identity of at most 253 characters')
-    ipaddress.IPv4Address(value['bmcAddress'])
+    bmc = ipaddress.ip_address(value['bmcAddress'])
+    if bmc.version == 6 and (bmc.scope_id is not None or not (
+            bmc in ipaddress.IPv6Network('fc00::/7') or bmc in ipaddress.IPv6Network('2000::/3'))):
+        raise ValueError('bmcAddress must be an unscoped ULA or global IPv6 Service address')
+    value['bmcAddress'] = str(bmc)
     network = ipaddress.IPv4Interface(value['bridgeAddress'])
     if network.ip in (network.network.network_address, network.network.broadcast_address) or network.network.prefixlen > 30:
         raise ValueError('bridgeAddress must be a usable IPv4 gateway address with prefix /30 or shorter')
@@ -221,7 +225,7 @@ def check_network(config):
 
 
 def check_bmc_port(config):
-    # Match bmc-mock's wildcard listener: IPv4 fallback is only for IPv6 setup.
+    # Match bmc-mock's wildcard listener; an IPv6 Service cannot use IPv4 fallback.
     listener = None
     address = '::'
     try:
@@ -230,6 +234,8 @@ def check_bmc_port(config):
     except OSError:
         if listener is not None:
             listener.close()
+        if ipaddress.ip_address(config['bmcAddress']).version == 6:
+            raise ValueError('IPv6 BMC Service requires an IPv6 listener')
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         address = '0.0.0.0'
     with listener:
@@ -314,7 +320,7 @@ def serve(config, networking=None):
             if STOP or any(child.poll() is not None for child in children):
                 raise RuntimeError('target runtime stopped during BMC startup')
             try:
-                with socket.create_connection(('127.0.0.1', config['bmcPort']), timeout=1):
+                with socket.create_connection(('::1' if ':' in config['bmcAddress'] else '127.0.0.1', config['bmcPort']), timeout=1):
                     break
             except OSError:
                 if attempt == 59:

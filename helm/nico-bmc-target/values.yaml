@@ -37,7 +37,7 @@ network:
     podCIDR: ""
     uplink: eth0
 service:
-  # Reserve an unused IPv4 address in the cluster's Service CIDR.
+  # Reserve an unused IPv4 or IPv6 address in the cluster's Service CIDR.
   clusterIP: ""
   # Must be free on the selected node. Service port 443 maps to this listener.
   targetPort: 2443
