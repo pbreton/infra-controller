@@ -739,6 +739,15 @@ DHCPv6 deployment with stable development server identifier `020000000006`.
 The DHCP image contains both daemons on AMD64 and ARM64; no upstream IPv6 route
 is needed for private guest-to-guest tests.
 
+Before allocating guests that need DNS, set `nico-dhcp.dhcp.v6DnsServers` in the
+Tilt values file to a comma-separated list of IPv6 resolvers reachable from the
+guest networks. With direct Helm, use `dhcp.v6DnsServers` in the DHCP release's
+values. The default is empty. The relay's advertisements do not supply DNS.
+Set the resolver before first boot: the exercised Ubuntu 24.04 networkd client
+did not publish a resolver added during an existing lease's rebinding until its
+interface was reconfigured. A planned guest `networkctl reconfigure INTERFACE`
+or reboot reacquires configuration; it can briefly interrupt access.
+
 Obtain the Service address after the DHCP release is ready:
 
 ```bash

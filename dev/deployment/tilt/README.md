@@ -758,6 +758,14 @@ Ordinary Tilt development continues to use MAT by default.
 
 For the optional BMC lab, `--dhcpv6` enables the existing DHCP chart's IPv6 service
 on a single-node dual-stack cluster. It requires `--bmc-lab` and its persistent
-Vault/boot-artifact inputs. Configure the target relay and managed RA through
-shared chart values; see [managed DHCPv6 guests](../lab/README.md#managed-dhcpv6-guests).
+Vault/boot-artifact inputs. The flag enables `nico-dhcp.dhcp.v6Enabled` and uses
+server identifier `020000000006` only when `v6ServerIdentifier` is omitted. It
+preserves other `nico-dhcp.dhcp` settings in `values.yaml`, including the
+comma-separated IPv6 resolver list `v6DnsServers` and `v6LeaseTimers`. An omitted
+resolver list supplies no DNS server. Configure a resolver reachable from the
+guest networks before provisioning instances that need DNS, especially
+IPv6-only guests. These values use the same contract as the
+[DHCP chart](../../../helm/charts/nico-dhcp/values.yaml).
+
+Configure the target relay and managed RA through shared chart values; see [managed DHCPv6 guests](../lab/README.md#managed-dhcpv6-guests).
 The ordinary MAT workflow is unchanged.

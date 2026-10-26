@@ -110,6 +110,33 @@ class ScoutWiringTest(unittest.TestCase):
                     self.assertEqual(values['nico-dhcp']['dhcp'],
                                      {'v6Enabled': True, 'v6ServerIdentifier': '020000000006'})
 
+    def test_dhcpv6_enablement_preserves_configured_resolver_and_lease_timing(self):
+        tree = ast.parse(TILT.read_text())
+        selected = [n for n in tree.body if isinstance(n, ast.If)
+                    and isinstance(n.test, ast.Name) and n.test.id == 'dhcpv6']
+        values = yaml.safe_load((TILT.parent / 'values.yaml').read_text())
+        values['nico-dhcp']['dhcp'] = {
+            'v6Enabled': False, 'v6DnsServers': 'fd00:84::1',
+            'v6ServerIdentifier': '020000001234',
+            'v6LeaseTimers': {'preferredLifetime': 120, 'validLifetime': 180,
+                              'renewTimer': 30, 'rebindTimer': 60},
+        }
+        env = dict(dhcpv6=True, bmc_lab=True, cluster_context='kind-lab', all_values=values,
+                   decode_json=json.loads,
+                   local=lambda *a, **kw: json.dumps({'items': [{'spec': {'podCIDRs': ['fd00:10::/64']}}]}))
+        exec(compile(ast.Module(body=selected, type_ignores=[]), 'Tiltfile', 'exec'), env)
+        result = subprocess.run(
+            ['helm', 'template', 'nico-dhcp', str(ROOT / 'helm/charts/nico-dhcp'),
+             '--namespace', 'nico-system', '--values', '-', '--show-only', 'templates/configmap-v6.yaml'],
+            input=yaml.safe_dump({'global': values['global'], **values['nico-dhcp']}),
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        kea = json.loads(yaml.safe_load(result.stdout)['data']['kea_config6.json'])['Dhcp6']
+        self.assertEqual(kea['hooks-libraries'][0]['parameters']['hook-dns-servers-ipv6'], 'fd00:84::1')
+        self.assertEqual(kea['server-id']['identifier'], '020000001234')
+        self.assertEqual([kea[k] for k in ('preferred-lifetime', 'valid-lifetime', 'renew-timer', 'rebind-timer')],
+                         [120, 180, 30, 60])
+
     def test_bmc_mode_does_not_enable_mat_or_its_readiness_resource(self):
         tree = ast.parse(TILT.read_text())
         assignments = [n for n in tree.body if isinstance(n, ast.Assign)
