@@ -26,17 +26,21 @@ while (($#)); do
   esac
 done
 [[ -n "${DEV_USER}" && "${DEV_USER}" != -* ]] || die 'select a developer with --user'
+case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) die 'native ARM64 or AMD64 is required' ;; esac
+[[ "$(uname -s)" == Linux && -r /etc/os-release ]] || die 'Ubuntu is required'
+# shellcheck source=/dev/null
+source /etc/os-release
+[[ "${ID:-}" == ubuntu && -n "${VERSION_CODENAME:-}" && -n "${VERSION_ID:-}" ]] || die 'Ubuntu is required'
+dpkg --compare-versions "${VERSION_ID}" ge 22.04 || die 'Ubuntu 22.04 or newer is required'
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+for helper in docker-host.sh install-tools.py; do
+  [[ -r "${SCRIPT_DIR}/${helper}" ]] || die "checkout is missing ${helper}"
+done
 if [[ $EUID -ne 0 ]]; then exec sudo bash "$0" --user "${DEV_USER}"; fi
 developer_uid="$(id -u "${DEV_USER}" 2>/dev/null)" || die "user does not exist: ${DEV_USER}"
 [[ "${developer_uid}" != 0 ]] || die '--user must be a non-root account'
-case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) die 'native ARM64 or AMD64 is required' ;; esac
-# shellcheck source=/dev/null
-source /etc/os-release
-[[ "${ID:-}" == ubuntu && -n "${VERSION_CODENAME:-}" ]] || die 'Ubuntu is required'
-dpkg --compare-versions "${VERSION_ID}" ge 22.04 || die 'Ubuntu 22.04 or newer is required'
 USER_HOME="$(getent passwd "${DEV_USER}" | cut -d: -f6)"
 [[ -d "${USER_HOME}" ]] || die 'developer home directory is missing'
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 run_as_user() {
   runuser -u "${DEV_USER}" -- env HOME="${USER_HOME}" USER="${DEV_USER}" \
     DOCKER_HOST=unix:///var/run/docker.sock \

@@ -38,6 +38,13 @@ runs. It does not change shell profiles, create a cluster, or configure KVM,
 huge pages, watcher limits or host networking. Use the capacity and KVM checks
 below before allocating target guests.
 
+An interrupted first installation can leave a running Docker runtime before its
+TLS drop-ins were written. A retry treats that runtime as existing and preserves
+it; it cannot infer ownership from installed binaries. Inspect
+`/etc/systemd/system/{docker,containerd}.service.d/10-tls-compat.conf` and complete
+or repair the runtime before continuing if registry access needs the compatibility
+setting. Applying it to running daemons requires a planned restart.
+
 For the optional macOS-hosted lab, first create the Ubuntu VM using the
 [standalone VM launcher](../vfkit/README.md#create-a-managed-ubuntu-vm), then run
 this command inside its synced checkout. Ordinary Tilt use can instead use a
