@@ -2264,6 +2264,7 @@ jobs:
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_guest_connectivity.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_guest_config.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_lab_lifecycle.py'
+          PYTHONPATH=dev/deployment/vfkit /usr/bin/python3 -B -m unittest discover -s dev/deployment/vfkit/tests
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_imager_artifacts.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_site_mode.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/devspace/tests -p 'test_setup_devspace_on_host.py'
