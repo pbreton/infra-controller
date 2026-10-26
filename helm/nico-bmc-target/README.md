@@ -131,9 +131,9 @@ host. Recheck the prerequisites after restarting or replacing the node, because
 a recreated namespace loses runtime sysctl changes. Startup fails if these prerequisites are
 missing. Use the image's `nf_tables` netfilter backend; legacy-backend nodes are
 unsupported, and startup does not verify the node backend. The target never
-changes shared forwarding policy. Keep IPv4 bridge,
-BMC Service and provisioning settings: this option adds guest IPv6 routing,
-not an IPv6 Kubernetes or provisioning deployment.
+changes shared forwarding policy. The IPv4 bridge remains configured. This option does not change the BMC Service
+family or provisioning settings; see [IPv6 BMC management](#ipv6-bmc-management)
+for the independent management-network choice.
 
 The target assigns the IPv6 gateway to its owned bridge, installs tagged IPv6
 forwarding rules and a masquerade exemption for traffic entering that subnet
