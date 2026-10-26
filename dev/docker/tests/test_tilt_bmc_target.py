@@ -87,10 +87,12 @@ def fail(message):
 
 class LabTiltTests(unittest.TestCase):
     def setUp(self):
+        defaults = yaml.safe_load((ROOT / 'helm/nico-bmc-target/values.yaml').read_text())
         self.values = {
             '/lab/one.json': dict(architecture='arm64', storage={'existingClaim': 'one-data'},
-                                 network={'bridgeAddress': '10.84.40.1/24', 'bridgeAddressV6': 'fd42:8124:40::1/64'},
-                                 target={'instanceIndex': 1}, service={'clusterIP': 'fd00::10', 'targetPort': 2443}),
+                                 network={'bridgeAddress': defaults['network']['bridgeAddress'], 'bridgeAddressV6': 'fd42:8124:40::1/64'},
+                                 target={'instanceIndex': defaults['target']['instanceIndex']},
+                                 service={'clusterIP': 'fd00::10', 'targetPort': defaults['service']['targetPort']}),
             '/lab/two.json': dict(architecture='arm64', storage={'existingClaim': 'two-data'},
                                  network={'bridgeAddress': '10.84.41.1/24', 'bridgeAddressV6': 'fd42:8124:41::1/64'},
                                  target={'instanceIndex': 2}, service={'clusterIP': 'fd00::11', 'targetPort': 2444}),
@@ -144,6 +146,11 @@ class LabTiltTests(unittest.TestCase):
             ('arity', {'targets': '/lab/pair.json'}, {'one': 'one.json'}, None),
             ('path', {'targets': '/lab/pair.json'}, {'one': 42, 'two': 'two.json'}, None),
             ('release', {'targets': '/lab/pair.json'}, {'1one': 'one.json', 'two': 'two.json'}, None),
+            ('release-suffix', {'targets': '/lab/pair.json'}, {'one-': 'one.json', 'two': 'two.json'}, None),
+            ('release-case', {'targets': '/lab/pair.json'}, {'One': 'one.json', 'two': 'two.json'}, None),
+            ('release-length', {'targets': '/lab/pair.json'}, {'a' * 54: 'one.json', 'two': 'two.json'}, None),
+            ('index-default', {'targets': '/lab/pair.json'}, None, ('target', {})),
+            ('port-default', {'targets': '/lab/pair.json'}, None, ('service', {'clusterIP': 'fd00::11'})),
             ('required', {'targets': '/lab/pair.json'}, None, ('storage', {})),
             ('architecture', {'targets': '/lab/pair.json'}, None, ('architecture', 'amd64')),
             ('claim', {'targets': '/lab/pair.json'}, None, ('storage', {'existingClaim': 'one-data'})),
