@@ -4,6 +4,7 @@
 """Observe two native target bridges throughout an explicitly supplied lab command."""
 
 import argparse
+import datetime
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,8 @@ PACKET_STATISTICS = 6
 PACKET_ADD_MEMBERSHIP = 1
 PACKET_MR_PROMISC = 1
 SO_RCVBUFFORCE = 33
+ETH_P_ALL = 3
+STOP_GRACE_SECONDS = 300
 
 COUNTERS = ('ipv6', 'dhcp4_probe', 'ipv4', 'arp', 'other', 'malformed', 'dropped')
 
@@ -73,8 +76,8 @@ def capture():
     mac = bytes.fromhex(actual['mac'].replace(':', ''))
     counts = dict.fromkeys(COUNTERS, 0)
     start = time.monotonic()
-    with socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3)) as packets:
-        packets.bind((actual['bridge'], 0))
+    with socket.socket(socket.AF_PACKET, socket.SOCK_RAW, 0) as packets:
+        packets.bind((actual['bridge'], ETH_P_ALL))
         packets.setsockopt(socket.SOL_SOCKET, SO_RCVBUFFORCE, 4 * 1024 * 1024)
         membership = struct.pack('IHH8s', socket.if_nametoindex(actual['bridge']), PACKET_MR_PROMISC, 0, b'')
         packets.setsockopt(SOL_PACKET, PACKET_ADD_MEMBERSHIP, membership)
@@ -137,9 +140,13 @@ class Guard:
         self.jobs = []
         self.command_succeeded = False
         self.kube = ['kubectl', '--context', args.context]
-        self.cluster = checked([*self.kube, 'get', 'namespace', 'kube-system', '-o', 'json'])['metadata']['uid']
+        self.cluster = None
+        self.outcome = dict(command=args.command, context=args.context, namespace=args.namespace, targets=args.target,
+                            started=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            returncode=None, error=None, forced_stop=False)
 
     def start(self):
+        self.cluster = checked([*self.kube, 'get', 'namespace', 'kube-system', '-o', 'json'])['metadata']['uid']
         for release in self.args.target:
             base = [*self.kube, '-n', self.args.namespace]
             pods = checked([*base, 'get', 'pods', '-l', 'app.kubernetes.io/instance=' + release, '-o', 'json'])['items']
@@ -156,7 +163,7 @@ class Guard:
             log = (self.args.output / (release + '.jsonl')).open('w')
             errors = (self.args.output / (release + '.stderr')).open('w')
             process = subprocess.Popen([*base, 'exec', '-i', name, '--', 'python3', '-u', '-c', HERE.read_text(), '--capture'],
-                                       stdin=subprocess.PIPE, stdout=log, stderr=errors)
+                                       stdin=subprocess.PIPE, stdout=log, stderr=errors, start_new_session=True)
             job = dict(release=release, pod=name, uid=pod['metadata']['uid'], inventory=inventory,
                        process=process, log=log, errors=errors)
             self.jobs.append(job)
@@ -211,11 +218,26 @@ class Guard:
             failures.append('final cluster identity check failed: ' + str(error))
         if len(results) != 2:
             failures.append('two complete captures are required')
-        report = {'cluster': self.cluster, 'command_succeeded': self.command_succeeded,
+        self.outcome['finished'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        report = {'cluster': self.cluster, 'outcome': self.outcome, 'command_succeeded': self.command_succeeded,
                   'passed': self.command_succeeded and not failures, 'captures': results, 'failures': failures}
         (self.args.output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         if failures:
             raise ValueError('; '.join(failures))
+
+
+def stop_command(process, outcome):
+    if process and process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGINT)
+            process.wait(timeout=STOP_GRACE_SECONDS)
+        except ProcessLookupError:
+            pass
+        except subprocess.TimeoutExpired:
+            outcome['forced_stop'] = True
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+        outcome['returncode'] = process.returncode
 
 
 def main():
@@ -245,16 +267,15 @@ def main():
         guard.start()
         process = subprocess.Popen(args.command, stdin=subprocess.DEVNULL, start_new_session=True)
         code = process.wait(timeout=args.timeout)
+        guard.outcome['returncode'] = code
         if code:
             raise subprocess.CalledProcessError(code, args.command)
         guard.command_succeeded = True
+    except BaseException as error:
+        guard.outcome['error'] = type(error).__name__ + ': ' + str(error)
+        raise
     finally:
-        if process:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
+        stop_command(process, guard.outcome)
         try:
             guard.stop()
         finally:

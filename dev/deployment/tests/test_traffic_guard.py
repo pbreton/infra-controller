@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import importlib.util
 import json
+import os
+import time
 from pathlib import Path
 import subprocess
 import tempfile
@@ -39,6 +41,7 @@ class TrafficGuardTests(unittest.TestCase):
             (b'\xff' * 6 + b'\x01' * 6 + b'\x08\x00' + ipv4(ports=b'\0C\0D'), 'ipv4'),
             (b'\xff' * 6 + b'\x01' * 6 + b'\x08\x06' + b'\0' * 28, 'arp'),
             (frame(0x86dd, v6), 'ipv6'),
+            (b'\x33\x33' + b'\0' * 10 + b'\x86\xdd' + v6, None),
             (frame(0x8100, b'\0\1\x86\xdd' + v6), 'ipv6'),
             (frame(0x0800, ipv4()), 'dhcp4_probe'),
             (frame(0x0800, ipv4(source=b'\x0a\0\0\1')), 'ipv4'),
@@ -78,6 +81,7 @@ class TrafficGuardTests(unittest.TestCase):
                 process.poll.return_value = 1
                 jobs.append(dict(release=name, process=process, log=Mock(), errors=Mock()))
             guard.jobs = jobs
+            guard.outcome = {}
             with patch.object(GUARD, 'checked', side_effect=RuntimeError('cluster unavailable')), self.assertRaises(ValueError):
                 guard.stop()
             report = json.loads((Path(directory) / 'report.json').read_text())
@@ -91,6 +95,7 @@ class TrafficGuardTests(unittest.TestCase):
     def test_failed_capture_start_never_launches_wrapped_command_and_stops_started_observers(self):
         with tempfile.TemporaryDirectory() as directory:
             observer = Mock()
+            observer.outcome = {}
             observer.start.side_effect = ValueError('second capture failed')
             args = ['traffic-guard.py', '--context', 'kind-test', '--target', 'one', '--target', 'two',
                     '--output', str(Path(directory) / 'output'), '--', 'unexpected-command']
@@ -105,13 +110,15 @@ class TrafficGuardTests(unittest.TestCase):
         for number in (GUARD.signal.SIGTERM, GUARD.signal.SIGHUP):
             with self.subTest(signal=number), tempfile.TemporaryDirectory() as directory:
                 observer, process = Mock(), Mock()
+                observer.outcome = {}
+                process.poll.return_value = None
                 handlers = {}
                 def install(number, handler):
                     previous = handlers.get(number, GUARD.signal.SIG_DFL)
                     handlers[number] = handler
                     return previous
                 def wait(**kwargs):
-                    if kwargs:
+                    if kwargs.get("timeout") != GUARD.STOP_GRACE_SECONDS:
                         handlers[number](number, None)
                     return 0
                 process.wait.side_effect = wait
@@ -122,9 +129,55 @@ class TrafficGuardTests(unittest.TestCase):
                         patch.object(GUARD.subprocess, 'Popen', return_value=process), \
                         patch.object(GUARD.os, 'killpg') as kill, self.assertRaises(InterruptedError):
                     GUARD.main()
-                kill.assert_called_once_with(process.pid, GUARD.signal.SIGKILL)
+                kill.assert_called_once_with(process.pid, GUARD.signal.SIGINT)
                 observer.stop.assert_called_once()
                 self.assertEqual(handlers[number], GUARD.signal.SIG_DFL)
+
+    def test_start_rejects_ambiguous_or_foreign_targets_before_launch(self):
+        pod = {'metadata': {'name': 'one-pod', 'uid': 'pod', 'labels': {'app.kubernetes.io/name': 'nico-bmc-target'}}}
+        wrong_label = {'metadata': dict(pod['metadata'], labels={})}
+        for pods, inventory in [([pod, pod], None), ([wrong_label], None),
+                                ([pod], {'clusterUID': 'other', 'owner': 'bmc-lab/one'})]:
+            with self.subTest(pods=pods), tempfile.TemporaryDirectory() as directory:
+                args = Mock(output=Path(directory), context='kind-test', namespace='bmc-lab', target=['one', 'two'], command=['true'])
+                guard = GUARD.Guard(args)
+                results = [{'metadata': {'uid': 'cluster'}}, {'items': pods}, inventory]
+                with patch.object(GUARD, 'checked', side_effect=results), patch.object(GUARD.subprocess, 'Popen') as launch, self.assertRaises(ValueError):
+                    guard.start()
+                launch.assert_not_called()
+
+    def test_graceful_stop_allows_lifecycle_style_child_session_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ready, stopped = Path(directory) / 'ready', Path(directory) / 'stopped'
+            script = """import pathlib,subprocess,sys,time
+child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],start_new_session=True)
+pathlib.Path(sys.argv[1]).write_text(str(child.pid))
+try:
+ time.sleep(60)
+finally:
+ child.terminate();child.wait();pathlib.Path(sys.argv[2]).write_text('done')
+"""
+            process = subprocess.Popen(['python3', '-c', script, str(ready), str(stopped)],
+                                       start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            child_pid = None
+            try:
+                deadline = time.monotonic() + 5
+                while not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(ready.exists())
+                child_pid = int(ready.read_text())
+                outcome = {'forced_stop': False}
+                with patch.object(GUARD, 'STOP_GRACE_SECONDS', 5):
+                    GUARD.stop_command(process, outcome)
+                self.assertTrue(stopped.exists())
+                self.assertFalse(outcome['forced_stop'])
+                with self.assertRaises(ProcessLookupError): os.kill(child_pid, 0)
+            finally:
+                if process.poll() is None:
+                    process.kill(); process.wait()
+                if child_pid:
+                    try: os.kill(child_pid, GUARD.signal.SIGKILL)
+                    except ProcessLookupError: pass
 
     def test_same_source_executes_through_python_c_without_file_context(self):
         result = subprocess.run(['python3', '-c', PATH.read_text(), '--help'], capture_output=True, text=True)

@@ -991,7 +991,10 @@ evidence.
 ## Continuous IPv6 traffic guard
 
 Wrap the two-target lifecycle command so observation starts before allocation
-and ends after release and Scout cleanup:
+and ends after release and Scout cleanup. This requires the
+[Tilt IPv6 boot profile](../tilt/README.md), with `--ipv6-boot`,
+`--ipv6-endpoints`, and IPv4 provisioning disabled on both targets. A default
+IPv4 Scout/imager boot is expected to fail this guard:
 
 ```bash
 python3 dev/deployment/lab/traffic-guard.py \
@@ -1013,11 +1016,18 @@ ready. `--namespace` defaults to `bmc-lab`; both releases must use it.
 private permissions. `--timeout` is the wrapped command's positive duration in
 seconds, 60–86400 inclusive, default 14400. Put all wrapper options before `--`;
 the remaining arguments form the command, without shell expansion by the wrapper.
-The command receives no stdin. Timeout or interruption terminates its process group.
+The command receives no stdin. Timeout or interruption sends SIGINT to its
+process group, allowing the lifecycle runner to stop its own children and collect
+diagnostics. Captures continue during a grace period of up to 300 seconds before
+a forced SIGKILL. Commands must handle SIGINT and clean up children they start
+in separate sessions; a forced stop is recorded as incomplete recovery.
 
 Each target's `.jsonl` file contains readiness, periodic cumulative counters and
 an explicit completion record. `.stderr` retains observer errors; `report.json`
-records the command outcome and guard result. No packet payloads are stored.
+records the command arguments, exit code or error, UTC start/end times, forced
+termination status, selected targets and guard result. Use the command record to
+distinguish a smoke run from a full lifecycle; the wrapper does not infer or
+validate the wrapped command's target selection. No packet payloads are stored.
 All IPv4 and ARP frames on each dedicated guest bridge count, including
 broadcast DHCP replies. IPv6 and other Ethernet traffic count only when the guest
 MAC is a source or destination. Capture uses temporary promiscuous socket
