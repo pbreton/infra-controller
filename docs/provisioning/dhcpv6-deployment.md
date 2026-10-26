@@ -115,7 +115,8 @@ Apply through the site's normal Helm upgrade workflow, using the Core image and 
 integers in seconds, from 1 through 4294967294. Zero, infinite lifetimes,
 quoted numbers, fractional numbers, and unknown fields are rejected by the chart
 schema. An omitted or null map uses the defaults below; omitted fields in a
-partial map also use their defaults. Explicit null field values are invalid.
+partial map also use their defaults. Helm removes explicitly null fields during
+value coalescing, so those fields also fall back to their defaults.
 
 | Field under `dhcp.v6LeaseTimers` | Default | Meaning |
 | --- | --- | --- |
@@ -130,7 +131,11 @@ When DHCPv6 is enabled, rendering also requires
 lease timing. A changed DHCPv6 configuration triggers its existing pod rollout.
 Clients with an existing lease keep the previously supplied timers until they
 receive an updated lease; changing the chart does not force an immediate renewal.
-The timers configure Kea leases and do not change Core network allocations.
+Lease expiry also reaches Core through the DHCP hook. When Core's
+`dhcp_lease_expiry_handling` setting is enabled, expiry can remove the matching
+DHCP-assigned machine-interface address and refresh its DNS records. That
+setting defaults to disabled; these Helm values do not enable it. Account for
+this interaction before shortening leases, especially for powered-off hosts.
 
 For an isolated lab that needs to observe real client renewals quickly, use:
 

@@ -48,3 +48,10 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: dhcp.v6LeaseTimers requires renewTimer < rebindTimer < validLifetime
+  - it: uses the default for a field removed by Helm null coalescing
+    set:
+      dhcp.v6LeaseTimers.validLifetime: null
+    asserts:
+      - matchRegex:
+          path: data['kea_config6.json']
+          pattern: '"valid-lifetime": 7200'
