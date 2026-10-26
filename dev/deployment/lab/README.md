@@ -198,9 +198,8 @@ Copy these files into the artifact image with the payloads. The matching Tilt
 `--ipv6-boot` profile requires the IPv6 markers and targets with IPv4 provisioning
 disabled; see its documented fresh-cluster setup.
 
-Successful output contains `ARCH/scout.network-profile` and
-`aarch64/scout.efi` and `aarch64/scout.squashfs`, or
-`x86_64/scout.efi` and `x86_64/scout.squashfs`. `build/` retains the staged profiles,
+Successful output contains `ARCH/scout.efi`, `ARCH/scout.squashfs` and
+`ARCH/scout.network-profile`, where `ARCH` is `aarch64` or `x86_64`. `build/` retains the staged profiles,
 mkosi output and downloaded package cache. `build-info.json` records the native
 architecture, package version, requested virtual-kernel package and SHA-256
 hashes of the input package and both payloads, plus the `ipv6_boot` boolean. The manifest is written only after

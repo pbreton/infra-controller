@@ -144,9 +144,6 @@ class ScoutArtifactsTest(unittest.TestCase):
                 mkosi.touch()
                 package = root / 'scout.deb'
                 package.write_bytes(b'fixture')
-                installer = root / 'pxe/common_files/disk_imaging.sh'
-                installer.parent.mkdir(parents=True)
-                installer.write_bytes(b'fixture')
                 def build(*args, **kwargs):
                     built = output / 'build/output'
                     built.mkdir(exist_ok=True)
@@ -160,7 +157,7 @@ class ScoutArtifactsTest(unittest.TestCase):
                         patch.object(SCOUT.platform, 'machine', return_value='aarch64'), \
                         patch.object(SCOUT.platform, 'system', return_value='Linux'), \
                         patch.object(SCOUT.os, 'geteuid', return_value=0), \
-                        patch.object(SCOUT, 'stage_profiles', return_value='unused'), \
+                        patch.object(SCOUT, 'stage_profiles'), \
                         patch.object(SCOUT.subprocess, 'check_output', side_effect=['arm64', 'fixture']), \
                         patch.object(SCOUT.subprocess, 'run', side_effect=build), \
                         patch.object(sys, 'argv', argv), contextlib.redirect_stdout(io.StringIO()):

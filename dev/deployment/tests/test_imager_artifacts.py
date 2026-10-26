@@ -85,8 +85,6 @@ class ImagerArtifactsTest(unittest.TestCase):
                 mkosi = root / 'pxe/mkosi/bin/mkosi'
                 mkosi.parent.mkdir(parents=True)
                 mkosi.touch()
-                package = root / 'scout.deb'
-                package.write_bytes(b'fixture')
                 installer = root / 'pxe/common_files/disk_imaging.sh'
                 installer.parent.mkdir(parents=True)
                 installer.write_bytes(b'fixture')
@@ -103,7 +101,6 @@ class ImagerArtifactsTest(unittest.TestCase):
                         patch.object(IMAGER.platform, 'system', return_value='Linux'), \
                         patch.object(IMAGER.os, 'geteuid', return_value=0), \
                         patch.object(IMAGER, 'stage_profile', return_value='qcow-imager'), \
-                        patch.object(IMAGER.subprocess, 'check_output', side_effect=['arm64', 'fixture']), \
                         patch.object(IMAGER.subprocess, 'run', side_effect=build), \
                         patch.object(sys, 'argv', argv), contextlib.redirect_stdout(io.StringIO()):
                     IMAGER.main()
