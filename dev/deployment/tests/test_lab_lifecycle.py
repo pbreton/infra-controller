@@ -144,11 +144,33 @@ class LifecycleTest(unittest.TestCase):
             lab = LAB.Lifecycle(Path(directory), dict(self.state, targets=[target], run='lab-test', os_image=INSTANCE, vpc=INSTANCE))
             lab.wait = Mock(return_value=True)
             lab.kube = Mock(return_value='')
-            lab.mutation = Mock(return_value='No available machines')
             lab.instance = Mock(side_effect=RuntimeError('Unknown Instance ID'))
-            with patch.object(LAB, 'run', return_value='{}'), self.assertRaises(RuntimeError):
+            admin = Path(directory) / 'admin.sh'
+            admin.write_text('echo "No available machines" >&2\nexit 0\n')
+            real_run = LAB.run
+            def run(command, **kwargs):
+                return '{}' if 'guest-config.py' in str(command[1]) else real_run(command, **kwargs)
+            with patch.object(LAB, 'ADMIN', admin), patch.object(LAB, 'run', side_effect=run), self.assertRaises(RuntimeError):
                 lab.allocate(target)
-            self.assertEqual((Path(directory) / 'allocate-1-one.log').read_text(), 'No available machines')
+            self.assertEqual((Path(directory) / 'allocate-1-one.log').read_text(), 'No available machines\n')
+
+    def test_reboot_waits_for_both_leases_after_ipv6_ssh_returns(self):
+        target = dict(self.target, instance=INSTANCE, addresses={'4': '10.0.0.10', '6': 'fd00::10'})
+        lab = LAB.Lifecycle(Path('/unused'), dict(self.state, network='dual-stack'))
+        lab.instance = Mock()
+        lab.mutation = Mock()
+        before, after, peer_boot = (f'81240030-0000-4000-8000-{n:012d}' for n in (1, 2, 3))
+        def lease(address):
+            return {'local': address, 'valid_life_time': 180}
+        lab.ssh = Mock(side_effect=[before, peer_boot, after,
+                                   json.dumps([{'addr_info': [lease('fd00::10')]}]), after,
+                                   json.dumps([{'addr_info': [lease('fd00::10'), lease('10.0.0.10')]}]), peer_boot])
+        def wait(label, check):
+            self.assertFalse(check())
+            self.assertTrue(check())
+        lab.wait = wait
+        lab.reboot(target, dict(target, release='two'))
+        self.assertEqual(lab.ssh.call_count, 7)
 
     def test_diagnostics_preserve_prior_snapshots_and_skip_replaced_targets(self):
         with tempfile.TemporaryDirectory() as directory:

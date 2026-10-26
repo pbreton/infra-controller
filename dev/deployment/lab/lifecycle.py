@@ -4,6 +4,7 @@
 """Exercise two explicitly selected, admitted native lab targets through instance lifecycles."""
 
 import argparse
+import contextlib
 import fcntl
 import ipaddress
 import json
@@ -20,23 +21,27 @@ HERE = Path(__file__).resolve().parent
 ADMIN = HERE.parent / 'core-admin.sh'
 
 
-def run(command, timeout=90, env=None, errors="strict"):
-    process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True, errors=errors, env=env, start_new_session=True)
-    try:
-        output, error = process.communicate(timeout=timeout)
-        if process.returncode:
-            raise RuntimeError(f'{Path(command[0]).name} exited {process.returncode}: {error[-2000:]}')
-        return output
-    finally:
-        process.poll()
+def run(command, timeout=90, env=None, errors="strict", log_path=None):
+    with contextlib.ExitStack() as stack:
+        log = stack.enter_context(log_path.open('w')) if log_path else None
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log if log_path else subprocess.PIPE,
+                                   stderr=subprocess.STDOUT if log_path else subprocess.PIPE, text=True, errors=errors, env=env, start_new_session=True)
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
-        process.stdout.close()
-        process.stderr.close()
+            output, error = process.communicate(timeout=timeout)
+            if process.returncode:
+                raise RuntimeError(f'{Path(command[0]).name} exited {process.returncode}: {(error or (log_path.read_text(errors='replace') if log_path else output))[-2000:]}')
+            return output or ''
+        finally:
+            process.poll()
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            if process.stdout:
+                process.stdout.close()
+            if process.stderr:
+                process.stderr.close()
 
 
 def save(path, value):
@@ -83,13 +88,13 @@ class Lifecycle:
     def checkpoint(self):
         save(self.directory / 'state.json', self.state)
 
-    def admin(self, *args, json_output=False):
+    def admin(self, *args, json_output=False, log_path=None):
         command = ['bash', str(ADMIN)] + (['-f', 'json'] if json_output else []) + list(args)
-        output = run(command, env=self.environment)
+        output = run(command, env=self.environment, log_path=log_path)
         return json.loads(output) if json_output else output
 
-    def mutation(self, *args):
-        return self.admin('--cloud-unsafe-op', 'Validate owned native lab lifecycle', *args)
+    def mutation(self, *args, log_path=None):
+        return self.admin('--cloud-unsafe-op', 'Validate owned native lab lifecycle', *args, log_path=log_path)
 
     def kube(self, target, *args):
         return run(['kubectl', '--context', self.state['context'], '-n', target['namespace'], *args],
@@ -175,9 +180,9 @@ class Lifecycle:
         config = json.loads(run([sys.executable, str(HERE / 'guest-config.py'), '--os-image-id', self.state['os_image'],
                                 '--mac', target['inventory']['mac'], '--public-key', str(self.directory / 'id_ed25519.pub'),
                                 '--generation', target['intent'], '--network', self.state['network']]))
-        output = self.mutation('instance', 'allocate', '--prefix-name', target['intent'], '--machine-id', target['machine'],
-                      '--flat-vpc-id', self.state['vpc'], '--os', json.dumps(config))
-        (self.directory / f'allocate-{self.state["generation"]}-{target["release"]}.log').write_text(output)
+        self.mutation('instance', 'allocate', '--prefix-name', target['intent'], '--machine-id', target['machine'],
+                      '--flat-vpc-id', self.state['vpc'], '--os', json.dumps(config),
+                      log_path=self.directory / f'allocate-{self.state["generation"]}-{target["release"]}.log')
         current = self.instance(target)
         target['instance'] = current['id']
         target['addresses'] = selected_addresses(current, self.state['network'], target['inventory'])
@@ -196,12 +201,19 @@ class Lifecycle:
         self.checkpoint()
         return True
 
-    def verify_network(self, target):
-        info = json.loads(self.ssh(target, 'ip -j address'))
+    def leases_ready(self, target, info=None):
+        if info is None:
+            info = json.loads(self.ssh(target, 'ip -j address'))
         for address in target['addresses'].values():
             leases = [a for i in info for a in i.get('addr_info', []) if a.get('local') == address]
             if len(leases) != 1 or leases[0]['valid_life_time'] == 4294967295:
-                raise ValueError('allocated address is not a finite DHCP lease')
+                return False
+        return True
+
+    def verify_network(self, target):
+        info = json.loads(self.ssh(target, 'ip -j address'))
+        if not self.leases_ready(target, info):
+            raise ValueError('allocated address is not a finite DHCP lease')
         if self.state['network'] == 'ipv6-only':
             v4 = [a for i in info if i['ifname'] != 'lo' for a in i.get('addr_info', []) if a['family'] == 'inet']
             routes = json.loads(self.ssh(target, 'ip -j -4 route show table all'))
@@ -232,7 +244,7 @@ class Lifecycle:
         self.mutation('instance', 'reboot', '--instance', target['instance'])
         def restarted():
             after = self.ssh(target, 'test -f /etc/nico-peer-retained && cat /proc/sys/kernel/random/boot_id').strip()
-            return str(uuid.UUID(after)) != str(uuid.UUID(before))
+            return str(uuid.UUID(after)) != str(uuid.UUID(before)) and self.leases_ready(target)
         self.wait(target['release'] + ' reboot with retained disk', restarted)
         if self.ssh(peer, 'cat /proc/sys/kernel/random/boot_id').strip() != peer_before:
             raise ValueError('peer rebooted unexpectedly')
@@ -283,6 +295,7 @@ class Lifecycle:
                 raise ValueError('instance IDs are not distinct')
             for target in self.state['targets']:
                 self.wait(target['release'] + ' installed disk/cloud-init', lambda: self.installed(target))
+                self.wait(target['release'] + ' DHCP leases', lambda: self.leases_ready(target))
                 self.verify_network(target)
             self.peers()
             first, second = self.state['targets']
