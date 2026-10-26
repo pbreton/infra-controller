@@ -267,17 +267,19 @@ replace host preflight. Tilt schedules one update at a time; this does not
 serialize independent kubelet restarts or other deployment tools. Tilt builds each distinct image repository once and
 injects its result into the releases selecting that repository. A failure deploying one release can leave
 the other running; inspect both releases and retain their original values/PVCs.
-The manifest is not an atomic transaction or a cleanup instruction.
+The manifest is not an atomic transaction.
 
 Use `tilt up` with the same arguments for interactive work. Editing the manifest
-or either values file reevaluates the configuration. Removing or renaming a
-release in the manifest is not a supported target migration: stop it explicitly
-using the documented [network cleanup procedure](#verify-target-network-cleanup) before
-changing the selection. That procedure covers Core-managed targets and preserving
-their existing PVCs; replacing or reusing their disks requires the
+or either values file reevaluates the configuration. While Tilt is running,
+removing or renaming a release, or changing arguments to select another release,
+causes Tilt to **uninstall the old Helm release immediately**. That does not
+release its Core instance or verify network cleanup. Stop Tilt before changing
+the selection, then follow the [network cleanup procedure](#verify-target-network-cleanup).
+That procedure covers Core-managed targets and preserving their existing PVCs;
+replacing or reusing their disks requires the
 [full lab discard procedure](../../dev/deployment/lab/README.md#stop-restart-and-discard-the-bmc-lab).
-PVC creation, instance registration, release and disk deletion remain explicit
-separate operations.
+PVC creation, instance registration, Core instance release and disk deletion
+remain separate operations.
 
 ## Configuration and retention
 

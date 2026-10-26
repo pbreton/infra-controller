@@ -40,7 +40,8 @@ targets = []
 images = []
 identities = {'claim': [], 'index': [], 'bmc': [], 'port': [], 'bridge': [], 'bridge6': []}
 # Validate every target before registering builds or deployments.
-for release, values_file in target_files.items():
+for release in sorted(target_files.keys()):
+    values_file = target_files[release]
     if not release or len(release) > 53 or release[0] not in 'abcdefghijklmnopqrstuvwxyz' or release[-1] == '-' or any([c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in [release[i] for i in range(len(release))]]):
         fail('Target releases must be lowercase DNS labels starting with a letter, at most 53 characters')
     values = read_yaml(values_file)

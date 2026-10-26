@@ -112,7 +112,8 @@ class LabTiltTests(unittest.TestCase):
         exec(TILTFILE.read_text(), environment)
 
     def test_pair_shares_build_and_preserves_direct_helm_values(self):
-        self.evaluate({'targets': '/lab/pair.json', 'namespace': 'chosen'})
+        self.evaluate({'targets': '/lab/pair.json', 'namespace': 'chosen'},
+                      {'two': '/lab/two.json', 'one': 'one.json'})
         self.build.assert_called_once()
         self.settings.assert_called_once_with(k8s_upsert_timeout_secs=360, max_parallel_updates=1)
         self.assertEqual([call.args[0] for call in self.deploy.call_args_list], ['one', 'two'])
