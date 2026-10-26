@@ -2225,7 +2225,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3-yaml python3-tomli jq
+          sudo apt-get install -y --no-install-recommends openssh-client python3-yaml python3-tomli jq
           # Use upstream promtool with Kubernetes discovery, matching kube-prometheus-stack 59.1.0.
           prometheus_version=2.52.0
           prometheus_archive="prometheus-${prometheus_version}.linux-amd64.tar.gz"

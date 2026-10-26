@@ -322,7 +322,8 @@ prove OS installation, instance assignment, release, or tenant IPv6 connectivity
 Continue with the [instance lifecycle checks](#allocate-and-recycle-an-instance)
 and [explicit-address IPv6 routing checks](#two-instance-ipv6-routing).
 See [managed DHCPv6 guests](#managed-dhcpv6-guests) for dynamic IPv6 addressing.
-SLAAC, IPv6-only guests and Internet IPv6 remain separate stages of
+The [guest profile generator](#allocate-and-recycle-an-instance) supports an
+IPv6-only installed OS. SLAAC and Internet IPv6 need separate validation in
 [issue 8124](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 ### Stop, restart and discard the BMC lab
@@ -494,8 +495,9 @@ The generated cloud-init creates user `lab` with passwordless sudo and the
 provided public key, writes `/etc/nico-lab-generation`, and installs
 `/etc/systemd/network/05-nico-lab.network` matched to the guest MAC. That file
 takes precedence over the image's generated networkd file. Cloud-init reloads
-networkd after writing it; first-boot networking can use the image's defaults
-until that reload. Subsequent disk boots use the persistent selected profile.
+networkd after writing it; before that reload, Core's default NoCloud network
+configuration enables both DHCPv4 and DHCPv6. This fixture targets the lab's
+single guest NIC; it does not disable networking on additional interfaces. Subsequent disk boots use the persistent selected profile.
 These profiles do not alter firmware, Scout or imager provisioning networking.
 Other operating systems or network managers require their own configuration.
 
@@ -556,7 +558,7 @@ This proves installation and replacement of a virtual disk image, not hardware
 secure erase. Scout's hardware cleanup discovers NVMe and `/dev/sd*` devices;
 the target's `/dev/vda` is outside those paths. Do not infer tenant data erasure
 at release from a successful reprovisioning test. Virtio inventory, hardware
-sanitize coverage, SLAAC, IPv6-only guests and Internet IPv6 remain separate acceptance boundaries in
+sanitize coverage, SLAAC and Internet IPv6 remain separate acceptance boundaries in
 [the migration issue](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 ## Two-instance IPv4 connectivity
@@ -698,7 +700,10 @@ The early networkd filename takes precedence over the image's generated network
 file for the matched NIC. DHCPv4 remains enabled; the explicit IPv6 address and
 peer route persist on disk. This fragment intentionally disables RA acceptance
 and adds no IPv6 default route. It does not test DHCPv6, SLAAC, IPv6-only guests
-or Internet IPv6. Those remain separate stages of
+or Internet IPv6. For dynamic addresses and IPv6-only installed guests, use the
+[managed DHCPv6 setup](#managed-dhcpv6-guests) and the
+[guest profile generator](#allocate-and-recycle-an-instance). SLAAC and Internet
+IPv6 have separate acceptance gates in
 [the migration](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 After both installed guests complete cloud-init, run:
@@ -747,21 +752,10 @@ repeating `--prefix` in the fresh-site registration command. Use `--reserve-firs
 to exclude the bridge gateway, as in the IPv4 procedure. Do not recreate an
 existing segment or replace credentials to change a running site's configuration.
 
-For the installed guest, replace the explicit-address fixture with an early
-systemd-networkd file matched to the guest MAC. Retain its mode `0644` and the
-existing `networkctl reload` command:
-
-```ini
-[Match]
-MACAddress=02:00:00:01:00:02
-
-[Network]
-DHCP=yes
-IPv6AcceptRA=yes
-
-[DHCPv6]
-WithoutRA=solicit
-```
+For the installed guest, use the [OS configuration generator](#allocate-and-recycle-an-instance)
+with `--network dual-stack` instead of the explicit-address fixture. It installs
+an early systemd-networkd file matched to the guest MAC, enables both DHCP
+families and RA acceptance, and reloads networkd after cloud-init writes it.
 
 This keeps IPv4 provisioning and installed IPv4 networking while exercising
 DHCPv6, including clients with non-MAC DUIDs. Read the allocated address from

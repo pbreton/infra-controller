@@ -10,6 +10,8 @@ import sys
 import tempfile
 import unittest
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / 'dev/deployment/lab/guest-config.py'
 IMAGE = '81240025-0000-4000-8000-000000000001'
@@ -40,7 +42,7 @@ class GuestConfigTest(unittest.TestCase):
                     self.assertFalse(config['phone_home_enabled'])
                     self.assertFalse(config['run_provisioning_instructions_on_every_boot'])
                     self.assertTrue(config['user_data'].startswith('#cloud-config\n'))
-                    data = json.loads(config['user_data'].split('\n', 1)[1])
+                    data = yaml.safe_load(config['user_data'])
                     self.assertEqual(data['users'][0]['ssh_authorized_keys'], [KEY])
                     files = {item['path']: item for item in data['write_files']}
                     self.assertEqual(files['/etc/nico-lab-generation']['content'], 'generation-2\n')
@@ -54,12 +56,21 @@ class GuestConfigTest(unittest.TestCase):
                         self.assertEqual(network['DHCPv6']['WithoutRA'], 'solicit')
                     self.assertEqual(data['runcmd'], [['networkctl', 'reload']])
 
+    def test_cloud_init_yaml_preserves_unicode_marker_and_key_comment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.invoke(directory, '--generation', 'generation-🌐', key=KEY + ' lab-🌐')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            data = yaml.safe_load(json.loads(result.stdout)['user_data'])
+            self.assertEqual(data['write_files'][0]['content'].encode(), 'generation-🌐\n'.encode())
+            self.assertEqual(data['users'][0]['ssh_authorized_keys'][0].encode(), (KEY + ' lab-🌐').encode())
+
     def test_rejects_invalid_inputs_without_partial_output_or_key_disclosure(self):
         cases = [(['--network', 'unknown'], KEY),
                  (['--os-image-id', 'not-an-id'], KEY),
                  (['--mac', '01:00:00:01:00:02'], KEY),
                  (['--mac', '00:00:00:00:00:00'], KEY),
                  (['--generation', ''], KEY),
+                 (['--generation', 'generation\u2028two'], KEY),
                  (['--network', 'ipv6-only'], '-----BEGIN OPENSSH PRIVATE KEY-----'),
                  (['--network', 'ipv6-only'], 'ssh-ed25519 malformed')]
         with tempfile.TemporaryDirectory() as directory:

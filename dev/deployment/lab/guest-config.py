@@ -43,7 +43,7 @@ def configuration(image, mac, key, generation, profile):
     # JSON is valid YAML, including cloud-init's cloud-config document format.
     return {'phone_home_enabled': False, 'run_provisioning_instructions_on_every_boot': False,
             'variant': {'OsImageId': {'value': str(image)}},
-            'user_data': '#cloud-config\n' + json.dumps(cloud_config, indent=2) + '\n'}
+            'user_data': '#cloud-config\n' + json.dumps(cloud_config, indent=2, ensure_ascii=False) + '\n'}
 
 
 def main():
@@ -54,7 +54,7 @@ def main():
     parser.add_argument('--generation', required=True, help='nonempty single-line disk generation marker')
     parser.add_argument('--network', choices=PROFILES, default='ipv4', help='installed OS networking (default: ipv4)')
     args = parser.parse_args()
-    if not args.generation.strip() or any(ord(c) < 32 or ord(c) == 127 for c in args.generation):
+    if not args.generation.strip() or not args.generation.isprintable():
         parser.error('--generation must be a nonempty single line without control characters')
     try:
         key = args.public_key.read_text().strip()
