@@ -135,7 +135,9 @@ Lease expiry also reaches Core through the DHCP hook. When Core's
 `dhcp_lease_expiry_handling` setting in the site TOML
 (`nico-api.siteConfig.nicoApiSiteConfig`) is enabled, expiry can remove the
 matching DHCP-assigned machine-interface address and refresh its DNS records.
-The hook skips this notification when it cannot identify the client's MAC.
+The DHCPv6 hook skips this notification when it cannot identify the client's MAC.
+The same Core setting also controls DHCPv4 expiry; without a MAC, the DHCPv4
+notification identifies the expiring address by IP alone.
 The setting defaults to disabled; these Helm values do not enable it. Losing a
 BMC address can invalidate its recorded topology, and the controller does not
 support all transitions involving an addressless interface. Leave expiry
