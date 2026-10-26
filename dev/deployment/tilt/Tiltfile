@@ -924,9 +924,9 @@ if ipv6_endpoints:
 def boot_artifact_command(architecture, ipv6):
     profile = 'ipv6' if ipv6 else 'default'
     return ['sh', '-ec',
-        'for name in scout qcow-imager; do '
+        'for name in scout qcow-imager; do ' +
         'if test -f /%s/$name.efi; then ' % architecture +
-        'actual=default; '
+        'actual=default; ' +
         'if test -f /%s/$name.network-profile; then actual=$(cat /%s/$name.network-profile); fi; ' % (architecture, architecture) +
         'test "$actual" = %s || { echo "boot artifact network profile mismatch: $name" >&2; exit 1; }; ' % profile +
         'fi; done; cp -r /%s /forge-boot-artifacts/blobs/internal/' % architecture]

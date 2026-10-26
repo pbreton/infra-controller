@@ -204,6 +204,7 @@ class ScoutWiringTest(unittest.TestCase):
     def test_packaging_retains_both_boot_profile_markers(self):
         rules = (ROOT / 'dev/deployment/lab/Dockerfile.boot-artifacts.dockerignore').read_text().splitlines()
         for arch in ('aarch64', 'x86_64'):
+            self.assertLess(rules.index('!' + arch), rules.index(arch + '/**'))
             for name in ('scout', 'qcow-imager'):
                 with self.subTest(architecture=arch, payload=name):
                     self.assertIn('!' + arch + '/' + name + '.network-profile', rules)
