@@ -18,6 +18,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if .Values.target.hugepages -}}
 {{- $_ := set $config "hugepages" true -}}
 {{- end -}}
+{{- if .Values.network.bridgeAddressV6 -}}
+{{- $_ := set $config "bridgeAddressV6" .Values.network.bridgeAddressV6 -}}
+{{- end -}}
 {{- $config | toJson -}}
 {{- end -}}
 

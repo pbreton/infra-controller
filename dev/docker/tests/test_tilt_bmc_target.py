@@ -59,13 +59,14 @@ class TargetWiringTest(unittest.TestCase):
             spec.loader.exec_module(runtime)
         finally:
             sys.path.pop(0)
-        for hugepages in (False, True):
-            with self.subTest(hugepages=hugepages):
+        for hugepages, ipv6 in [(False, ''), (True, ''), (True, 'fd42:8124:40::1/64')]:
+            with self.subTest(hugepages=hugepages, ipv6=ipv6):
                 result = subprocess.run(
                     ['helm', 'template', 'target-two', str(ROOT / 'helm/nico-bmc-target'),
                      '--namespace', 'test-lab', '--show-only', 'templates/configmap.yaml',
                      '--set', 'nodeName=node,clusterUID=cluster,storage.existingClaim=data,service.clusterIP=10.96.40.10',
-                     '--set', f'architecture=arm64,target.instanceIndex=2,target.memoryMiB=8192,target.hugepages={str(hugepages).lower()}'],
+                     '--set', f'architecture=arm64,target.instanceIndex=2,target.memoryMiB=8192,target.hugepages={str(hugepages).lower()}',
+                     '--set-string', 'network.bridgeAddressV6=' + ipv6],
                     capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 config = runtime.configuration(json.loads(yaml.safe_load(result.stdout)['data']['config.json']))
@@ -74,3 +75,4 @@ class TargetWiringTest(unittest.TestCase):
                 self.assertEqual(config['mac'], '02:00:00:02:00:02')
                 self.assertEqual(config['architecture'], 'arm64')
                 self.assertEqual(config.get('hugepages', False), hugepages)
+                self.assertEqual(config.get('bridgeAddressV6', ''), ipv6)

@@ -27,6 +27,30 @@ CONFIG = {'nodeName': 'node', 'bmcAddress': '10.96.40.10', 'clusterUID': 'cluste
 
 
 class TargetTest(unittest.TestCase):
+    def test_ipv6_bridge_is_optional_canonical_and_immutable(self):
+        legacy = TARGET.configuration(CONFIG)
+        self.assertEqual(TARGET.configuration({**CONFIG, 'bridgeAddressV6': ''}), legacy)
+        dual = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:0040::1/64'})
+        self.assertEqual(dual['bridgeAddressV6'], 'fd42:84:40::1/64')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            TARGET.claim(root, legacy)
+            with self.assertRaisesRegex(ValueError, 'retained target'):
+                TARGET.claim(root, dual)
+        for value in ('fd42:84:40::/64', 'fd42:84:40::1/96', 'fe80::1/64',
+                      'ff02::1/64', 'fd42:84:40::1%eth0/64', '::1/64', '::ffff:10.0.0.1/64', '10.0.0.1/24', None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                TARGET.configuration({**CONFIG, 'bridgeAddressV6': value})
+
+    def test_ipv6_route_collision_is_rejected_before_bridge_mutation(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        with patch.object(TARGET, 'run', side_effect=['[]', '[]',
+                '[{"dst":"fd42:84::/32","dev":"other"}]']) as run:
+            with self.assertRaisesRegex(ValueError, 'overlaps'):
+                TARGET.bridge(config)
+            self.assertEqual([call.args[:3] for call in run.call_args_list],
+                             [('ip', '-json', 'link'), ('ip', '-4', '-json'), ('ip', '-6', '-json')])
+
     def test_hugepage_config_preserves_legacy_identity_and_rejects_backing_changes(self):
         legacy = TARGET.configuration(CONFIG)
         self.assertEqual(TARGET.configuration({**CONFIG, 'hugepages': False}), legacy)
@@ -321,6 +345,39 @@ class TargetTest(unittest.TestCase):
 class ProvisioningNetworkTest(unittest.TestCase):
     def network(self, run=None, **kwargs):
         return TARGET.Network(TARGET.configuration(CONFIG), run or Mock(), **kwargs)
+
+    def test_ipv6_rules_work_without_ipv4_relay_and_preserve_sources(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        run = Mock(return_value='')
+        network = TARGET.Network(config, run)
+        with patch('network.subprocess.Popen') as spawn:
+            self.assertIsNone(network.start())
+        spawn.assert_not_called()
+        rules = [call.args for call in run.call_args_list if call.args[0] == 'ip6tables']
+        self.assertEqual(len(rules), 3)
+        self.assertTrue(all('fd42:84:40::/64' in rule and network.owner in rule for rule in rules))
+        self.assertTrue(all(rule[-1] == 'ACCEPT' for rule in rules))
+        self.assertEqual(rules[-1][8:12], ('-d', 'fd42:84:40::/64', '-o', config['bridge']))
+
+    def test_ipv6_bad_owned_rule_prevents_deletion_in_either_family(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        network = TARGET.Network(config, Mock())
+        own = f'-A FORWARD -s 10.84.40.0/24 -m comment --comment {network.owner} -j ACCEPT'
+        bad = f'-A FORWARD -s fd42:84:41::/64 -m comment --comment {network.owner} -j ACCEPT'
+        network.run.side_effect = [own, '', bad]
+        with self.assertRaisesRegex(ValueError, 'retained guest subnet'):
+            network.clear()
+        self.assertTrue(all(call.args[0].endswith('-save') for call in network.run.call_args_list))
+
+    def test_ipv6_preflight_requires_forwarding_without_host_changes(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        network = TARGET.Network(config, Mock(return_value=''))
+        for forwarding, disabled, error in [('0', '0', 'forwarding'), ('1', '1', 'enabled')]:
+            with self.subTest(error=error), patch('network.Path.exists', return_value=True), \
+                    patch('network.Path.read_text', side_effect=[forwarding, disabled]), \
+                    self.assertRaisesRegex(ValueError, error):
+                network.preflight()
+        network.run.assert_not_called()
 
     def test_invalid_network_inputs_fail_without_commands(self):
         for server, cidr, uplink in [('255.255.255.255', '10.244.0.0/24', 'eth0'), ('10.96.40.20', '', 'eth0'), ('', '10.244.0.0/24', 'eth0'),

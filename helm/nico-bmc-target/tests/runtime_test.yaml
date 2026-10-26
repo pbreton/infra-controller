@@ -255,3 +255,17 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: huge-page resources are derived from target.hugepages and target.memoryMiB
+  - it: serializes the optional IPv6 bridge in the retained target configuration
+    template: configmap.yaml
+    set:
+      network.bridgeAddressV6: fd42:84:40::1/64
+    asserts:
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"bridgeAddressV6":"fd42:84:40::1/64"'
+  - it: preserves legacy inventory when IPv6 is omitted
+    template: configmap.yaml
+    asserts:
+      - notMatchRegex:
+          path: data["config.json"]
+          pattern: bridgeAddressV6

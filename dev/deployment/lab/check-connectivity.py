@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Verify direct IPv4 TCP connectivity and unmodified source addresses between two lab guests."""
+"""Verify direct IPv4 or IPv6 TCP connectivity and unmodified source addresses between two lab guests."""
 
 import argparse
 from contextlib import contextmanager
@@ -21,7 +21,7 @@ import time
 # listener accepts one connection and expires even if the controlling SSH dies.
 SERVER = '''import json,socket,sys
 address,expected_source,token=sys.argv[1:]
-with socket.socket() as listener:
+with socket.socket(socket.AF_INET6 if ':' in address else socket.AF_INET) as listener:
  listener.settimeout(30)
  listener.bind((address,0))
  listener.listen(1)
@@ -37,7 +37,7 @@ with socket.socket() as listener:
 '''
 CLIENT = '''import socket,sys
 source,destination,port,token=sys.argv[1:]
-with socket.socket() as connection:
+with socket.socket(socket.AF_INET6 if ':' in source else socket.AF_INET) as connection:
  connection.settimeout(10)
  connection.bind((source,0))
  connection.connect((destination,int(port)))
@@ -123,13 +123,15 @@ def main():
     parser.add_argument('--user', default='lab')
     for name, release in [('first', 'target-one'), ('second', 'target-two')]:
         parser.add_argument('--' + name + '-release', default=release)
-        parser.add_argument('--' + name + '-address', required=True, type=ipaddress.IPv4Address)
+        parser.add_argument('--' + name + '-address', required=True, type=ipaddress.ip_address)
         parser.add_argument('--' + name + '-known-hosts', required=True, type=Path)
     args = parser.parse_args()
     if not args.context.startswith('kind-'):
         parser.error('select an explicit kind context')
     if args.first_address == args.second_address or args.first_release == args.second_release:
         parser.error('select two distinct guest addresses and target releases')
+    if args.first_address.version != args.second_address.version:
+        parser.error('guest addresses must use the same IP family')
     guests = [{'address': str(getattr(args, name + '_address')),
                'release': getattr(args, name + '_release'),
                'known_hosts': getattr(args, name + '_known_hosts')} for name in ('first', 'second')]

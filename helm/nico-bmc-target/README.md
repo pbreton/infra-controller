@@ -9,8 +9,9 @@ This stage of [the Tilt migration](https://github.com/dsx-ai-factory/infra-contr
 provides guest boot, BMC power control and retained target state. It does not
 install NICo, DHCP, a boot server, Scout or an operating system. It creates an
 isolated IPv4 guest bridge by default. Optional provisioning enables a DHCPv4
-relay and forwarding to existing cluster services. NICo discovery and tenant
-IPv6 validation require the later provisioning integration. Ordinary Tilt
+relay and forwarding to existing cluster services. Optional IPv6 bridge routing
+supports explicitly addressed guests; DHCPv6 and router advertisements are outside
+this chart’s implemented boundary. See the [provisioning and guest checks](../../dev/deployment/lab/README.md). Ordinary Tilt
 machine-a-tron development remains independent of this chart.
 
 ## Prepare an isolated runtime
@@ -74,6 +75,44 @@ network:
 YAML
 ```
 
+## Optional IPv6 guest routing
+
+Set `network.bridgeAddressV6` to a ULA (`fc00::/7`) or global-unicast
+(`2000::/3`) address with a `/64` prefix and a nonzero host part, for example
+`fd42:8124:40::1/64`. The default empty string omits IPv6 from the runtime
+configuration and preserves existing retained inventories. Each target needs a
+separate non-overlapping prefix. Runtime validation rejects an invalid address
+or a prefix overlapping another interface's route before claiming fresh storage.
+IPv6 addresses are normalized before comparison with retained inventory.
+Adding, removing or changing the IPv6 prefix of an existing target is rejected;
+use its original configuration or explicitly release and destroy it before
+creating a new target.
+
+The kind node must already have IPv6 enabled for `all`, `default` and an existing
+owned bridge, with `net.ipv6.conf.all.forwarding=1`. For a new disposable node
+created by the preceding example:
+
+```bash
+docker exec nico-target-control-plane sysctl -w net.ipv6.conf.all.forwarding=1
+```
+
+This changes only that node's network namespace and lasts until node removal;
+it does not configure the outer host. Startup fails if these prerequisites are
+missing. The target never changes shared forwarding policy. Keep IPv4 bridge,
+BMC Service and provisioning settings: this option adds guest IPv6 routing,
+not an IPv6 Kubernetes or provisioning deployment.
+
+The target assigns the IPv6 gateway to its owned bridge, installs tagged IPv6
+forwarding rules and a masquerade exemption for traffic entering that subnet
+to preserve peer source addresses, and removes only its own rules on shutdown. It does not add
+NAT66, a default route, router advertisements, DHCPv6, DNS or upstream routes.
+Guests need explicit addresses and routes, or an independently configured
+addressing service. Two target bridges on the same node can route directly;
+external IPv6 requires separately managed upstream and return routes.
+The same trust boundary as IPv4 applies: this is a privileged flat lab, not
+network isolation between tenants. See the
+[IPv6 guest procedure](../../dev/deployment/lab/README.md#two-instance-ipv6-routing).
+
 ## Build and deploy
 
 The standalone Tilt entrypoint builds through the same Make target and installs
@@ -120,6 +159,7 @@ The service is for isolated development only.
 | `target.cpus` | `2` | Integer 1–32; guest vCPUs. |
 | `target.diskGiB` | `24` | Integer 8–1024; initial sparse guest disk size in GiB. |
 | `network.bridgeAddress` | `10.84.40.1/24` | Usable IPv4 gateway with prefix /30 or shorter, without overlap with other node routes. |
+| `network.bridgeAddressV6` | Empty, optional | ULA or global-unicast /64 gateway; see [IPv6 prerequisites and retention](#optional-ipv6-guest-routing). |
 | `network.provisioning.enabled` | `false` | Enable IPv4 relay and forwarding in a single-node kind cluster using kube-proxy iptables mode. |
 | `network.provisioning.dhcpServer` | Empty | Required when enabled: existing unicast IPv4 DHCP Service address outside the guest subnet. |
 | `network.provisioning.podCIDR` | Empty | Required when enabled: selected node's IPv4 pod CIDR, separate from the guest subnet and not `/0`. Checked against live Nodes by Helm; offline templates cannot check it. |

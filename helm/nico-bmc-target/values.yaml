@@ -21,6 +21,8 @@ target:
 network:
   # Dedicated guest bridge in the selected node's network namespace.
   bridgeAddress: 10.84.40.1/24
+  # Optional routed IPv6 /64; requires IPv6 forwarding on the node. No RA or DHCPv6.
+  bridgeAddressV6: ""
   provisioning:
     enabled: false
     # Existing IPv4 DHCP Service and the selected kind node's IPv4 pod CIDR.

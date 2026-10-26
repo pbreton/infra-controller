@@ -108,6 +108,9 @@
               "pattern": "^[a-zA-Z0-9_.:-]{1,15}$"
             }
           }
+        },
+        "bridgeAddressV6": {
+          "type": "string"
         }
       }
     }

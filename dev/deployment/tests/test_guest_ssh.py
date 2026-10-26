@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import ipaddress
+import json
 from pathlib import Path
 import shlex
 import socket
@@ -85,6 +86,33 @@ class GuestSshTest(unittest.TestCase):
                 SSH.main()
             self.assertEqual(error.exception.code, 2)
             connect.assert_not_called()
+
+    def test_ipv6_ssh_uses_only_the_selected_targets_retained_subnet(self):
+        for address, configured, success in [('fd42:84:40::10', True, True),
+                                               ('fd42:84:40::ffff:ffff:ffff:ffff', True, True),
+                                               ('fd42:84:40::1', True, False),
+                                               ('fd42:84:41::10', True, False),
+                                               ('fd42:84:40::10', False, False),
+                                               ('fd42:84:40::10%eth0', True, False)]:
+            inventory = {'bridgeAddress': '10.84.40.1/24'}
+            if configured:
+                inventory['bridgeAddressV6'] = 'fd42:84:40::1/64'
+            with self.subTest(address=address, configured=configured), \
+                    patch.object(sys, 'argv', ['ssh-guest', '--context', 'kind-lab', '--address', address,
+                                               '--identity', '/unused', '--known-hosts', '/unused']), \
+                    patch.object(Path, 'is_file', return_value=True), \
+                    patch.object(SSH.subprocess, 'check_output', side_effect=[
+                        b'{"metadata":{"labels":{"app.kubernetes.io/name":"nico-bmc-target"}}}',
+                        json.dumps(inventory).encode()]), \
+                    patch.object(SSH, 'prepare_known_hosts'), \
+                    patch.object(SSH.subprocess, 'call', return_value=0) as connect, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                SSH.main()
+            self.assertEqual(error.exception.code, 0 if success else 2)
+            if success:
+                self.assertEqual(connect.call_args.args[0][-1], 'lab@' + str(ipaddress.ip_address(address)))
+            else:
+                connect.assert_not_called()
 
     def test_known_hosts_creation_retention_and_invalid_destination(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -401,7 +401,7 @@ python3 dev/deployment/lab/ssh-guest.py \
 
 Supply a private key whose public key was installed through the instance's
 cloud-init data. The helper does not create keys, allocate an instance or grant
-access. Required flags have no defaults: `--context`, `--address` (IPv4),
+access. Required flags have no defaults: `--context`, `--address` (IPv4 or IPv6),
 `--identity` (existing private key file) and `--known-hosts` (a writable file or
 new path in an existing directory). Both resolved file paths must exclude
 whitespace, quotes, `%`, `$` and backslashes, which OpenSSH can interpret as
@@ -568,7 +568,7 @@ python3 dev/deployment/lab/check-connectivity.py \
 ```
 
 Required options have no defaults: `--context`, `--first-address`,
-`--second-address` (both IPv4), `--identity`, `--first-known-hosts` and
+`--second-address` (both IPv4 or both IPv6), `--identity`, `--first-known-hosts` and
 `--second-known-hosts`. Defaults are `--namespace bmc-lab`, `--user lab`,
 `--first-release target-one` and `--second-release target-two`. Repeated options
 use the last value. The addresses and release names must be distinct; the
@@ -603,4 +603,80 @@ Repeat after rebooting one instance through Core, verifying that the other
 instance's boot ID stays unchanged. Release one instance and confirm the other
 remains reachable before releasing it too. Keep both targets, Core database and
 Vault together until release completes; then discard the dedicated cluster.
-IPv6, Internet access, DPU routing and secure erase require separate validation.
+Internet access, DPU routing and secure erase require separate validation.
+
+## Two-instance IPv6 routing
+
+The same SSH and connectivity helpers accept literal IPv6 addresses. The SSH
+helper validates them against the selected target's retained `bridgeAddressV6`,
+rejects the bridge gateway, subnet-router anycast address and scoped addresses,
+and keeps the private key on the client. A target without an IPv6 bridge cannot
+be accessed through this helper using IPv6. The checker requires both endpoints
+to use the same address family; it binds IPv6 sockets for IPv6 inputs and checks
+the actual peer source. Its payload, timeout, process-cleanup and exit-status
+contracts are the same as the preceding IPv4 procedure.
+
+Start with two fresh targets and the [IPv6 chart prerequisites](../../../helm/nico-bmc-target/README.md#optional-ipv6-guest-routing).
+Add these values to the respective target files before deploying them:
+
+| Value | `target-one` | `target-two` |
+| --- | --- | --- |
+| `network.bridgeAddressV6` | `fd42:8124:40::1/64` | `fd42:8124:41::1/64` |
+| Guest address | `fd42:8124:40::10/64` | `fd42:8124:41::10/64` |
+| Peer route | `fd42:8124:41::/64` via `fd42:8124:40::1` | `fd42:8124:40::/64` via `fd42:8124:41::1` |
+
+These are explicit test addresses, not NICo DHCPv6 allocations. Verify that the
+prefixes do not overlap existing routes. Keep the preceding IPv4 provisioning,
+OS installation and SSH-key setup. For the Ubuntu systemd-networkd image, merge
+this fragment into target one's cloud-init user-data, alongside its SSH user and
+generation marker. For target two, use its MAC ending `02:00:02`, address,
+gateway and peer prefix from the table:
+
+```yaml
+write_files:
+  - path: /etc/systemd/network/05-lab-ipv6.network
+    permissions: '0600'
+    content: |
+      [Match]
+      MACAddress=02:00:00:01:00:02
+
+      [Network]
+      DHCP=ipv4
+      IPv6AcceptRA=no
+      Address=fd42:8124:40::10/64
+
+      [Route]
+      Destination=fd42:8124:41::/64
+      Gateway=fd42:8124:40::1
+runcmd:
+  - [networkctl, reload]
+  - [networkctl, reconfigure, "*"]
+```
+
+The early networkd filename takes precedence over the image's generated network
+file for the matched NIC. DHCPv4 remains enabled; the explicit IPv6 address and
+peer route persist on disk. This fragment intentionally disables RA acceptance
+and adds no IPv6 default route. It does not test DHCPv6, SLAAC, IPv6-only guests
+or Internet IPv6. Those remain separate stages of
+[the migration](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
+
+After both installed guests complete cloud-init, run:
+
+```bash
+python3 dev/deployment/lab/check-connectivity.py \
+  --context kind-nico-tilt \
+  --first-address fd42:8124:40::10 --second-address fd42:8124:41::10 \
+  --identity /tmp/nico-instance-key \
+  --first-known-hosts /tmp/nico-first-known-hosts \
+  --second-known-hosts /tmp/nico-second-known-hosts
+```
+
+Repeat the IPv4 check to verify both families, then repeat the IPv6 check after
+Core reboots one instance. Verify its boot ID changes, the peer's does not, and
+both disk configurations persist. Release both through Core and require Ready
+with live Scout before destroying the disposable cluster.
+
+The portable socket regression uses IPv6 loopback when available and reports a
+skip when the runner lacks it. This does not count as native IPv6 acceptance.
+Both native architectures need the real two-guest IPv6 checks even when an
+upstream Internet IPv6 route is unavailable.

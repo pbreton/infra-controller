@@ -63,7 +63,7 @@ def main():
     parser.add_argument('--context', required=True)
     parser.add_argument('--namespace', default='bmc-lab')
     parser.add_argument('--release', default='target-one')
-    parser.add_argument('--address', required=True, type=ipaddress.IPv4Address)
+    parser.add_argument('--address', required=True, type=ipaddress.ip_address)
     parser.add_argument('--identity', required=True, type=Path)
     parser.add_argument('--known-hosts', required=True, type=Path)
     parser.add_argument('--user', default='lab')
@@ -84,9 +84,14 @@ def main():
         parser.error('selected deployment is not a native BMC test target')
     inventory = json.loads(subprocess.check_output(kube + ['exec', 'deployment/' + args.release,
                                                           '--', 'cat', '/data/inventory.json']))
-    bridge = ipaddress.IPv4Interface(inventory['bridgeAddress'])
-    if args.address not in bridge.network or args.address in (bridge.ip, bridge.network.network_address,
-                                                             bridge.network.broadcast_address):
+    bridge_address = inventory.get('bridgeAddress' if args.address.version == 4 else 'bridgeAddressV6')
+    if not bridge_address:
+        parser.error('selected target has no bridge subnet for this address family')
+    bridge = ipaddress.ip_interface(bridge_address)
+    reserved = {bridge.ip, bridge.network.network_address}
+    if bridge.version == 4:
+        reserved.add(bridge.network.broadcast_address)
+    if args.address not in bridge.network or args.address in reserved or getattr(args.address, 'scope_id', None):
         parser.error('--address must be a guest address in the selected target bridge subnet')
     try:
         prepare_known_hosts(args.known_hosts)

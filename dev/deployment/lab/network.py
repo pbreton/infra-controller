@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Owned IPv4 provisioning rules and DHCP relay for one native guest bridge."""
+"""Owned guest forwarding rules and IPv4 DHCP relay for one native guest bridge."""
 
 import ipaddress
 import json
@@ -16,6 +16,8 @@ class Network:
         self.run = run
         self.owner = 'nico-target:' + config['uuid']
         self.subnet = ipaddress.IPv4Interface(config['bridgeAddress']).network
+        self.subnet_v6 = (ipaddress.IPv6Interface(config['bridgeAddressV6']).network
+                          if config.get('bridgeAddressV6') else None)
         self.enabled = bool(server or pod_cidr)
         self.uplink = uplink
         self.relay = None
@@ -32,10 +34,11 @@ class Network:
         if not re.fullmatch(r'[a-zA-Z0-9_.:-]{1,15}', uplink) or uplink == config['bridge']:
             raise ValueError('uplink must name a separate Linux interface')
 
-    def owned_rules(self):
+    def owned_rules(self, tool='iptables', subnet=None):
+        subnet = self.subnet if subnet is None else subnet
         result = []
         for table in ('filter', 'nat'):
-            for line in self.run('iptables-save', '-t', table).splitlines():
+            for line in self.run(tool + '-save', '-t', table).splitlines():
                 fields = shlex.split(line)
                 if '--comment' not in fields or fields[fields.index('--comment') + 1] != self.owner:
                     continue
@@ -43,12 +46,20 @@ class Network:
                 if fields[:2] != ['-A', chain] or '-s' not in fields and '-d' not in fields:
                     raise ValueError('unrecognized rule uses this target ownership tag')
                 addresses = [fields[i + 1] for i, field in enumerate(fields) if field in ('-s', '-d')]
-                if str(self.subnet) not in addresses:
+                if str(subnet) not in addresses:
                     raise ValueError('owned rule does not match the retained guest subnet')
                 result.append((table, fields[1], fields[2:]))
         return result
 
     def preflight(self):
+        if self.subnet_v6 is not None:
+            if Path('/proc/sys/net/ipv6/conf/all/forwarding').read_text().strip() != '1':
+                raise ValueError('the node must already enable IPv6 forwarding')
+            for interface in ('all', 'default', self.config['bridge']):
+                path = Path('/proc/sys/net/ipv6/conf') / interface / 'disable_ipv6'
+                if path.exists() and path.read_text().strip() != '0':
+                    raise ValueError('IPv6 must be enabled on the node and guest bridge')
+            self.owned_rules('ip6tables', self.subnet_v6)
         if not self.enabled:
             return
         if Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':
@@ -62,8 +73,11 @@ class Network:
 
     def clear(self):
         # Read and validate the complete owned set before deleting any rule.
-        for table, chain, rule in self.owned_rules():
-            self.run('iptables', '-w', '5', '-t', table, '-D', chain, *rule)
+        rules = [('iptables', *rule) for rule in self.owned_rules()]
+        if self.subnet_v6 is not None:
+            rules.extend(('ip6tables', *rule) for rule in self.owned_rules('ip6tables', self.subnet_v6))
+        for tool, table, chain, rule in rules:
+            self.run(tool, '-w', '5', '-t', table, '-D', chain, *rule)
 
     def rules(self):
         tag = ['-m', 'comment', '--comment', self.owner]
@@ -78,6 +92,15 @@ class Network:
         yield 'nat', 'POSTROUTING', ['-s', subnet, '-d', str(self.pod_cidr), *tag, '-j', 'ACCEPT']
         # kindnet also masquerades non-pod destinations. Preserve peer sources
         # only when the node delivers traffic into this target's own bridge.
+        yield 'nat', 'POSTROUTING', ['-d', subnet, '-o', bridge, *tag, '-j', 'ACCEPT']
+
+    def ipv6_rules(self):
+        tag = ['-m', 'comment', '--comment', self.owner]
+        bridge, subnet = self.config['bridge'], str(self.subnet_v6)
+        yield 'filter', 'FORWARD', ['-i', bridge, '-s', subnet, *tag, '-j', 'ACCEPT']
+        yield 'filter', 'FORWARD', ['-o', bridge, '-d', subnet, '-m', 'conntrack',
+                                    '--ctstate', 'RELATED,ESTABLISHED', *tag, '-j', 'ACCEPT']
+        # Preserve peer sources even when the cluster has an IPv6 masquerade rule.
         yield 'nat', 'POSTROUTING', ['-d', subnet, '-o', bridge, *tag, '-j', 'ACCEPT']
 
     def upstreams(self):
@@ -97,9 +120,12 @@ class Network:
     def start(self):
         # Also removes stale owned rules when provisioning is disabled after a crash.
         self.clear()
-        if not self.enabled:
-            return None
         try:
+            if self.subnet_v6 is not None:
+                for table, chain, rule in self.ipv6_rules():
+                    self.run('ip6tables', '-w', '5', '-t', table, '-I', chain, '1', *rule)
+            if not self.enabled:
+                return None
             for table, chain, rule in self.rules():
                 self.run('iptables', '-w', '5', '-t', table, '-I', chain, '1', *rule)
             self.relay = Relay(self.config['bridge'], str(self.server), self.upstreams())

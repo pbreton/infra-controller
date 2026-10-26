@@ -40,8 +40,8 @@ def virsh(*args, timeout=30):
 
 def configuration(value):
     required = {'clusterUID', 'owner', 'nodeName', 'bmcAddress', 'architecture', 'instanceIndex', 'memoryMiB', 'cpus', 'diskGiB', 'bridgeAddress', 'bmcPort'}
-    if not required <= set(value) or set(value) - required - {'hugepages'}:
-        raise ValueError('target configuration requires: ' + ', '.join(sorted(required)) + '; optional: hugepages')
+    if not required <= set(value) or set(value) - required - {'hugepages', 'bridgeAddressV6'}:
+        raise ValueError('target configuration requires: ' + ', '.join(sorted(required)) + '; optional: hugepages, bridgeAddressV6')
     value = dict(value)
     if type(value.get('hugepages', False)) is not bool:
         raise ValueError('hugepages must be a boolean')
@@ -62,6 +62,19 @@ def configuration(value):
     network = ipaddress.IPv4Interface(value['bridgeAddress'])
     if network.ip in (network.network.network_address, network.network.broadcast_address) or network.network.prefixlen > 30:
         raise ValueError('bridgeAddress must be a usable IPv4 gateway address with prefix /30 or shorter')
+    if 'bridgeAddressV6' in value:
+        address = value['bridgeAddressV6']
+        if not isinstance(address, str):
+            raise ValueError('bridgeAddressV6 must be a string')
+        if address == '':
+            value.pop('bridgeAddressV6')
+        else:
+            ipv6 = ipaddress.IPv6Interface(address)
+            if (ipv6.scope_id is not None or ipv6.network.prefixlen != 64 or ipv6.ip == ipv6.network.network_address
+                    or not (ipv6.ip in ipaddress.IPv6Network('fc00::/7')
+                            or ipv6.ip in ipaddress.IPv6Network('2000::/3'))):
+                raise ValueError('bridgeAddressV6 must be a unicast ULA or global /64 gateway with a nonzero host part')
+            value['bridgeAddressV6'] = str(ipv6)
     identity = value['clusterUID'] + '/' + value['owner']
     return dict(value, version=1, uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, identity)),
                 bridge='nvt' + hashlib.sha256(identity.encode()).hexdigest()[:10],
@@ -195,12 +208,15 @@ def check_network(config):
     existing = next((link for link in links if link['ifname'] == config['bridge']), None)
     if existing and existing.get('ifalias') != config['uuid']:
         raise ValueError('target bridge exists with a different owner')
-    subnet = ipaddress.ip_interface(config['bridgeAddress']).network
-    for route in json.loads(run('ip', '-4', '-json', 'route', 'show', 'table', 'all')):
-        if route.get('dev') == config['bridge'] or route['dst'] == 'default':
+    for key in ('bridgeAddress', 'bridgeAddressV6'):
+        if key not in config:
             continue
-        if subnet.overlaps(ipaddress.ip_network(route['dst'], strict=False)):
-            raise ValueError('target subnet overlaps an existing route: ' + route['dst'])
+        subnet = ipaddress.ip_interface(config[key]).network
+        for route in json.loads(run('ip', '-' + str(subnet.version), '-json', 'route', 'show', 'table', 'all')):
+            if route.get('dev') == config['bridge'] or route['dst'] == 'default':
+                continue
+            if subnet.overlaps(ipaddress.ip_network(route['dst'], strict=False)):
+                raise ValueError('target subnet overlaps an existing route: ' + route['dst'])
     return existing
 
 
@@ -232,6 +248,8 @@ def bridge(config):
             run('ip', 'link', 'delete', config['bridge'])
             raise
     run('ip', 'address', 'replace', config['bridgeAddress'], 'dev', config['bridge'])
+    if config.get('bridgeAddressV6'):
+        run('ip', '-6', 'address', 'replace', config['bridgeAddressV6'], 'dev', config['bridge'])
     run('ip', 'link', 'set', config['bridge'], 'up')
 
 

@@ -28,6 +28,18 @@ class GuestConnectivityTest(unittest.TestCase):
             result = CHECK.probe(None, guest, guest)
         self.assertEqual(result, {'source': '127.0.0.1', 'destination': '127.0.0.1', 'bytes': 32})
 
+    def test_real_ipv6_exchange_when_loopback_is_available(self):
+        try:
+            with socket.socket(socket.AF_INET6) as listener:
+                listener.bind(('::1', 0))
+        except OSError as error:
+            self.skipTest('IPv6 loopback unavailable: ' + str(error))
+        def local_command(args, guest, code, *values):
+            return [sys.executable, '-u', '-c', code, *map(str, values)]
+        with patch.object(CHECK, 'ssh_command', side_effect=local_command):
+            result = CHECK.probe(None, {'address': '::1'}, {'address': '::1'})
+        self.assertEqual(result, {'source': '::1', 'destination': '::1', 'bytes': 32})
+
     def test_failed_sender_reaps_listener_process(self):
         processes = []
         original = CHECK.guest_process
@@ -111,7 +123,8 @@ class GuestConnectivityTest(unittest.TestCase):
                 self.assertEqual(first.args[2]['address'], second.args[1]['address'])
 
     def test_same_guest_rejected_before_starting_probe(self):
-        for option, value in [('--second-address', '10.84.40.10'), ('--second-release', 'target-one')]:
+        for option, value in [('--second-address', '10.84.40.10'), ('--second-release', 'target-one'),
+                              ('--second-address', 'fd42:84:41::10')]:
             argv = ['check-connectivity', '--context', 'kind-test', '--first-address', '10.84.40.10',
                     '--second-address', '10.84.41.10', '--identity', '/tmp/key',
                     '--first-known-hosts', '/tmp/one', '--second-known-hosts', '/tmp/two', option, value]
