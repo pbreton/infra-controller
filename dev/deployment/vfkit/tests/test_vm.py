@@ -179,6 +179,22 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(call.kwargs["stdin"], subprocess.DEVNULL)
         self.assertIs(ssh.call_args_list[-1].kwargs["stdout"], vm.sys.stderr)
 
+    def test_sync_preserves_caller_input_but_streams_the_archive(self):
+        archive = MagicMock()
+        archive.wait.return_value = 0
+        launch = MagicMock()
+        launch.__enter__.return_value = archive
+        with patch.object(self.machine, "ssh") as ssh, \
+                patch.object(self.machine, "sync_build_version"), \
+                patch.object(vm, "host_git", return_value=subprocess.CompletedProcess([], 0, stdout=b"")), \
+                patch.object(vm.subprocess, "Popen", return_value=launch):
+            self.machine.sync()
+        self.assertEqual(len(ssh.call_args_list), 3)
+        self.assertEqual(ssh.call_args_list[0].kwargs["stdin"], subprocess.DEVNULL)
+        self.assertIs(ssh.call_args_list[1].kwargs["stdin"], archive.stdout)
+        self.assertEqual(ssh.call_args_list[2].kwargs["stdin"], subprocess.DEVNULL)
+        archive.stdout.close.assert_called_once()
+
     def test_vm_verification_preserves_caller_input(self):
         self.machine.config = {"network": "lab"}
         with patch.object(self.machine, "ssh") as ssh:

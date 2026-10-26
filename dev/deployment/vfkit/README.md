@@ -14,9 +14,16 @@ physical network.
 
 - Apple Silicon macOS; the lab launcher requires macOS 13 or newer and vfkit
   0.6.2 or newer.
-- Python 3, vfkit, qemu-img, curl, OpenSSH, xorriso, OpenSSL and GnuPG on the host.
-  The managed Ubuntu VM also requires hardware and macOS support for nested
-  virtualization; check this before downloading its image.
+- Python 3, vfkit, curl, OpenSSH, xorriso, OpenSSL and GnuPG on the host.
+  Downloading the managed Ubuntu qcow2 also requires qemu-img; a local raw
+  `--image` does not.
+- The managed Ubuntu VM requests nested virtualization: use macOS 15 or newer
+  and M3 or newer Apple Silicon, as described by
+  [vfkit nested virtualization support](https://github.com/crc-org/vfkit/issues/279).
+  Check the OS and chip with `sw_vers -productVersion` and
+  `sysctl -n machdep.cpu.brand_string` before downloading the image.
+  The launcher does not probe nested support before downloading; vfkit rejects
+  unsupported hosts when starting the VM.
 - Internet access for initial image/package downloads and the gateway's
   IPv4/IPv6 HTTPS readiness checks.
 - For bridged WAN, install
