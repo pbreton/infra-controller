@@ -61,7 +61,8 @@ Options:
                        ~/infra-controller.
   --repo-url URL       Repository to clone if --repo-dir does not exist.
   --repo-ref REF       Branch, tag, or commit to check out after cloning.
-                       Must include dev/deployment/setup-kind.sh.
+                       Must include dev/deployment/setup-kind.sh and
+                       dev/deployment/install-tools.py.
   --cluster-name NAME  Lowercase DNS label, 1-49 characters. Default: nico-dev.
   --profile PROFILE    Single DevSpace profile to deploy. Default: full.
                        Must exist in the checkout; no fallback if unavailable.

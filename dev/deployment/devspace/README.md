@@ -313,7 +313,10 @@ image preloading and DevSpace deployment steps. The shared helper rejects a
 cluster with multiple nodes, a different native architecture or incompatible
 pod IP families instead of rebuilding it. Kind cleans up a failed creation;
 preexisting clusters are not deleted. The selected checkout must contain
-`dev/deployment/setup-kind.sh`, including when using `--repo-ref`. Cluster names
+`dev/deployment/setup-kind.sh` and `dev/deployment/install-tools.py`, including
+when using `--repo-ref`. Tool installation uses the selected checkout and refuses
+symlink destinations in `~/.local/bin`; remove or relocate those links explicitly
+before retrying. See the [installer contract](../install-tools.md). Cluster names
 must be lowercase DNS labels of 1–49 characters. DevSpace retains its `nico-dev`
 default; use a separate cluster for Tilt. The `devspace purge` reset path retains
 its separate cluster recreation implementation. See the

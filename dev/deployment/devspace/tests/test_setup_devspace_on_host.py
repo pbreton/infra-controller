@@ -45,22 +45,25 @@ run_as_user() {
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "devspace.yaml").touch()
-            for present in (False, True):
-                with self.subTest(present=present):
-                    if present:
-                        helper = root / "dev/deployment/setup-kind.sh"
-                        helper.parent.mkdir(parents=True)
-                        helper.touch()
-                        (helper.parent / "install-tools.py").touch()
+            for missing in ('setup-kind.sh', 'install-tools.py', None):
+                with self.subTest(missing=missing):
+                    helper = root / 'dev/deployment'
+                    helper.mkdir(parents=True, exist_ok=True)
+                    for name in ('setup-kind.sh', 'install-tools.py'):
+                        path = helper / name
+                        if name == missing:
+                            path.unlink(missing_ok=True)
+                        else:
+                            path.touch()
                     result = subprocess.run(
                         ["bash", "-c", "set -euo pipefail\ndie() { echo \"$*\" >&2; exit 1; }\n"
                          + prepare + "\nprepare_checkout\n"],
                         env={**os.environ, "REPO_DIR": directory, "REPO_REF": ""},
                         capture_output=True, text=True, timeout=10,
                     )
-                    self.assertEqual(result.returncode == 0, present, result.stderr)
-                    if not present:
-                        self.assertIn("selected checkout lacks dev/deployment/setup-kind.sh", result.stderr)
+                    self.assertEqual(result.returncode == 0, missing is None, result.stderr)
+                    if missing:
+                        self.assertIn('selected checkout lacks dev/deployment/' + missing, result.stderr)
 
     def test_standalone_script_clones_before_using_selected_checkout_tools(self):
         source = SCRIPT.read_text()
