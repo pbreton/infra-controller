@@ -75,6 +75,16 @@ else:
             self.assertEqual((prefix / 'kind').read_text(), 'retained')
             self.assertEqual(sorted(p.name for p in prefix.iterdir()), ['helm', 'kind'])
 
+    def test_publisher_build_path_matches_only_the_requested_filename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            payload, manifest = Path(directory) / 'payload', Path(directory) / 'checksum'
+            payload.write_bytes(b'published tool')
+            digest = hashlib.sha256(payload.read_bytes()).hexdigest()
+            manifest.write_text(digest + '  /build/release/devspace-linux-arm64\n')
+            tools.verify(payload, manifest, 'devspace-linux-arm64')
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                tools.verify(payload, manifest, 'devspace-linux-amd64')
+
     def test_archive_link_and_destination_link_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

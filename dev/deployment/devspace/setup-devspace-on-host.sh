@@ -232,6 +232,7 @@ prepare_user_tool_directories() {
     "${USER_HOME}/.cache" \
     "${USER_HOME}/.cache/helm" \
     "${USER_HOME}/.local" \
+    "${USER_HOME}/.local/bin" \
     "${USER_HOME}/.local/share" \
     "${USER_HOME}/.local/share/helm"; do
     ensure_user_directory "${directory}"
@@ -325,9 +326,7 @@ EOF
 
 install_cli_tools() {
   log "Installing pinned native deployment tools"
-  local helper
-  helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/install-tools.py"
-  run_as_user python3 "${helper}" --bin-dir "${USER_HOME}/.local/bin" devspace kind kubectl helm
+  run_as_user python3 "${REPO_DIR}/dev/deployment/install-tools.py" --bin-dir "${USER_HOME}/.local/bin" devspace kind kubectl helm
   run_as_user devspace version
   run_as_user kind version
   run_as_user kubectl version --client
@@ -390,6 +389,8 @@ prepare_checkout() {
   fi
   [[ -f "${REPO_DIR}/dev/deployment/setup-kind.sh" ]] ||
     die "selected checkout lacks dev/deployment/setup-kind.sh; choose a revision containing the shared cluster bootstrap"
+  [[ -f "${REPO_DIR}/dev/deployment/install-tools.py" ]] ||
+    die "selected checkout lacks dev/deployment/install-tools.py; choose a revision containing the shared tool installer"
 }
 
 configure_kind_node_tls() {
@@ -588,9 +589,9 @@ main() {
   install_host_packages
   configure_docker
   prepare_user_tool_directories
+  prepare_checkout
   install_cli_tools
   configure_user_shell
-  prepare_checkout
   prepare_cluster
   preload_postgres_image
 

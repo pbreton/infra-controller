@@ -56,7 +56,7 @@ def verify(payload, manifest, filename):
     for line in manifest.read_text().splitlines():
         fields = line.split()
         if fields and re.fullmatch(r"[0-9a-fA-F]{64}", fields[0]):
-            if len(fields) == 1 or (len(fields) == 2 and fields[1].lstrip("*") == filename):
+            if len(fields) == 1 or (len(fields) == 2 and Path(fields[1].lstrip("*")).name == filename):
                 matches.append(fields[0].lower())
     with payload.open("rb") as stream:
         checksum = hashlib.sha256()
