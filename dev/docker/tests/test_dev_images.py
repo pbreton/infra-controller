@@ -67,8 +67,10 @@ class DevImagesTest(unittest.TestCase):
             docker.chmod(0o755)
             package = directory / 'package:, with spaces.deb'
             package.touch()
+            link = directory / 'package-link.deb'
+            link.symlink_to(package)
             env = dict(os.environ, PATH=str(directory) + os.pathsep + os.environ['PATH'])
-            for extra, fail in (([], False), ([package.name], False), ([package.name], True)):
+            for extra, fail in (([], False), ([package.name], False), ([link.name], False), ([package.name], True)):
                 with self.subTest(package=bool(extra), fail=fail):
                     log.unlink(missing_ok=True)
                     result = subprocess.run(['/bin/bash', str(ROOT / 'dev/docker/tests/smoke_dhcp_image.sh'),
@@ -79,8 +81,9 @@ class DevImagesTest(unittest.TestCase):
                     expected = ['create'] + (['cp'] if extra else []) + ([] if fail else ['start']) + ['rm']
                     self.assertEqual([c[0] for c in calls], expected)
                     if extra:
-                        self.assertEqual(calls[1], ['cp', str(package.resolve()), 'test-container:/tmp/expected-kea.deb'])
+                        self.assertEqual(calls[1], ['cp', '-L', str(directory.resolve() / extra[0]), 'test-container:/tmp/expected-kea.deb'])
                     self.assertEqual(calls[0][-2:], ['test-image', '-eu'])
+                    self.assertIn('EXPECT_KEA_DEB=' + ('true' if extra else 'false'), calls[0])
 
     def test_daemon_platform_selects_native_compiler_and_local_service(self):
         for platform, arch, compiler in (

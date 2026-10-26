@@ -9,24 +9,27 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
     exit 2
 fi
 
+expect_package=false
 if [[ $# == 2 ]]; then
+    expect_package=true
     test -f "$2"
     package_path="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
 fi
-container=$(docker create --rm --network none \
+container=$(docker create --rm --network none -e "EXPECT_KEA_DEB=$expect_package" \
     --sysctl net.ipv6.conf.all.disable_ipv6=0 \
     --sysctl net.ipv6.conf.default.disable_ipv6=0 \
     --entrypoint sh -i "$1" -eu)
 trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
 if [[ $# == 2 ]]; then
-    docker cp "$package_path" "$container:/tmp/expected-kea.deb"
+    docker cp -L "$package_path" "$container:/tmp/expected-kea.deb"
 fi
 docker start -ai "$container" <<'CONTAINER'
 ip -V
 ss -V
 curl --version
 
-if test -f /tmp/expected-kea.deb; then
+if test "$EXPECT_KEA_DEB" = true; then
+    test -f /tmp/expected-kea.deb
     test "$(dpkg-deb -f /tmp/expected-kea.deb Package)" = kea-common
     test "$(dpkg-deb -f /tmp/expected-kea.deb Version)" = "$(dpkg-query -W -f='${Version}' kea-common)"
     test "$(dpkg-deb -f /tmp/expected-kea.deb Architecture)" = "$(dpkg --print-architecture)"
