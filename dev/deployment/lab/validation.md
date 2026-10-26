@@ -10,6 +10,13 @@ must agree.
 
 ## Inputs and capacity
 
+Complete [host setup and preflight](README.md#ubuntu-host-setup), then reserve the
+[8 GiB huge-page pool](README.md#explicit-huge-page-backing) for two default 4 GiB
+targets **before** builds or kind creation. Build workloads can fragment memory.
+Check the outer VM's physical backing volume as well as the guest filesystem.
+Sparse disks and image-export layers can exhaust either independently. Keep
+evidence outside `/tmp` so a VM reboot retains it.
+
 Record the source revision and any unmerged integration dependencies. Build the
 native Scout, imager and iPXE artifacts using the lab README, then package the
 publisher-verified OS with `build-os-artifact.py`. Retain its `build-info.json`.
@@ -17,12 +24,6 @@ For IPv6 provisioning, build both boot stages with `--ipv6-boot` and use the
 matching stack profile below. Include the
 [DHCPv6 lease-handoff prerequisite](../tilt/README.md#dhcpv6-lease-handoff-build-dependency)
 in the build source; merely selecting the profile does not add that fix.
-
-Complete [host setup and preflight](README.md#ubuntu-host-setup). Reserve the
-[8 GiB huge-page pool](README.md#explicit-huge-page-backing) before kind creation
-for two default 4 GiB targets. Check the outer VM's physical backing volume as
-well as the guest filesystem. Sparse disks and image-export layers can exhaust
-either independently. Keep evidence outside `/tmp` so a VM reboot retains it.
 
 This procedure deliberately does not reset existing clusters, reuse old target
 PVCs or reassign host reservations. Each run needs a new cluster name, state
@@ -40,8 +41,8 @@ export LAB_NAME=nico-acceptance
 export LAB_CONTEXT="kind-$LAB_NAME"
 export LAB_STATE="$HOME/nico-acceptance"
 export KUBECONFIG="$LAB_STATE/kubeconfig"
-export LAB_BOOT_IMAGE=nico-boot-artifacts:validation
 export LAB_OS_MANIFEST="$HOME/nico-os-artifact/build-info.json"
+export LAB_BOOT_IMAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["image"])' "$LAB_OS_MANIFEST")
 mkdir "$LAB_STATE"
 bash dev/deployment/setup-kind.sh --name "$LAB_NAME" --ip-family dual \
   --kubeconfig "$KUBECONFIG"
@@ -54,8 +55,9 @@ tilt ci -f dev/deployment/tilt/Tiltfile --port 10372 --timeout 90m -- \
 
 Stack readiness is a prerequisite, not proof of instance provisioning. The
 profile creates the IPv6 resolver and PXE endpoint, exports their live addresses,
-and applies the resulting DHCP values. Keep the generated endpoint values and
-actual container image IDs with the run evidence. Use a fresh image tag after
+and applies the resulting DHCP values. Keep
+`dev/deployment/tilt/.local/$LAB_CONTEXT/ipv6-endpoints.json` and actual container
+image IDs with the run evidence. Use a fresh image tag after
 changing an artifact; retained tags can select cached payloads.
 
 ## Two fresh targets
@@ -159,7 +161,7 @@ Create and verify the owned OS/VPC catalog using the bundle's recorded digest:
 python3 dev/deployment/lab/catalog.py --context "$LAB_CONTEXT" \
   --state-dir "$LAB_STATE/catalog" --artifact-manifest "$LAB_OS_MANIFEST" \
   --pxe-origin http://carbide-pxe.forge:8080
-python3 dev/deployment/lab/catalog.py --state-dir "$LAB_STATE/catalog" --resume
+python3 dev/deployment/lab/catalog.py --state-dir "$LAB_STATE/catalog" --resume > "$LAB_STATE/catalog-result.json"
 export LOCAL_DEV_KUBE_CONTEXT="$LAB_CONTEXT"
 bash dev/deployment/core-admin.sh -f json machine show
 ```
@@ -169,11 +171,11 @@ replace the provisional machine identity with the admitted host identity. Set
 `FIRST_MACHINE` and `SECOND_MACHINE` to those two observed IDs. The lifecycle
 runner verifies the cluster, BMC and target inventory again before allocation;
 it waits for Ready and a live Scout stream. It never guesses or adopts a target.
-Read `os_id` and `vpc_id` from the completed catalog journal:
+Read `os_id` and `vpc_id` from the verified catalog result:
 
 ```bash
-export LAB_OS_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["os_id"])' "$LAB_STATE/catalog/state.json")
-export LAB_VPC_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["vpc_id"])' "$LAB_STATE/catalog/state.json")
+export LAB_OS_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["os_id"])' "$LAB_STATE/catalog-result.json")
+export LAB_VPC_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["vpc_id"])' "$LAB_STATE/catalog-result.json")
 python3 dev/deployment/lab/traffic-guard.py --context "$LAB_CONTEXT" \
   --target target-one --target target-two --output "$LAB_STATE/traffic" \
   --timeout 14400 -- \
@@ -183,16 +185,17 @@ python3 dev/deployment/lab/traffic-guard.py --context "$LAB_CONTEXT" \
     --vpc "$LAB_VPC_ID" --os-image "$LAB_OS_ID" --network ipv6-only --cycles 2
 ```
 
-On ARM64 with working external routing, append `--internet-ipv6` to the
-**lifecycle command**, after `--cycles 2`. It requires certificate-verified HTTPS
-from each guest before and after reboot, in both generations. On AMD64 without
-that route, omit it and record Internet IPv6 as unavailable, retaining all peer
-and lifecycle checks. A capable AMD64 environment can use the same flag.
+With working external IPv6 routing from the kind node, append `--internet-ipv6`
+to the **lifecycle command**, after `--cycles 2`. It requires certificate-verified
+HTTPS from each guest before and after reboot, in both generations. Without that
+route, omit it and record Internet IPv6 as unavailable, retaining all peer and
+lifecycle checks. This capability is independent of CPU architecture.
 
 The two cycles install and verify both disks, check finite DHCP leases and peer
 TCP in both directions, reboot each while preserving its peer, release both to
 Ready/live Scout, then repeat with a new disk generation. The guard observes the
-whole command, including boot and release. See the [lifecycle runner](README.md#repeat-the-instance-lifecycle)
+whole lifecycle command, including installed-guest boot and release rediscovery.
+Initial target admission before this command is outside that capture window. See the [lifecycle runner](README.md#repeat-the-instance-lifecycle)
 and [traffic guard](README.md#continuous-ipv6-traffic-guard) for error handling and
 retained-journal cleanup. Rerunning into an existing state directory is rejected;
 use `--release-only` with the original lifecycle journal to clean up its instances.
@@ -205,8 +208,18 @@ Keep source revisions, image IDs, OS digests, chart values, cluster UID, journal
 and reports together. Generated private SSH keys and BMC credentials must not be
 published with shareable evidence.
 
-After both targets return to Ready with live Scout, use the
-[documented stop/discard procedure](README.md#stop-restart-and-discard-the-bmc-lab).
-Wait for both target pods to disappear before reusing the shared huge-page pool;
-Helm release removal may precede completion of background pod deletion. Preserve
-original stacks and disks that are outside the dedicated acceptance cluster.
+After both targets return to Ready with live Scout, preserve the reports and
+journals. To discard this dedicated test site, follow the ownership and instance
+checks in the [stop/discard procedure](README.md#stop-restart-and-discard-the-bmc-lab),
+substituting this run's cluster name:
+
+```bash
+kind delete cluster --name "$LAB_NAME"
+```
+
+For a graceful stop that retains PVCs, use the chart's
+[network cleanup procedure](../../../helm/nico-bmc-target/README.md#verify-target-network-cleanup).
+Wait for its target pods to disappear before reusing the huge-page pool; Helm
+release removal can precede background pod deletion. Restore an unused pool only
+with the [huge-page ownership/capacity checks](README.md#explicit-huge-page-backing).
+Preserve original stacks and disks outside the dedicated acceptance cluster.
