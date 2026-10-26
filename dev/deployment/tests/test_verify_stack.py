@@ -168,14 +168,14 @@ spec = importlib.util.spec_from_file_location("verify_stack", sys.argv.pop(1))
 verify = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verify)
 # Advance only the verifier's retry clock. Real subprocess deadlines remain
-# active, and the stalled-command case below still exercises real elapsed time.
+# active, including the stalled-command case.
 clock = [0.0]
 def sleep(seconds):
     clock[0] += seconds
 verify.time = types.SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep)
 sys.exit(verify.main())
 ''')
-            entrypoint = [str(SPEC.origin)] if mode == "stalled" else [str(driver), str(SPEC.origin)]
+            entrypoint = [str(driver), str(SPEC.origin)]
             result = subprocess.run(
                 [sys.executable, "-B", *entrypoint, "--core-namespace", "core-test",
                  "--rest-namespace", "rest-test", "--timeout", "15" if mode in ("retry", "rest-retry", "scout-retry", "healthy", "assigned") else "3",
@@ -205,7 +205,7 @@ sys.exit(verify.main())
                 if expected:
                     self.assertIn("unsupported site-agent identity source", result.stdout)
 
-    def test_slow_commands_preserve_the_readiness_failure_reason(self):
+    def test_fixture_command_latency_does_not_consume_the_retry_deadline(self):
         result, _ = self.invoke("wrong-rest", rest=True, command_delay=0.3)
         self.assertEqual(result.returncode, 1)
         self.assertIn("exact usable", result.stdout + result.stderr)
