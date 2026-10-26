@@ -16,7 +16,7 @@ positional tool names select a distinct subset of `kind`, `kubectl`, `helm`,
 `tilt` and `devspace`. Omission selects `kind`, `kubectl`, `helm` and `tilt`. Unknown or repeated
 names fail before filesystem changes. `--help` prints the complete syntax.
 
-Selected existing regular binaries are replaced; symlink destinations are
+Selected existing regular binaries are replaced; symlinks and other nonregular destinations are
 rejected. All downloads and checks complete before any replacement. Each binary
 is replaced atomically, but interruption during publication may leave a mix of
 versions; rerun the same selection to finish. Failed downloads/checks preserve
