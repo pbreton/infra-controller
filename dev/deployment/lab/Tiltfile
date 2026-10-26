@@ -27,7 +27,7 @@ if options.get('targets'):
     for name, path in plan.items():
         if type(path) != 'string' or not path:
             fail('Each target entry must name a nonempty values-file path')
-    target_files = {name: os.path.join(os.path.dirname(plan_file), path) for name, path in plan.items()}
+    target_files = {name: path if path.startswith('/') else os.path.join(os.path.dirname(plan_file), path) for name, path in plan.items()}
 else:
     if not options.get('values'):
         fail('--values or --targets must name the target configuration and existing PVCs')
@@ -38,9 +38,10 @@ architectures = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64', 'amd64
 targets = []
 images = []
 identities = {'claim': [], 'index': [], 'bmc': [], 'port': []}
+# Validate every target before registering builds or deployments.
 for release, values_file in target_files.items():
-    if not release or len(release) > 53 or release[0] == '-' or release[-1] == '-' or any([c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in [release[i] for i in range(len(release))]]):
-        fail('Target releases must be lowercase DNS labels of at most 53 characters')
+    if not release or len(release) > 53 or release[0] not in 'abcdefghijklmnopqrstuvwxyz' or release[-1] == '-' or any([c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in [release[i] for i in range(len(release))]]):
+        fail('Target releases must be lowercase DNS labels starting with a letter, at most 53 characters')
     values = read_yaml(values_file)
     if architecture not in architectures or values.get('architecture', 'amd64') != architectures[architecture]:
         fail('Target architecture must match the native Docker runtime')
@@ -61,7 +62,6 @@ for release, values_file in target_files.items():
         images.append(image)
     targets.append((release, values_file, image))
 
-# Validate every target before registering builds or deployments.
 for image in images:
     custom_build(
         image,

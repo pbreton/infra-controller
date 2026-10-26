@@ -247,10 +247,13 @@ Create a JSON object mapping exactly two release names to those files:
 Save it as `/tmp/nico-pair/targets.json`, with the existing values files at
 `/tmp/nico-pair/one.json` and `/tmp/nico-pair/two.json`. Relative paths resolve
 against the manifest's directory; absolute paths also work. Each value must be a
-nonempty filename. Releases must be lowercase DNS labels of at most 53 characters.
+nonempty filename. Releases must be lowercase DNS labels starting with a letter,
+of at most 53 characters. A relative `--targets` or `--values` argument itself
+resolves against the Tiltfile directory, so absolute command-line paths are clearer.
 
 ```bash
-tilt ci -f dev/deployment/lab/Tiltfile --   --targets /tmp/nico-pair/targets.json --namespace bmc-lab
+tilt ci -f dev/deployment/lab/Tiltfile -- \
+  --targets /tmp/nico-pair/targets.json --namespace bmc-lab
 ```
 
 `--targets` has no default and cannot be combined with `--values` or `--release`.
