@@ -139,8 +139,9 @@ done
 ```
 
 This comparison exercises the two target deployment frontends. The preceding
-stack command still uses Tilt; it does not establish an independent full-stack
-Helm bootstrap. Each target starts powered off with its development BMC fixture.
+stack command still uses Tilt. For the independent full-stack Helm run, use
+[the Helm validation procedure](helm-validation.md), which also exercises IPv4
+provisioning and dual-stack installed guests. Each target starts powered off with its development BMC fixture.
 Registering it through Core begins real discovery and Scout admission.
 
 ## Registration and instance lifecycle
