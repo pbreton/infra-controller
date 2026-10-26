@@ -360,7 +360,7 @@ class TargetTest(unittest.TestCase):
                         patch.object(TARGET, 'STOP', False):
                     (Path(directory) / 'bmc.json').write_text('{}')
                     network = Mock()
-                    network.start.return_value = Child(['dhcrelay'])
+                    network.start.return_value = [Child(['dhcrelay'])]
                     network.clear.side_effect = lambda: events.append(('clear', 'network'))
                     if saved:
                         save_path = Path(directory) / 'libvirt/qemu/save/target.save'
@@ -379,12 +379,50 @@ class ProvisioningNetworkTest(unittest.TestCase):
     def network(self, run=None, **kwargs):
         return TARGET.Network(TARGET.configuration(CONFIG), run or Mock(), **kwargs)
 
+    def test_dhcpv6_requires_a_routed_bridge_and_unscoped_remote_server(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        for selected, server in [(TARGET.configuration(CONFIG), 'fd00::20'),
+                (config, 'fe80::1'), (config, 'ff02::1:2'), (config, '::1'),
+                (config, 'fd42:84:40::10'), (config, 'fd00::20%eth0')]:
+            with self.subTest(server=server), self.assertRaises(ValueError):
+                TARGET.Network(selected, Mock(), server_v6=server)
+
+    def test_router_advertisements_are_managed_and_do_not_allocate_slaac_addresses(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        network = TARGET.Network(config, Mock(), server_v6='fd00::20')
+        advertisement = network.router_advertisement()
+        self.assertIn('interface ' + config['bridge'], advertisement)
+        self.assertIn('AdvManagedFlag on;', advertisement)
+        self.assertIn('AdvAutonomous off;', advertisement)
+        self.assertIn('prefix fd42:84:40::/64', advertisement)
+        self.assertIn('AdvDefaultLifetime 0;', advertisement)
+        with self.assertRaisesRegex(ValueError, 'DHCPv6'):
+            TARGET.Network(config, Mock(), default_route_v6=True)
+
+    def test_dhcpv6_partial_start_stops_relay_before_removing_owned_network(self):
+        config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
+        network = TARGET.Network(config, Mock(return_value=''), server_v6='fd00::20')
+        events = []
+        child = Mock()
+        child.poll.return_value = None
+        child.terminate.side_effect = lambda: events.append('stop')
+        with patch.object(network, 'clear', side_effect=lambda: events.append('clear')), \
+                patch('network.Path.write_text') as write, \
+                patch('network.subprocess.Popen', side_effect=[child, OSError('radvd failed')]) as spawn:
+            with self.assertRaisesRegex(OSError, 'radvd failed'):
+                network.start()
+        self.assertEqual(events, ['clear', 'stop', 'clear'])
+        child.wait.assert_called_once_with(timeout=20)
+        command = spawn.call_args_list[0].args[0]
+        self.assertEqual(command[-6:], ['--link-address', 'fd42:84:40::1', '--server', 'fd00::20', '--mac', config['mac']])
+        self.assertIn('AdvAutonomous off;', write.call_args.args[0])
+
     def test_ipv6_rules_work_without_ipv4_relay_and_preserve_sources(self):
         config = TARGET.configuration({**CONFIG, 'bridgeAddressV6': 'fd42:84:40::1/64'})
         run = Mock(return_value='')
         network = TARGET.Network(config, run)
         with patch('network.subprocess.Popen') as spawn:
-            self.assertIsNone(network.start())
+            self.assertEqual(network.start(), [])
         spawn.assert_not_called()
         rules = [call.args for call in run.call_args_list if call.args[0] == 'ip6tables']
         self.assertEqual(len(rules), 3)

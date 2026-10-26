@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ast
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -84,7 +85,30 @@ class ScoutWiringTest(unittest.TestCase):
         for bmc, vault, artifact in [(True, False, 'image'), (True, True, ''), (False, True, 'image')]:
             with self.subTest(bmc=bmc, vault=vault, artifact=artifact), self.assertRaises(ValueError):
                 exec(compile(ast.Module(body=guards, type_ignores=[]), 'Tiltfile', 'exec'),
-                     dict(bmc_lab=bmc, persistent_vault=vault, boot_artifact_image=artifact, fail=fail))
+                     dict(bmc_lab=bmc, dhcpv6=False, persistent_vault=vault, boot_artifact_image=artifact, fail=fail))
+
+    def test_dhcpv6_chart_enablement_requires_bmc_and_a_dual_stack_node(self):
+        tree = ast.parse(TILT.read_text())
+        selected = [n for n in tree.body if isinstance(n, ast.If)
+                    and isinstance(n.test, ast.Name) and n.test.id == 'dhcpv6']
+        def fail(message):
+            raise ValueError(message)
+        for bmc, cidrs, error in [(False, ['10.244.0.0/24', 'fd00:10::/64'], '--bmc-lab'),
+                                  (True, ['10.244.0.0/24'], 'dual-stack'),
+                                  (True, ['10.244.0.0/24', 'fd00:10::/64'], '')]:
+            values = {'nico-dhcp': {}}
+            env = dict(dhcpv6=True, bmc_lab=bmc, cluster_context='kind-lab', all_values=values,
+                       fail=fail, decode_json=json.loads,
+                       local=lambda *a, **kw: json.dumps({'items': [{'spec': {'podCIDRs': cidrs}}]}))
+            with self.subTest(bmc=bmc, cidrs=cidrs):
+                if error:
+                    with self.assertRaisesRegex(ValueError, error):
+                        exec(compile(ast.Module(body=selected, type_ignores=[]), 'Tiltfile', 'exec'), env)
+                    self.assertEqual(values, {'nico-dhcp': {}})
+                else:
+                    exec(compile(ast.Module(body=selected, type_ignores=[]), 'Tiltfile', 'exec'), env)
+                    self.assertEqual(values['nico-dhcp']['dhcp'],
+                                     {'v6Enabled': True, 'v6ServerIdentifier': '020000000006'})
 
     def test_bmc_mode_does_not_enable_mat_or_its_readiness_resource(self):
         tree = ast.parse(TILT.read_text())

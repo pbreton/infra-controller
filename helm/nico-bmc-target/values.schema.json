@@ -111,6 +111,17 @@
         },
         "bridgeAddressV6": {
           "type": "string"
+        },
+        "dhcpv6": {
+          "type": "object",
+          "properties": {
+            "server": {
+              "type": "string"
+            },
+            "defaultRoute": {
+              "type": "boolean"
+            }
+          }
         }
       }
     }

@@ -188,7 +188,7 @@ RUN case "$(dpkg --print-architecture)" in \
       arm64) packages="qemu-system-arm qemu-efi-aarch64" ;; \
       *) exit 1 ;; \
     esac && apt-get update && apt-get install -y --no-install-recommends \
-    libvirt-daemon-system libvirt-clients qemu-utils ${packages} python3 iproute2 iptables isc-dhcp-relay tini ca-certificates libssl3 libudev1 \
+    libvirt-daemon-system libvirt-clients qemu-utils ${packages} python3 iproute2 iptables isc-dhcp-relay radvd tini ca-certificates libssl3 libudev1 \
     && rm -rf /var/lib/apt/lists/* \
     && printf '%s\n' 'user = "root"' 'group = "root"' 'security_driver = "none"' \
        'cgroup_controllers = []' > /etc/libvirt/qemu.conf \
@@ -200,7 +200,7 @@ RUN case "$(dpkg --print-architecture)" in \
 
 COPY --from=bmc-mock-builder /out/bmc-mock /usr/local/bin/bmc-mock
 COPY crates/bmc-mock/tls.crt crates/bmc-mock/tls.key /opt/carbide/
-COPY dev/deployment/lab/preflight.py dev/deployment/lab/target.py dev/deployment/lab/network.py /opt/nico-lab/
+COPY dev/deployment/lab/preflight.py dev/deployment/lab/target.py dev/deployment/lab/network.py dev/deployment/lab/dhcp6_relay.py /opt/nico-lab/
 ENTRYPOINT ["/usr/bin/tini", "--", "python3", "-B", "/opt/nico-lab/target.py"]
 
 

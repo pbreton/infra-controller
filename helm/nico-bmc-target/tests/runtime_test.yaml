@@ -269,3 +269,27 @@ tests:
       - notMatchRegex:
           path: data["config.json"]
           pattern: bridgeAddressV6
+  - it: adds managed DHCPv6 independently from IPv4 relay
+    template: deployment.yaml
+    set:
+      network.bridgeAddressV6: fd42:84:40::1/64
+      network.dhcpv6.server: fd00::20
+      network.dhcpv6.defaultRoute: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [--config, /etc/nico-target/config.json, --dhcp6-server, 'fd00::20', --ipv6-default-route]
+  - it: rejects DHCPv6 without a routed IPv6 bridge
+    template: deployment.yaml
+    set:
+      network.dhcpv6.server: fd00::20
+    asserts:
+      - failedTemplate:
+          errorMessage: network.bridgeAddressV6 is required for DHCPv6
+  - it: rejects a default-router advertisement without DHCPv6
+    template: deployment.yaml
+    set:
+      network.dhcpv6.defaultRoute: true
+    asserts:
+      - failedTemplate:
+          errorMessage: network.dhcpv6.defaultRoute requires network.dhcpv6.server

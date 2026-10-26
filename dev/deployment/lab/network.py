@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Owned guest forwarding rules and IPv4 DHCP relay for one native guest bridge."""
+"""Owned guest forwarding, DHCP relays and managed IPv6 router advertisements."""
 
 import ipaddress
 import json
@@ -8,16 +8,27 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+import sys
 
 
 class Network:
-    def __init__(self, config, run, server='', pod_cidr='', uplink='eth0'):
+    def __init__(self, config, run, server='', pod_cidr='', uplink='eth0', server_v6='', default_route_v6=False):
         self.config = config
         self.run = run
         self.owner = 'nico-target:' + config['uuid']
         self.subnet = ipaddress.IPv4Interface(config['bridgeAddress']).network
         self.subnet_v6 = (ipaddress.IPv6Interface(config['bridgeAddressV6']).network
                           if config.get('bridgeAddressV6') else None)
+        self.server_v6 = ipaddress.IPv6Address(server_v6) if server_v6 else None
+        self.default_route_v6 = default_route_v6
+        if default_route_v6 and self.server_v6 is None:
+            raise ValueError('IPv6 default-route advertisements require DHCPv6')
+        if self.server_v6 is not None:
+            if (self.subnet_v6 is None or self.server_v6.scope_id is not None
+                    or self.server_v6 in self.subnet_v6
+                    or not (self.server_v6 in ipaddress.IPv6Network('fc00::/7')
+                            or self.server_v6 in ipaddress.IPv6Network('2000::/3'))):
+                raise ValueError('DHCPv6 requires an IPv6 bridge and an unscoped ULA/global server outside its subnet')
         self.enabled = bool(server or pod_cidr)
         self.uplink = uplink
         self.relay = None
@@ -117,22 +128,61 @@ class Network:
         if self.relay is not None:
             self.relay.refresh(self.upstreams())
 
+    def router_advertisement(self):
+        return f"""interface {self.config['bridge']} {{
+    AdvSendAdvert on;
+    MinRtrAdvInterval 3;
+    MaxRtrAdvInterval 10;
+    AdvManagedFlag on;
+    AdvOtherConfigFlag on;
+    AdvDefaultLifetime {30 if self.default_route_v6 else 0};
+    prefix {self.subnet_v6} {{
+        AdvOnLink on;
+        AdvAutonomous off;
+    }};
+}};
+"""
+
     def start(self):
         # Also removes stale owned rules when provisioning is disabled after a crash.
         self.clear()
+        children = []
         try:
             if self.subnet_v6 is not None:
                 for table, chain, rule in self.ipv6_rules():
                     self.run('ip6tables', '-w', '5', '-t', table, '-I', chain, '1', *rule)
-            if not self.enabled:
-                return None
-            for table, chain, rule in self.rules():
-                self.run('iptables', '-w', '5', '-t', table, '-I', chain, '1', *rule)
-            self.relay = Relay(self.config['bridge'], str(self.server), self.upstreams())
-            return self.relay
+            if self.enabled:
+                for table, chain, rule in self.rules():
+                    self.run('iptables', '-w', '5', '-t', table, '-I', chain, '1', *rule)
+                self.relay = Relay(self.config['bridge'], str(self.server), self.upstreams())
+                children.append(self.relay)
+            if self.server_v6 is not None:
+                # Each target has its own mount namespace and retained bridge identity.
+                path = Path('/run/nico-radvd.conf')
+                path.write_text(self.router_advertisement())
+                children.append(subprocess.Popen([
+                    sys.executable, '-u', str(Path(__file__).with_name('dhcp6_relay.py')),
+                    '--interface', self.config['bridge'],
+                    '--link-address', str(ipaddress.IPv6Interface(self.config['bridgeAddressV6']).ip),
+                    '--server', str(self.server_v6), '--mac', self.config['mac']]))
+                children.append(subprocess.Popen(['radvd', '-n', '-m', 'stderr', '-C', str(path),
+                                                 '-p', '/run/nico-radvd.pid']))
+            return children
         except (OSError, subprocess.SubprocessError):
+            for child in reversed(children):
+                stop_child(child)
             self.clear()
             raise
+
+
+def stop_child(child):
+    if child.poll() is None:
+        child.terminate()
+        try:
+            child.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=5)
 
 
 class Relay:

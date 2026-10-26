@@ -1,4 +1,10 @@
 {{- $provisioning := .Values.network.provisioning | default dict -}}
+{{- $dhcpv6 := .Values.network.dhcpv6 | default dict -}}
+{{- if $dhcpv6.server -}}
+{{- $_ := required "network.bridgeAddressV6 is required for DHCPv6" .Values.network.bridgeAddressV6 -}}
+{{- else if $dhcpv6.defaultRoute -}}
+{{- fail "network.dhcpv6.defaultRoute requires network.dhcpv6.server" -}}
+{{- end -}}
 {{- if $provisioning.enabled -}}
 {{- $nodes := lookup "v1" "Node" "" "" -}}
 {{- if $nodes.items -}}
@@ -59,6 +65,13 @@ spec:
             - {{ required "network.provisioning.podCIDR is required" $provisioning.podCIDR | quote }}
             - --uplink
             - {{ $provisioning.uplink | default "eth0" | quote }}
+            {{- end }}
+            {{- if $dhcpv6.server }}
+            - --dhcp6-server
+            - {{ $dhcpv6.server | quote }}
+            {{- if $dhcpv6.defaultRoute }}
+            - --ipv6-default-route
+            {{- end }}
             {{- end }}
           env:
             - name: NODE_NAME

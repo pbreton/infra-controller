@@ -22,7 +22,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 import preflight
-from network import Network
+from network import Network, stop_child
 
 ROOT = Path('/data')
 READY = Path('/run/nico-target-ready')
@@ -262,16 +262,6 @@ def clear_bridge(config):
             run('ip', 'link', 'delete', config['bridge'])
 
 
-def stop_child(child):
-    if child.poll() is None:
-        child.terminate()
-        try:
-            child.wait(timeout=20)
-        except subprocess.TimeoutExpired:
-            child.kill()
-            child.wait(timeout=5)
-
-
 def serve(config, networking=None):
     children = []
     bmc = None
@@ -281,9 +271,7 @@ def serve(config, networking=None):
         Path('/run/libvirt').mkdir(exist_ok=True)
         bridge(config)
         if networking is not None:
-            relay = networking.start()
-            if relay is not None:
-                children.append(relay)
+            children.extend(networking.start())
         children.append(subprocess.Popen(['virtlogd']))
         children.append(subprocess.Popen(['libvirtd']))
         for attempt in range(60):
@@ -371,13 +359,15 @@ def main():
     parser.add_argument('--dhcp-server', default='', help='optional IPv4 DHCP Service address; requires --pod-cidr')
     parser.add_argument('--pod-cidr', default='', help='selected single-node kind IPv4 pod CIDR; requires --dhcp-server')
     parser.add_argument('--uplink', default='eth0', help='node uplink used by the relay and Internet masquerade')
+    parser.add_argument('--dhcp6-server', default='', help='optional IPv6 DHCP Service address; requires bridgeAddressV6')
+    parser.add_argument('--ipv6-default-route', action='store_true', help='advertise this bridge as an IPv6 default router; requires --dhcp6-server and separately configured upstream routing')
     args = parser.parse_args()
     config = configuration(json.loads(args.config.read_text()))
     if preflight.ARCHITECTURES.get(platform.machine()) != config['architecture']:
         raise ValueError('target architecture must match the native runtime')
     if os.environ.get('NODE_NAME') != config['nodeName']:
         raise ValueError('target must run on its configured Kubernetes node')
-    networking = Network(config, run, args.dhcp_server, args.pod_cidr, args.uplink)
+    networking = Network(config, run, args.dhcp_server, args.pod_cidr, args.uplink, args.dhcp6_server, args.ipv6_default_route)
     preflight.check_kvm(config['architecture'])
     if config.get('hugepages'):
         available = preflight.hugepage_capacity()

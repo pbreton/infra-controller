@@ -10,8 +10,8 @@ provides guest boot, BMC power control and retained target state. It does not
 install NICo, DHCP, a boot server, Scout or an operating system. It creates an
 isolated IPv4 guest bridge by default. Optional provisioning enables a DHCPv4
 relay and forwarding to existing cluster services. Optional IPv6 bridge routing
-supports explicitly addressed guests; DHCPv6 and router advertisements are outside
-this chart’s implemented boundary. See the [provisioning and guest checks](../../dev/deployment/lab/README.md). Ordinary Tilt
+supports explicitly addressed guests or an opt-in DHCPv6 relay with managed
+router advertisements. See the [provisioning and guest checks](../../dev/deployment/lab/README.md). Ordinary Tilt
 machine-a-tron development remains independent of this chart.
 
 ## Prepare an isolated runtime
@@ -114,13 +114,51 @@ not an IPv6 Kubernetes or provisioning deployment.
 The target assigns the IPv6 gateway to its owned bridge, installs tagged IPv6
 forwarding rules and a masquerade exemption for traffic entering that subnet
 to preserve peer source addresses, and removes only its own rules on shutdown. It does not add
-NAT66, a default route, router advertisements, DHCPv6, DNS or upstream routes.
+NAT66, node default routes, DNS or upstream routes. DHCPv6 relay and router
+advertisements are separately enabled below.
 Guests need explicit addresses and routes, or an independently configured
 addressing service. Two target bridges on the same node can route directly;
 external IPv6 requires separately managed upstream and return routes.
 The same trust boundary as IPv4 applies: this is a privileged flat lab, not
 network isolation between tenants. See the
 [IPv6 guest procedure](../../dev/deployment/lab/README.md#two-instance-ipv6-routing).
+
+## Managed DHCPv6 and router advertisements
+
+Set `network.dhcpv6.server` to the existing Kea DHCPv6 Service IPv6 address to
+start a relay and router advertisements on this target's owned bridge. Empty
+(the default) starts neither. This requires `network.bridgeAddressV6`; the
+server must be an unscoped ULA or global address outside that prefix. The relay
+forwards only this guest's configured MAC and includes RFC 6939 link-layer
+metadata, so DUID-UUID and DUID-EN clients retain their Ethernet identity. It
+accepts unfragmented, untagged IPv6/UDP packets; extension headers, VLANs and
+chained relays are outside this flat lab topology.
+
+RA sets the managed and other-configuration flags, advertises the bridge /64 as
+on-link, and disables autonomous address allocation. NICo and Kea allocate the
+address; this option does not enable SLAAC. Core's matching network segment must
+include the bridge's IPv6 prefix, with the gateway excluded from allocation.
+The IPv4 provisioning settings remain independent.
+
+`network.dhcpv6.defaultRoute` defaults to `false`: router lifetime is zero.
+Setting it to `true` advertises a 30-second default-router lifetime, refreshed
+every 3–10 seconds. Configure upstream and return routes separately; RA does not
+create Internet connectivity or add any route on the node. This value requires
+a DHCPv6 server. Both services are supervised alongside the target and stop after
+the guest is saved. A child exit fails target readiness and triggers normal pod
+recovery.
+
+```yaml
+network:
+  bridgeAddressV6: fd42:8124:40::1/64
+  dhcpv6:
+    server: fd00:10:96::20  # Replace with the actual DHCPv6 Service address.
+    defaultRoute: true
+```
+
+The server and advertisement settings may change through a normal retained-state
+restart; the bridge identity and prefix remain immutable. See the
+[managed DHCPv6 lab procedure](../../dev/deployment/lab/README.md#managed-dhcpv6-guests).
 
 ## Build and deploy
 

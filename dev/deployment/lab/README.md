@@ -321,7 +321,8 @@ A successful ping proves a live real-Scout response through Core. It does not
 prove OS installation, instance assignment, release, or tenant IPv6 connectivity.
 Continue with the [instance lifecycle checks](#allocate-and-recycle-an-instance)
 and [explicit-address IPv6 routing checks](#two-instance-ipv6-routing).
-DHCPv6, SLAAC, IPv6-only guests and Internet IPv6 remain separate stages of
+See [managed DHCPv6 guests](#managed-dhcpv6-guests) for dynamic IPv6 addressing.
+SLAAC, IPv6-only guests and Internet IPv6 remain separate stages of
 [issue 8124](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 ### Stop, restart and discard the BMC lab
@@ -515,7 +516,7 @@ This proves installation and replacement of a virtual disk image, not hardware
 secure erase. Scout's hardware cleanup discovers NVMe and `/dev/sd*` devices;
 the target's `/dev/vda` is outside those paths. Do not infer tenant data erasure
 at release from a successful reprovisioning test. Virtio inventory, hardware
-sanitize coverage, DHCPv6, SLAAC, IPv6-only guests and Internet IPv6 remain separate acceptance boundaries in
+sanitize coverage, SLAAC, IPv6-only guests and Internet IPv6 remain separate acceptance boundaries in
 [the migration issue](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 ## Two-instance IPv4 connectivity
@@ -680,3 +681,56 @@ The portable socket regression uses IPv6 loopback when available and reports a
 skip when the runner lacks it. This does not count as native IPv6 acceptance.
 Both native architectures need the real two-guest IPv6 checks even when an
 upstream Internet IPv6 route is unavailable.
+
+## Managed DHCPv6 guests
+
+For DHCPv6, create the dedicated lab cluster with `setup-kind.sh --ip-family dual`
+and pass `--dhcpv6` with the existing `--bmc-lab --persistent-vault
+--boot-artifact-image IMAGE` Tilt options. The flag requires BMC mode and exactly
+one node with an IPv6 pod CIDR. It enables the existing `nico-dhcp` chart's
+DHCPv6 deployment with stable development server identifier `020000000006`.
+The DHCP image contains both daemons on AMD64 and ARM64; no upstream IPv6 route
+is needed for private guest-to-guest tests.
+
+Obtain the Service address after the DHCP release is ready:
+
+```bash
+kubectl -n nico-system get service nico-dhcp6 -o jsonpath='{.spec.clusterIP}'
+```
+
+Set each target's `network.dhcpv6.server` to that result, configure distinct
+`network.bridgeAddressV6` /64 prefixes, and enable `network.dhcpv6.defaultRoute`
+when the node should route between those target networks. This enables managed
+RA, not SLAAC. Add each IPv6 prefix to its corresponding host-inband segment by
+repeating `--prefix` in the fresh-site registration command. Use `--reserve-first`
+to exclude the bridge gateway, as in the IPv4 procedure. Do not recreate an
+existing segment or replace credentials to change a running site's configuration.
+
+For the installed guest, replace the explicit-address fixture with an early
+systemd-networkd file matched to the guest MAC. Retain its mode `0644` and the
+existing `networkctl reload` command:
+
+```ini
+[Match]
+MACAddress=02:00:00:01:00:02
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv6]
+WithoutRA=solicit
+```
+
+This keeps IPv4 provisioning and installed IPv4 networking while exercising
+DHCPv6, including clients with non-MAC DUIDs. Read the allocated address from
+Core's instance network status and confirm the same dynamic address inside the
+guest before running the existing IPv6 connectivity checker. Do not assume the
+first available address or reuse the explicit fixture's `::10` address. Validate
+both peer directions, reboot, lease renewals and release with live Scout.
+
+The lease-handoff behavior is tracked independently in
+[PR #7934](https://github.com/dsx-ai-factory/infra-controller/pull/7934).
+Record the DHCP image's source revision when validating transitions between
+firmware, Scout, imager and installed-OS identities. Enabling the deployment
+alone does not prove that those transitions work.

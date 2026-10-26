@@ -2257,6 +2257,7 @@ jobs:
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_setup_kind.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_lab_preflight.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_bmc_target.py'
+          /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_dhcp6_relay.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_scout_artifacts.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_ipxe_artifacts.py'
           /usr/bin/python3 -B -m unittest discover -s dev/deployment/tests -p 'test_guest_ssh.py'

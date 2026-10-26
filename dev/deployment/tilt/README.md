@@ -755,3 +755,9 @@ Scout check. For disk-installed instances, add the
 [native imager](../lab/README.md#native-disk-imager) and follow the
 [instance lifecycle checks](../lab/README.md#allocate-and-recycle-an-instance).
 Ordinary Tilt development continues to use MAT by default.
+
+For the optional BMC lab, `--dhcpv6` enables the existing DHCP chart's IPv6 service
+on a single-node dual-stack cluster. It requires `--bmc-lab` and its persistent
+Vault/boot-artifact inputs. Configure the target relay and managed RA through
+shared chart values; see [managed DHCPv6 guests](../lab/README.md#managed-dhcpv6-guests).
+The ordinary MAT workflow is unchanged.
