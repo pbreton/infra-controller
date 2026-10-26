@@ -154,7 +154,10 @@ Direct bridge and external socket modes need working guest IPv4/IPv6 routing;
 NAT mode uses a 1280-byte MTU. Configuration remains fixed after first creation.
 `--image` accepts a local raw Ubuntu ARM64 EFI disk and requires its matching
 64-digit hexadecimal `--image-sha256`. The canonical path and digest are saved;
-retries reuse them when omitted and reject conflicting values. Without these, the launcher verifies the
+retries reuse them when omitted and reject conflicting values, even if the
+initial download or checksum validation failed. To correct those inputs, select
+a new empty `--vm-dir`; preserve the failed directory for diagnosis until its
+unused files are deliberately discarded. Without these, the launcher verifies the
 bundled Ubuntu signing key, signed checksum manifest and pinned image digest
 before converting the official qcow2 image to a sparse raw disk. A root disk that
 is larger than `--disk-gib` is rejected. Missing initialized disks are never

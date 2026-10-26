@@ -232,6 +232,12 @@ class LabTests(unittest.TestCase):
                         self.lab.ready()
                 ssh.assert_not_called()
 
+    def test_force_stop_public_command_forwards_explicit_recovery(self):
+        with patch.object(vm.lab_manager, 'Lab') as factory, patch.object(vm.platform, 'system', return_value='Darwin'), patch.object(vm.platform, 'machine', return_value='arm64'), patch.object(vm.platform, 'mac_ver', return_value=('26.0', (), '')):
+            vm.main(['--lab-root', str(self.directory / 'lab'), '--lab-id', '12', '--force', 'lab-stop'])
+        factory.return_value.stop.assert_called_once_with(force=True)
+        factory.return_value.delete.assert_not_called()
+
     def test_delete_confirmation_is_required_before_accessing_state(self):
         with patch.object(vm.lab_manager, "Lab") as lab:
             for arguments in (["--force", "lab-delete"], ["--force", "up"], ["lab-delete"], ["--yes", "up"], ["--vm-dir", "/unused", "lab-stop"]):
