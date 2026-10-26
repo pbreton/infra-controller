@@ -4,18 +4,40 @@
 
 # Check packaging and hook loading without a cluster, credentials or external traffic.
 set -euo pipefail
-if [[ $# != 1 ]]; then
-    echo "Usage: $0 IMAGE" >&2
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+    echo "Usage: $0 IMAGE [KEA_COMMON_DEB]" >&2
     exit 2
 fi
 
-docker run --rm --network none \
+package_mount=()
+if [[ $# == 2 ]]; then
+    package_path="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+    test -f "$package_path"
+    package_mount=(--mount "type=bind,src=$package_path,dst=/tmp/expected-kea.deb,readonly")
+fi
+
+docker run --rm --network none "${package_mount[@]}" \
     --sysctl net.ipv6.conf.all.disable_ipv6=0 \
     --sysctl net.ipv6.conf.default.disable_ipv6=0 \
     --entrypoint sh -i "$1" -eu <<'CONTAINER'
 ip -V
 ss -V
 curl --version
+
+if test -f /tmp/expected-kea.deb; then
+    test "$(dpkg-deb -f /tmp/expected-kea.deb Package)" = kea-common
+    test "$(dpkg-deb -f /tmp/expected-kea.deb Version)" = "$(dpkg-query -W -f='${Version}' kea-common)"
+    test "$(dpkg-deb -f /tmp/expected-kea.deb Architecture)" = "$(dpkg --print-architecture)"
+    mkdir /tmp/expected-kea
+    dpkg-deb -x /tmp/expected-kea.deb /tmp/expected-kea
+    # Compare actual runtime library bytes, not only the unchanged package version.
+    find /tmp/expected-kea/usr/lib -type f -name 'libkea*.so*' -print > /tmp/kea-libraries
+    test -s /tmp/kea-libraries
+    while IFS= read -r expected; do
+        cmp "$expected" "${expected#/tmp/expected-kea}"
+    done < /tmp/kea-libraries
+    echo 'Kea runtime libraries match the supplied native package'
+fi
 
 cat > /tmp/dhcp4.json <<'JSON'
 {"Dhcp4":{"interfaces-config":{"interfaces":["lo"],"dhcp-socket-type":"udp"},"lease-database":{"type":"memfile","persist":false},"valid-lifetime":120,"hooks-libraries":[{"library":"/usr/lib/kea/hooks/libdhcp.so"}]}}

@@ -124,6 +124,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   kea-dhcp6-server=${KEA_VERSION} \
   && rm -rf /var/lib/apt/lists/*
 
+# Reuse a dependency-provided Kea package from the native build image. Older
+# build images retain the distribution package; they do not include lease-handoff fixes.
+RUN --mount=type=bind,from=source,source=/opt,target=/build-opt,ro \
+    if [ -f /build-opt/kea/kea-common.deb ]; then \
+      test "$(dpkg-deb -f /build-opt/kea/kea-common.deb Package)" = kea-common && \
+      test "$(dpkg-deb -f /build-opt/kea/kea-common.deb Version)" = "${KEA_VERSION}" && \
+      test "$(dpkg-deb -f /build-opt/kea/kea-common.deb Architecture)" = "$(dpkg --print-architecture)" && \
+      dpkg -i /build-opt/kea/kea-common.deb; \
+    fi
+
 RUN mkdir -p /usr/lib/kea/hooks /var/lib/kea /var/run/kea
 
 COPY --from=dhcp-builder /out/libdhcp.so /usr/lib/kea/hooks/libdhcp.so

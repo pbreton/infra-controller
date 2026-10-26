@@ -796,7 +796,38 @@ target, or provide a separate route from the guest to the IPv6 Service CIDR.
 Configure the target's DHCPv6 relay separately. Endpoint exposure alone preserves
 the default boot URLs and artifacts.
 
-### IPv6 boot profile
+#### DHCPv6 lease-handoff build dependency
+
+Repeated firmware, Scout, imager and installed-OS transitions require the
+[DHCPv6 lease-handoff fixes in PR #7934](https://github.com/dsx-ai-factory/infra-controller/pull/7934)
+until those changes are present on the source branch being built. Record the
+resolved integration revision when testing an unmerged combination. The lab
+helpers do not fetch or merge that dependency.
+
+The native build image from that dependency retains its patched package at
+`/opt/kea/kea-common.deb`. The shared development DHCP image installs that exact
+package after checking its name, pinned Kea version and native architecture.
+Both `make images-dev DEV_TARGET=dhcp` and Tilt use this packaging path. A build
+image without the package retains the distribution Kea library and does not
+establish the lease-handoff capability. An invalid supplied package fails the
+build; it does not fall back to the distribution copy.
+
+To verify the installed library bytes as well as both DHCP hook listeners, pass
+the native package extracted from the selected build image to the existing smoke
+check:
+
+```bash
+bash dev/docker/tests/smoke_dhcp_image.sh nico-dev-dhcp:validation /path/to/kea-common.deb
+```
+
+The second argument is optional; without it, the smoke check tests tool presence,
+hook loading and isolated UDP listeners as before. With it, the check also
+requires the `kea-common` package name, installed version and native architecture
+to match and compares every packaged `libkea*.so*` regular file with the runtime
+copy. It mounts the package read-only into a disposable container with networking
+disabled. This packaging check does not replace the real instance lifecycle.
+
+## IPv6 boot profile
 
 For a fresh lab dedicated to IPv6 provisioning, also select `--ipv6-boot`.
 The registered OS image URL must also be reachable over IPv6 by the imager.
