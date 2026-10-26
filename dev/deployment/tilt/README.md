@@ -790,6 +790,7 @@ name-resolution and lifecycle contract.
 Keep the flag enabled for the lifetime of the dedicated lab cluster. Changing
 this profile in place is outside its support boundary: live Tilt argument
 changes and stopping/restarting Tilt can handle removed resources differently.
-Release the instances, stop the BMC targets, and discard the dedicated cluster
-using the linked Scout lab cleanup procedure. Create a fresh cluster for a
+Release the instances, then follow the
+[stop/restart/discard procedure](../lab/README.md#stop-restart-and-discard-the-bmc-lab)
+to stop both Tilt processes and discard the dedicated cluster. Create a fresh cluster for a
 different topology; do not remove the resolver while guests depend on it.

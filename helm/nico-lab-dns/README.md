@@ -34,7 +34,7 @@ the release can allocate a different ClusterIP. Update the DHCPv6 DNS option
 before booting guests after that operation. Existing clients may need a network
 reconfiguration or reboot to adopt a changed resolver. Keep the release while consumers use it. The supported Tilt topology change is
 to release the instances and discard the dedicated lab cluster through the
-[Scout lab cleanup procedure](../../dev/deployment/lab/README.md#connect-scout-to-the-tilt-stack).
+[Scout lab cleanup procedure](../../dev/deployment/lab/README.md#stop-restart-and-discard-the-bmc-lab).
 Do not remove the endpoint flag from a running lab: this chart does not support
 an in-place transition of its clients to a different DNS or service topology.
 
