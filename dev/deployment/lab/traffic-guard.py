@@ -24,6 +24,7 @@ PACKET_MR_PROMISC = 1
 SO_RCVBUFFORCE = 33
 ETH_P_ALL = 3
 STOP_GRACE_SECONDS = 300
+FRAME_BUFFER_BYTES = 262144
 
 COUNTERS = ('ipv6', 'dhcp4_probe', 'ipv4', 'arp', 'other', 'malformed', 'dropped')
 
@@ -94,7 +95,7 @@ def capture():
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
                     try:
-                        category = classify(packets.recv(65535), mac)
+                        category = classify(packets.recv(FRAME_BUFFER_BYTES), mac)
                     except BlockingIOError:
                         break
                     if category:
@@ -103,7 +104,7 @@ def capture():
                     raise TimeoutError('capture queue did not drain')
                 break
             if packets in readable:
-                category = classify(packets.recv(65535), mac)
+                category = classify(packets.recv(FRAME_BUFFER_BYTES), mac)
                 if category:
                     counts[category] += 1
             if time.monotonic() - last >= 1:
@@ -262,7 +263,7 @@ def main():
     process = None
     def interrupted(number, frame):
         raise InterruptedError(f'traffic guard received signal {number}')
-    previous = {number: signal.signal(number, interrupted) for number in (signal.SIGTERM, signal.SIGHUP)}
+    previous = {number: signal.signal(number, interrupted) for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
         guard.start()
         process = subprocess.Popen(args.command, stdin=subprocess.DEVNULL, start_new_session=True)
@@ -275,9 +276,14 @@ def main():
         guard.outcome['error'] = type(error).__name__ + ': ' + str(error)
         raise
     finally:
-        stop_command(process, guard.outcome)
+        # Further cancellation must not interrupt child cleanup or lose evidence.
+        for number in previous:
+            signal.signal(number, signal.SIG_IGN)
         try:
-            guard.stop()
+            try:
+                stop_command(process, guard.outcome)
+            finally:
+                guard.stop()
         finally:
             for number, handler in previous.items():
                 signal.signal(number, handler)

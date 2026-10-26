@@ -1,5 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+import contextlib
+import io
 import importlib.util
 import json
 import os
@@ -57,6 +59,33 @@ class TrafficGuardTests(unittest.TestCase):
             with self.subTest(expected=expected, packet=packet):
                 self.assertEqual(GUARD.classify(packet, MAC), expected)
 
+    def test_capture_retains_large_ipv6_frames_in_live_and_stop_drain_paths(self):
+        inventory = dict(mac='02:00:00:03:00:02', bridge='test-bridge')
+        packet = frame(0x86dd, b'\x60' + b'\0' * 3 + b'\xff\xff' + b'\0' * (34 + 65535))
+        packets, stdin = Mock(), Mock()
+        stdin.buffer.readline.return_value = json.dumps(inventory)
+        received = iter([packet, packet])
+        def receive(size):
+            try: return next(received)[:size]
+            except StopIteration: raise BlockingIOError()
+        packets.recv.side_effect = receive
+        packets.getsockopt.return_value = b'\0' * 8
+        output = io.StringIO()
+        socket_context = Mock()
+        socket_context.__enter__ = Mock(return_value=packets)
+        socket_context.__exit__ = Mock(return_value=False)
+        with patch.object(GUARD.socket, 'AF_PACKET', 17, create=True), \
+                patch.object(GUARD.socket, 'socket', return_value=socket_context), \
+                patch.object(GUARD.socket, 'if_nametoindex', return_value=1), \
+                patch.object(GUARD.Path, 'read_text', return_value=json.dumps(inventory)), \
+                patch.object(GUARD.sys, 'stdin', stdin), patch.object(GUARD.os, 'read', return_value=b'!'), \
+                patch.object(GUARD.select, 'select', side_effect=[([packets], [], []), ([stdin.buffer], [], [])]), \
+                contextlib.redirect_stdout(output):
+            GUARD.capture()
+        report = GUARD.assess([json.loads(line) for line in output.getvalue().splitlines()])
+        self.assertEqual(report['counts']['ipv6'], 2)
+        self.assertEqual(report['counts']['malformed'], 0)
+
     def test_incomplete_lossy_or_ipv4_observation_cannot_pass(self):
         good = {'event': 'finished', 'stop_requested': True, 'counts': dict.fromkeys(GUARD.COUNTERS, 0)}
         good['counts'].update(ipv6=10, dhcp4_probe=4)
@@ -107,7 +136,7 @@ class TrafficGuardTests(unittest.TestCase):
             observer.stop.assert_called_once()
 
     def test_termination_signals_stop_the_wrapped_process_group_and_observers(self):
-        for number in (GUARD.signal.SIGTERM, GUARD.signal.SIGHUP):
+        for number in (GUARD.signal.SIGINT, GUARD.signal.SIGTERM, GUARD.signal.SIGHUP):
             with self.subTest(signal=number), tempfile.TemporaryDirectory() as directory:
                 observer, process = Mock(), Mock()
                 observer.outcome = {}
@@ -120,6 +149,9 @@ class TrafficGuardTests(unittest.TestCase):
                 def wait(**kwargs):
                     if kwargs.get("timeout") != GUARD.STOP_GRACE_SECONDS:
                         handlers[number](number, None)
+                    else:
+                        # A second cancellation during diagnostics is deferred.
+                        self.assertEqual(handlers[number], GUARD.signal.SIG_IGN)
                     return 0
                 process.wait.side_effect = wait
                 args = ['traffic-guard.py', '--context', 'kind-test', '--target', 'one', '--target', 'two',
