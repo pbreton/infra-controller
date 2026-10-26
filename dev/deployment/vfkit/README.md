@@ -176,7 +176,15 @@ A generated private key, the user's valid `~/.ssh/*.pub` keys and corresponding
 host-key records stay in VM state. Keep this directory private. `ssh` opens an
 interactive guest shell; `exec` requires a command after `--` and runs it in
 `/home/nico/infra-controller`. Both use vsock, so management does not depend on
-LAN addresses. `sync` transfers tracked and nonignored local files, including
+LAN addresses. They wait only for SSH so a cloud-init failure does not block
+recovery access. Inspect its status from the host with:
+
+```bash
+python3 vm.py --vm-dir "$vm_dir" exec -- sudo cloud-init status --long
+```
+
+`up`, `start`, `sync` and `verify` require successful cloud-init. `sync` transfers
+tracked and nonignored local files, including
 local edits, without deleting guest files or copying `.git`. It records source
 version inputs in `~/.config/nico/vfkit-source-version.sh` inside the guest; the
 private guest Git HEAD is only a workspace placeholder. The source checkout must

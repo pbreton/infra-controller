@@ -203,6 +203,32 @@ class LifecycleTests(unittest.TestCase):
         for call in ssh.call_args_list[1:]:
             self.assertEqual(call.kwargs["stdin"], subprocess.DEVNULL)
 
+    def test_failed_cloud_init_blocks_setup_but_not_recovery_access(self):
+        for required in (True, False):
+            with self.subTest(require_cloud_init=required), patch.object(self.machine, "pid", return_value=123), \
+                    patch.object(self.machine, "ssh", side_effect=[None, subprocess.CalledProcessError(2, "cloud-init")]) as ssh:
+                if required:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        self.machine.ready()
+                else:
+                    self.machine.ready(require_cloud_init=False)
+                    ssh.assert_called_once()
+                    self.assertEqual(ssh.call_args.args, ("true",))
+
+    def test_public_recovery_commands_do_not_wait_for_cloud_init(self):
+        for action in ("ssh", "exec", "verify"):
+            machine = MagicMock()
+            machine.runtime = self.machine.runtime
+            args = ["--vm-dir", str(self.directory), action]
+            if action == "exec": args += ["--", "true"]
+            with self.subTest(action=action), patch.object(vm, "VM", return_value=machine), \
+                    patch.object(vm, "check_vfkit_version"), patch.object(vm, "run"), \
+                    patch.object(vm.platform, "system", return_value="Darwin"), \
+                    patch.object(vm.platform, "machine", return_value="arm64"), \
+                    patch.object(vm.platform, "mac_ver", return_value=("26.0", (), "")):
+                vm.main(args)
+            machine.ready.assert_called_once_with(require_cloud_init=action == "verify")
+
     def test_checksum_failure_never_publishes_root_disk(self):
         image = self.root / "image.raw"
         image.write_bytes(b"not the requested image")

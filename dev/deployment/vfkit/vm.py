@@ -433,7 +433,7 @@ class VM:
     def ssh(self, *command, **kwargs):
         return run(self.ssh_args() + ["nico@nico-vfkit", shlex.join(command)], **kwargs)
 
-    def ready(self):
+    def ready(self, require_cloud_init=True):
         if not self.pid():
             raise ValueError("VM is stopped; run start or up")
         for _ in range(120):
@@ -441,8 +441,9 @@ class VM:
                 # Readiness probes must not consume stdin intended for exec.
                 self.ssh("true", stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.ssh("sudo", "cloud-init", "status", "--wait", "--long",
-                         stdin=subprocess.DEVNULL, stdout=sys.stderr, timeout=600)
+                if require_cloud_init:
+                    self.ssh("sudo", "cloud-init", "status", "--wait", "--long",
+                             stdin=subprocess.DEVNULL, stdout=sys.stderr, timeout=600)
                 return
             except subprocess.CalledProcessError as error:
                 if error.returncode != 255:
@@ -665,7 +666,7 @@ def main(argv=None):
             vm.require_config()
             if args.action == "start":
                 vm.start()
-            vm.ready()
+            vm.ready(require_cloud_init=args.action not in ("ssh", "exec"))
             if args.action == "sync":
                 vm.sync()
             if args.action == "verify":
