@@ -808,3 +808,79 @@ again and update each target's `network.dhcpv6.server` through Helm. This trigge
 the [retained-state restart](../../../helm/nico-bmc-target/README.md#configuration-and-retention); resume the saved guests through Redfish.
 Target readiness checks the runtime, not DHCP lease availability. Run the guest
 address and connectivity checks after this recovery.
+
+
+### Repeat the instance lifecycle
+
+`lifecycle.py` operates on two explicitly selected, already admitted no-DPU lab
+machines. Deploy the stack and targets, register the native OS image with its
+SHA-256 digest, and create a flat VPC using the preceding instructions first.
+Both machines must be Ready with live Scout connections. The OS image must
+support the Ubuntu/networkd cloud-init fixture; the root disk must be `/dev/vda`.
+For IPv6 guests, deploy the managed DHCPv6 relay, resolver and routes first.
+The DHCP runtime must include the
+[boot-stage lease handoff fix](https://github.com/dsx-ai-factory/infra-controller/pull/7934).
+
+Select a new private directory whose parent exists. Replace the example Core IDs
+with those returned by your lab's Core API:
+
+```bash
+python3 dev/deployment/lab/lifecycle.py \
+  --context kind-nico-tilt --state-dir /tmp/nico-lifecycle-run \
+  --target "target-one=$FIRST_MACHINE_ID" \
+  --target "target-two=$SECOND_MACHINE_ID" \
+  --vpc "$VPC_ID" --os-image "$OS_IMAGE_ID" --network ipv6-only
+```
+
+The context, two target pairs, VPC UUID, OS-image UUID and state directory are
+required for a new run. Releases and machine IDs must both be distinct. Only
+explicit `kind-` contexts and deployments labeled `nico-bmc-target` are accepted.
+The runner verifies cluster UID, inventory owner and Core BMC address/MAC before
+allocating; an existing state directory is rejected. Directory paths cannot
+contain whitespace, quotes, `%`, `$` or backslashes because SSH pins keys there.
+
+`--namespace` defaults to `bmc-lab`; both targets use it. `--core-namespace`
+defaults to `nico-system`. `--network` accepts `ipv4` (default), `dual-stack` or
+`ipv6-only`. `--cycles` accepts 1 or 2 and defaults to 2. `--timeout` is the
+per-transition polling deadline in seconds, defaults to 1800 and accepts 60–7200;
+individual command deadlines can extend a final poll beyond that boundary.
+There is no total run deadline. `--internet-ipv6` is false by default and requires
+an IPv6 guest profile. It adds certificate-verified IPv6 HTTPS to
+`https://www.google.com` for both guests before and after each reboot. Omission
+means external IPv6 was not tested; internal IPv6 remains tested for IPv6
+profiles. It is suitable for an environment without an external IPv6 route.
+
+Each cycle allocates two distinct instances, verifies the current disk generation,
+cloud-init and finite DHCP leases, and checks bidirectional TCP with unchanged
+peer source addresses. IPv6-only guests must have no non-loopback IPv4 address or
+route and must fail an IPv4 Internet ping. Each guest is then rebooted through
+Core: its disk marker must persist and its boot ID must change while its peer's
+boot ID stays unchanged. Connectivity is checked again. The runner releases the
+first guest while checking its peer, then releases the second, waiting for Ready
+and live Scout after each release. A second cycle repeats allocation from these
+released machines. This does not rebuild the stack or prove a fresh-cluster run.
+
+The directory contains a newly generated SSH key, per-generation pinned host
+keys, allocated identities, network observations and an atomic `state.json`
+journal. Treat it as private; do not commit or share it. Only one process may use
+a journal at a time. Allocation intent is saved before the API call, so a lost
+response can be reconciled without adopting an unrelated instance. A failure
+retains the journal and collects target consoles and machine state; it never
+force-clears Core state or silently retries allocation.
+
+After a failed run, release only its recorded instances with:
+
+```bash
+python3 dev/deployment/lab/lifecycle.py \
+  --state-dir /tmp/nico-lifecycle-run --release-only
+```
+
+Cleanup reads context and identities from the journal, revalidates target
+ownership, and rejects replaced clusters, targets or instances. Do not supply
+`--context`, `--target`, `--vpc` or `--os-image` with `--release-only`. Other run
+settings are read from the journal. Repeating cleanup after successful release
+is harmless. Run directories support cleanup, not resuming an interrupted test;
+start a new directory for another run. Neither mode deletes VPCs, OS catalog
+entries, target PVCs, the stack or its credentials. Exit status is zero only when
+all selected checks or cleanup complete; failures return nonzero and retain
+evidence.
