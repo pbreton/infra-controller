@@ -86,11 +86,13 @@ class OsArtifactTest(unittest.TestCase):
     def test_native_mismatch_and_existing_tag_fail_before_output_creation(self):
         with tempfile.TemporaryDirectory() as directory:
             args = argparse.Namespace(output=Path(directory) / 'output', boot_artifact_image='boot:fixture', image='os:fixture')
-            for arch, tags, message in [('amd64', '', 'architecture'), ('arm64', 'os:fixture\n', 'already exists')]:
+            for arch, parent_tags, tags, message in [('amd64', ['boot:fixture'], '', 'architecture'),
+                                                       ('arm64', ['boot:fixture'], 'os:fixture\n', 'already exists'),
+                                                       ('arm64', [], '', 'untagged')]:
                 with self.subTest(message=message):
                     def run(command, **kwargs):
                         if command[1] == 'info': result = {'OSType': 'linux', 'Architecture': 'aarch64'}
-                        elif command[1:3] == ['image', 'inspect']: result = [{'Id': 'parent', 'Os': 'linux', 'Architecture': arch, 'RepoTags': ['boot:fixture']}]
+                        elif command[1:3] == ['image', 'inspect']: result = [{'Id': 'parent', 'Os': 'linux', 'Architecture': arch, 'RepoTags': parent_tags}]
                         elif command[1:3] == ['image', 'ls']: return subprocess.CompletedProcess(command, 0, stdout=tags)
                         else: self.fail('unexpected mutation: ' + str(command))
                         return subprocess.CompletedProcess(command, 0, stdout=json.dumps(result))
