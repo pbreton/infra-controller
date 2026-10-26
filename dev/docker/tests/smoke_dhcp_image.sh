@@ -11,6 +11,7 @@ fi
 
 if [[ $# == 2 ]]; then
     test -f "$2"
+    package_path="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
 fi
 container=$(docker create --rm --network none \
     --sysctl net.ipv6.conf.all.disable_ipv6=0 \
@@ -18,7 +19,7 @@ container=$(docker create --rm --network none \
     --entrypoint sh -i "$1" -eu)
 trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
 if [[ $# == 2 ]]; then
-    docker cp "$2" "$container:/tmp/expected-kea.deb"
+    docker cp "$package_path" "$container:/tmp/expected-kea.deb"
 fi
 docker start -ai "$container" <<'CONTAINER'
 ip -V

@@ -28,11 +28,17 @@ class CiDevImagesTest(unittest.TestCase):
         )
 
     def run_build(self, arch="amd64", platform="linux/x86_64", rebuilt=True,
-                  published=False, fail_build=False, package_status=0):
+                  published=False, fail_build=False, package_status=0, producer_present=False):
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yaml").read_text())
         step = workflow["jobs"]["test-dev-dhcp-image"]["steps"][-1]
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
+            checkout = directory / 'checkout'
+            smoke = checkout / 'dev/docker/tests/smoke_dhcp_image.sh'
+            smoke.parent.mkdir(parents=True)
+            smoke.symlink_to(ROOT / 'dev/docker/tests/smoke_dhcp_image.sh')
+            if producer_present:
+                (checkout / 'dev/docker/build-kea.sh').touch()
             log = directory / "docker.jsonl"
             docker = directory / "docker"
             docker.write_text(
@@ -81,7 +87,7 @@ class CiDevImagesTest(unittest.TestCase):
                 DOCKER_TEST_FAIL_BUILD=str(fail_build).lower(),
             )
             result = subprocess.run(
-                ["bash", "-c", step["run"]], cwd=ROOT, env=env,
+                ["bash", "-c", step["run"]], cwd=checkout, env=env,
                 capture_output=True, text=True, timeout=30,
             )
             calls = [json.loads(line) for line in log.read_text().splitlines()]
@@ -117,11 +123,9 @@ class CiDevImagesTest(unittest.TestCase):
                 self.assertEqual(calls[2], ["pull", "--platform", "linux/amd64", BUILD_CONTAINER])
 
     def test_missing_optional_package_preserves_stock_smoke_but_extraction_errors_fail(self):
-        producer_present = (ROOT / 'dev/docker/build-kea.sh').exists()
-        for status in (3, 125):
-            with self.subTest(status=status):
-                result, calls = self.run_build(package_status=status)
-                allowed = status == 3 and not producer_present
+        for status, producer, allowed in ((3, False, True), (3, True, False), (125, False, False)):
+            with self.subTest(status=status, producer=producer):
+                result, calls = self.run_build(package_status=status, producer_present=producer)
                 self.assertEqual(result.returncode == 0, allowed, result.stderr)
                 self.assertEqual([c[0] for c in calls if c[0] in ('create', 'cp', 'start', 'rm')],
                                  ['create', 'start', 'rm'] if allowed else [])

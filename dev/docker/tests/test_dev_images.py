@@ -65,21 +65,21 @@ class DevImagesTest(unittest.TestCase):
                               'if sys.argv[1] == "cp" and os.environ.get("FAIL_COPY"): sys.exit(7)\n'
                               'if sys.argv[1] == "start": sys.stdin.read()\n')
             docker.chmod(0o755)
-            package = directory / 'package, with spaces.deb'
+            package = directory / 'package:, with spaces.deb'
             package.touch()
             env = dict(os.environ, PATH=str(directory) + os.pathsep + os.environ['PATH'])
-            for extra, fail in (([], False), ([str(package)], False), ([str(package)], True)):
+            for extra, fail in (([], False), ([package.name], False), ([package.name], True)):
                 with self.subTest(package=bool(extra), fail=fail):
                     log.unlink(missing_ok=True)
                     result = subprocess.run(['/bin/bash', str(ROOT / 'dev/docker/tests/smoke_dhcp_image.sh'),
-                                             'test-image', *extra], env=dict(env, FAIL_COPY='yes' if fail else ''),
+                                             'test-image', *extra], cwd=directory, env=dict(env, FAIL_COPY='yes' if fail else ''),
                                             capture_output=True, text=True)
                     self.assertEqual(result.returncode, 7 if fail else 0, result.stderr)
                     calls = [json.loads(line) for line in log.read_text().splitlines()]
                     expected = ['create'] + (['cp'] if extra else []) + ([] if fail else ['start']) + ['rm']
                     self.assertEqual([c[0] for c in calls], expected)
                     if extra:
-                        self.assertEqual(calls[1], ['cp', str(package), 'test-container:/tmp/expected-kea.deb'])
+                        self.assertEqual(calls[1], ['cp', str(package.resolve()), 'test-container:/tmp/expected-kea.deb'])
                     self.assertEqual(calls[0][-2:], ['test-image', '-eu'])
 
     def test_daemon_platform_selects_native_compiler_and_local_service(self):

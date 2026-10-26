@@ -833,7 +833,11 @@ disabled, so an SSH Docker context does not need shared client paths. For Tilt,
 use the exact resolved `build-container-localdev` image and deployed DHCP image
 from that build. CI extracts the package from its selected build image and runs
 this comparison when supplied; when the checkout contains the Kea package
-producer, a missing package fails CI. This packaging check does not replace the real instance lifecycle.
+producer (`dev/docker/build-kea.sh`), a missing package fails CI. A compiler
+image from a lagging registry can therefore fail even if it starts normally:
+rebuild or publish the matching compiler image before retrying. This prevents
+a source checkout that requires the fix from silently testing stock libraries.
+This packaging check does not replace the real instance lifecycle.
 
 ### IPv6 boot profile
 
