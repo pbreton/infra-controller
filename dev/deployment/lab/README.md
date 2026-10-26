@@ -319,8 +319,9 @@ admin scout-stream ping MACHINE_ID
 Use the ID from the target whose metadata name is `native-target-one`.
 A successful ping proves a live real-Scout response through Core. It does not
 prove OS installation, instance assignment, release, or tenant IPv6 connectivity.
-Continue with the [instance lifecycle checks](#allocate-and-recycle-an-instance);
-tenant IPv6 remains a separate milestone in
+Continue with the [instance lifecycle checks](#allocate-and-recycle-an-instance)
+and [explicit-address IPv6 routing checks](#two-instance-ipv6-routing).
+DHCPv6, SLAAC, IPv6-only guests and Internet IPv6 remain separate stages of
 [issue 8124](https://github.com/dsx-ai-factory/infra-controller/issues/8124).
 
 ### Stop, restart and discard the BMC lab

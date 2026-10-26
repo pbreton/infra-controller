@@ -86,9 +86,10 @@ or a prefix overlapping another interface's route before claiming fresh storage.
 IPv6 addresses are normalized before comparison with retained inventory.
 Adding, removing or changing the IPv6 prefix of an existing target is rejected;
 use its original configuration or explicitly release and destroy it before
-creating a new target. Before reusing a release name with new storage, verify
-its owned bridge and tagged IPv4/IPv6 rules were removed. After an interrupted
-shutdown, restore the original values and retained storage to complete cleanup.
+creating a new target. Before reusing a release identity (namespace and name) with new storage,
+[verify its network cleanup](#verify-target-network-cleanup). After an interrupted
+shutdown, reinstall with the original values and retained storage, then stop
+gracefully and verify cleanup as described there.
 If that storage has already been lost, recreate the disposable cluster; deleting
 only the PVC does not clean node networking and is not a supported reset.
 
@@ -212,6 +213,37 @@ The preflight is a snapshot, so another consumer can exhaust the pool later;
 QEMU then fails allocation without falling back to small pages. Inspect the
 BMC/libvirt logs for that power-operation failure. A ready target pod does not
 promise that a later guest power-on will succeed.
+
+## Verify target network cleanup
+
+Release the target's instance through Core and wait for Ready with live Scout
+before removing its runtime. Capture its nonsecret inventory while the pod is
+available, then uninstall gracefully and check the node. This example removes
+`target-one` from `bmc-lab`, retaining its PVC:
+
+```bash
+set -euo pipefail
+inventory=$(kubectl -n bmc-lab exec deployment/target-one -- cat /data/inventory.json)
+node=$(printf '%s' "$inventory" | jq -er .nodeName)
+bridge=$(printf '%s' "$inventory" | jq -er .bridge)
+owner="nico-target:$(printf '%s' "$inventory" | jq -er .uuid)"
+helm uninstall target-one --namespace bmc-lab --wait --timeout 5m
+kubectl -n bmc-lab wait --for=delete pod \
+  -l app.kubernetes.io/name=nico-bmc-target,app.kubernetes.io/instance=target-one --timeout=5m
+docker exec "$node" ip -json link show | \
+  jq -e --arg name "$bridge" 'all(.[]; .ifname != $name)'
+docker exec "$node" sh -ec 'iptables-save; ip6tables-save' | \
+  awk -v tag="$owner" 'index($0, tag) { found=1 } END { exit found }'
+```
+
+The link check prints `true`; the rule check is silent. Either exits nonzero
+if owned networking remains. Do not discard the PVC or reuse the identity after
+a failed check. The runtime intentionally retains a bridge with attached TAPs
+when guest save fails. Restore the original runtime and storage to recover,
+then stop gracefully and repeat the checks. If storage was lost or recovery is
+not possible, release any remaining instances and recreate the disposable
+cluster to remove its node network state. Never delete a foreign bridge or flush
+shared firewall tables to reset one target.
 
 ## Connect existing provisioning services
 
