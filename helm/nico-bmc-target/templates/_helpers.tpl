@@ -40,7 +40,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $_ := set $limits "hugepages-2Mi" $guest -}}
 {{- $_ := set $resources "limits" $limits -}}
 {{- end -}}
-{{- if not (hasKey $requests "memory") -}}
+{{- if and (not (hasKey $requests "memory")) (not (hasKey $limits "memory")) -}}
 {{- $_ := set $requests "memory" (printf "%dMi" $memoryMiB) -}}
 {{- end -}}
 {{- $_ := set $resources "requests" $requests -}}

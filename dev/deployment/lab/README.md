@@ -56,9 +56,9 @@ write as root on the Linux runtime:
 
 ```bash
 pool=/sys/kernel/mm/hugepages/hugepages-2048kB
-test "$(cat "$pool/nr_hugepages")" = 0
-printf '4096\n' | sudo tee "$pool/nr_hugepages"
-test "$(cat "$pool/nr_hugepages")" = 4096
+test "$(cat "$pool/nr_hugepages")" = 0 &&
+  printf '4096\n' | sudo tee "$pool/nr_hugepages" &&
+  test "$(cat "$pool/nr_hugepages")" = 4096
 ```
 
 The last check is required: the kernel can allocate fewer pages than requested.
@@ -95,10 +95,10 @@ can be released as follows. Stop if any other workload has claimed the pool:
 
 ```bash
 pool=/sys/kernel/mm/hugepages/hugepages-2048kB
-test "$(cat "$pool/free_hugepages")" = "$(cat "$pool/nr_hugepages")"
-test "$(cat "$pool/resv_hugepages")" = 0
-printf '0\n' | sudo tee "$pool/nr_hugepages"
-test "$(cat "$pool/nr_hugepages")" = 0
+test "$(cat "$pool/free_hugepages")" = "$(cat "$pool/nr_hugepages")" &&
+  test "$(cat "$pool/resv_hugepages")" = 0 &&
+  printf '0\n' | sudo tee "$pool/nr_hugepages" &&
+  test "$(cat "$pool/nr_hugepages")" = 0
 ```
 
 Target or Helm teardown never shrinks the shared host pool. For kernel allocation

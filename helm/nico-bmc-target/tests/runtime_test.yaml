@@ -237,3 +237,14 @@ tests:
       - notMatchRegex:
           path: data["config.json"]
           pattern: hugepages
+  - it: leaves a limit-only memory request to Kubernetes defaulting
+    template: deployment.yaml
+    set:
+      target.memoryMiB: 8192
+      resources.limits.memory: 8Gi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources
+          value:
+            requests: {cpu: "2"}
+            limits: {memory: 8Gi}
