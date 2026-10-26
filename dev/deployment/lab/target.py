@@ -40,14 +40,21 @@ def virsh(*args, timeout=30):
 
 def configuration(value):
     required = {'clusterUID', 'owner', 'nodeName', 'bmcAddress', 'architecture', 'instanceIndex', 'memoryMiB', 'cpus', 'diskGiB', 'bridgeAddress', 'bmcPort'}
-    if set(value) != required:
-        raise ValueError('target configuration must contain exactly: ' + ', '.join(sorted(required)))
+    if not required <= set(value) or set(value) - required - {'hugepages'}:
+        raise ValueError('target configuration requires: ' + ', '.join(sorted(required)) + '; optional: hugepages')
+    value = dict(value)
+    if type(value.get('hugepages', False)) is not bool:
+        raise ValueError('hugepages must be a boolean')
+    if not value.get('hugepages'):
+        value.pop('hugepages', None)
     if value['architecture'] not in ('amd64', 'arm64'):
         raise ValueError('architecture must be amd64 or arm64')
     for name, lower, upper in [('instanceIndex', 1, 255), ('memoryMiB', 1024, 65536),
                                ('cpus', 1, 32), ('diskGiB', 8, 1024), ('bmcPort', 1024, 65535)]:
         if type(value[name]) is not int or not lower <= value[name] <= upper:
             raise ValueError(f'{name} must be an integer from {lower} to {upper}')
+    if value.get('hugepages') and value['memoryMiB'] % 2:
+        raise ValueError('hugepages requires memoryMiB to be a multiple of 2')
     for key in ('clusterUID', 'owner', 'nodeName'):
         if not isinstance(value[key], str) or not value[key] or len(value[key]) > 253:
             raise ValueError(f'{key} must be a nonempty identity of at most 253 characters')
@@ -99,6 +106,11 @@ def domain_xml(config, root=ROOT):
     node(domain, 'uuid', config['uuid'])
     node(domain, 'memory', config['memoryMiB'], unit='MiB')
     node(domain, 'vcpu', config['cpus'])
+    if config.get('hugepages'):
+        backing = node(domain, 'memoryBacking')
+        node(node(backing, 'hugepages'), 'page', size='2048', unit='KiB')
+        node(backing, 'source', type='memfd')
+        node(backing, 'allocation', mode='immediate')
     operating_system = node(domain, 'os')
     node(operating_system, 'type', 'hvm', arch=architecture, machine='virt' if arm else 'q35')
     node(operating_system, 'loader', firmware, readonly='yes', type='pflash')
@@ -131,6 +143,33 @@ def domain_xml(config, root=ROOT):
     node(console, 'log', file=str(root / 'logs/console.log'), append='on')
     node(console, 'target', type='serial', port='0')
     return ET.tostring(domain, encoding='unicode')
+
+
+def check_memory_backing(config, xml):
+    try:
+        domain = ET.fromstring(xml)
+    except ET.ParseError as error:
+        raise ValueError('retained domain XML is invalid; restore its original configuration') from error
+    expected = ET.fromstring(domain_xml(config))
+    memory = domain.find('memory')
+    units = {'KiB': 1, 'MiB': 1024}
+    valid = (domain.findtext('uuid') == config['uuid'] and memory is not None
+             and memory.get('unit', 'KiB') in units
+             and (memory.text or '').isdigit()
+             and int(memory.text) * units[memory.get('unit', 'KiB')] == config['memoryMiB'] * 1024)
+    actual_backing = domain.find('memoryBacking')
+    expected_backing = expected.find('memoryBacking')
+    if expected_backing is None:
+        valid = valid and actual_backing is None
+    else:
+        valid = valid and actual_backing is not None
+        for path in ('hugepages/page', 'source', 'allocation'):
+            actual = domain.find('memoryBacking/' + path)
+            wanted = expected_backing.find(path)
+            valid = valid and actual is not None and actual.attrib == wanted.attrib
+        valid = valid and len(domain.findall('memoryBacking/hugepages/page')) == 1
+    if not valid:
+        raise ValueError('retained domain memory backing or identity differs; restore its original configuration')
 
 
 def prepare_storage(config):
@@ -252,6 +291,9 @@ def serve(config, networking=None):
             virsh('define', str(xml))
         if virsh('domuuid', DOMAIN) != config['uuid']:
             raise ValueError('retained libvirt domain identity differs')
+        check_memory_backing(config, virsh('dumpxml', DOMAIN, '--inactive'))
+        if (ROOT / 'libvirt/qemu/save/target.save').is_file():
+            check_memory_backing(config, virsh('managedsave-dumpxml', DOMAIN))
         domain_ready = True
         (ROOT / 'initialized').touch()
         # A new target stays off. Only Redfish controls power-on or saved-state restoration.
@@ -319,6 +361,11 @@ def main():
         raise ValueError('target must run on its configured Kubernetes node')
     networking = Network(config, run, args.dhcp_server, args.pod_cidr, args.uplink)
     preflight.check_kvm(config['architecture'])
+    if config.get('hugepages'):
+        available = preflight.hugepage_capacity()
+        if available < config['memoryMiB']:
+            raise ValueError(f'insufficient unreserved 2 MiB huge pages: need {config["memoryMiB"]} MiB, '
+                             f'available {available} MiB; reserve the pool on the Linux host before starting targets')
     # Reject fixable host preconditions before binding fresh storage to these values.
     check_network(config)
     check_bmc_port(config)

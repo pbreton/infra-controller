@@ -18,7 +18,7 @@ machine-a-tron development remains independent of this chart.
 Run the [host preflight](../../dev/deployment/lab/README.md) before allocating
 resources. The default guest has 2 vCPUs, 4 GiB RAM and a sparse 24 GiB disk. Budget
 additional memory and disk for libvirt, images, saved guest memory and kind.
-The chart requests 2 CPUs and 5 GiB memory for its pod; adjust `resources` when
+The chart requests 2 CPUs and guest RAM plus 1 GiB ordinary memory by default; adjust `resources` when
 changing guest size. Kubernetes requests do not guarantee free disk capacity.
 
 Run from the repository root with Docker, kind, kubectl, Helm and Python 3.9 or
@@ -109,7 +109,8 @@ The service is for isolated development only.
 | `image.repository`, `image.tag` | `nico-bmc-target`, `latest` | Locally built image. Tilt supplies its built repository and tag. |
 | `image.pullPolicy` | `IfNotPresent` | Kubernetes pull policy; no registry upload is required. |
 | `target.instanceIndex` | `1` | Integer 1–255, unique within the site; determines host/BMC MAC and serial. |
-| `target.memoryMiB` | `4096` | Integer 1024–65536; guest RAM in MiB. |
+| `target.memoryMiB` | `4096` | Integer 1024–65536; guest RAM in MiB. Must be even with huge pages. |
+| `target.hugepages` | `false` | Explicit 2 MiB HugeTLB backing with immediate allocation; requires a reserved host pool. Immutable with retained target data. |
 | `target.cpus` | `2` | Integer 1–32; guest vCPUs. |
 | `target.diskGiB` | `24` | Integer 8–1024; initial sparse guest disk size in GiB. |
 | `network.bridgeAddress` | `10.84.40.1/24` | Usable IPv4 gateway with prefix /30 or shorter, without overlap with other node routes. |
@@ -119,7 +120,7 @@ The service is for isolated development only.
 | `network.provisioning.uplink` | `eth0` | Existing up node interface, separate from the guest bridge; 1–15 letters, digits, underscores, periods, colons or hyphens. |
 | `service.clusterIP` | Empty, required | Unused IPv4 address in the cluster's Service CIDR. |
 | `service.targetPort` | `2443` | Integer 1024–65535; must be unused on the selected node. Service port stays 443. |
-| `resources` | Requests: 2 CPUs, 5 GiB | Kubernetes container resources, independent of guest sizing. No limits by default. |
+| `resources` | Requests: 2 CPUs; ordinary RAM derived from guest sizing | Default ordinary RAM is guest RAM + 1024 MiB, or 1024 MiB with huge pages. Explicit ordinary requests/limits override defaults. Huge-page requests and limits are derived from target sizing; manual `hugepages-*` resource entries are rejected. |
 
 Cluster UID, release namespace/name, node, architecture, guest identity/sizing,
 bridge and BMC address/port are immutable for a retained target. A mismatch fails
@@ -137,6 +138,29 @@ throughput to save within that deadline. The replacement leaves the guest off; R
 saved state. Autostart is rejected. Forced termination can lose guest memory and
 unflushed writes; retained disks are not a backup. A missing initialized disk,
 firmware file, domain or BMC state fails startup and requires restoring the data.
+
+## Huge-page lifecycle
+
+Before enabling `target.hugepages`, follow the
+[host pool setup and preflight](../../dev/deployment/lab/README.md#explicit-huge-page-backing).
+No guest-address family or DPU setting is involved. The same values work on native
+ARM64 and AMD64. Kubernetes schedules the separate `hugepages-2Mi` resource;
+ordinary memory requests cover the remaining process allocations.
+
+Omitted or false `target.hugepages` preserves the older inventory/configuration
+shape. Enabling it changes the retained configuration and must use fresh target
+storage. Do not toggle it on a retained disk or managed-save image. The runtime
+checks the inactive libvirt domain and any managed-save XML against the retained
+identity, guest RAM and backing policy before starting the BMC writer.
+
+Insufficient unreserved pool capacity fails startup before fresh storage is
+claimed. For a retained target, the disks, inventory and saved RAM remain intact:
+restore the original backing configuration and sufficient pool capacity, then
+restart the pod. The target stays off until BMC On restores its saved state.
+The preflight is a snapshot, so another consumer can exhaust the pool later;
+QEMU then fails allocation without falling back to small pages. Inspect the
+BMC/libvirt logs for that power-operation failure. A ready target pod does not
+promise that a later guest power-on will succeed.
 
 ## Connect existing provisioning services
 

@@ -10,7 +10,8 @@ macOS client reports an unsupported platform.
 
 Python 3.9 or newer and a Linux AMD64 or ARM64 host are required. Run as the identity that
 will access KVM. The tool does not change device permissions or invoke `sudo`.
-All budget flags below are required, positive integers with no defaults:
+The ordinary memory, CPU and disk budget flags below are required positive
+integers with no defaults:
 
 ```bash
 python3 dev/deployment/lab/preflight.py host \
@@ -35,6 +36,73 @@ for container memory/CPU quotas, filesystem quotas, future concurrent allocation
 or thin-provisioned backing storage. Run `host` on the Linux host; use `kvm`
 inside a container or pod and size its resource limits separately. A disk-space
 pass does not establish that the eventual runtime can write to that path.
+
+## Explicit huge-page backing
+
+Set `target.hugepages: true` in the native BMC target values to back guest RAM
+with immediately allocated 2 MiB HugeTLB pages. This is opt-in on both native
+architectures. It avoids the opportunistic small-page fallback that can make
+nested ARM64 KVM mapping and reset operations expensive. It does not change the
+host's transparent-huge-page or compaction policy.
+
+Reserve the pool on the Linux runtime **before creating the kind cluster** so
+kubelet discovers the capacity. Reserve early in the lab's lifetime: fragmented
+memory can prevent a full reservation even when ordinary available RAM is large.
+The pool is shared across the host, including other clusters. Coordinate its
+budget with their owners; do not overwrite an existing reservation.
+
+For a previously empty pool, this reserves 8 GiB for two 4 GiB guests. Run the
+write as root on the Linux runtime:
+
+```bash
+pool=/sys/kernel/mm/hugepages/hugepages-2048kB
+test "$(cat "$pool/nr_hugepages")" = 0
+printf '4096\n' | sudo tee "$pool/nr_hugepages"
+test "$(cat "$pool/nr_hugepages")" = 4096
+```
+
+The last check is required: the kernel can allocate fewer pages than requested.
+An incomplete reservation remains visible in the pool and requires an explicit
+operator decision to retry or release it; target startup does not compact memory
+or silently use ordinary pages. This runtime reservation does not survive a host
+reboot. An existing kind node may have stale capacity; use a fresh lab cluster
+rather than assuming a late reservation is schedulable.
+
+Check unreserved huge-page capacity separately from ordinary RAM:
+
+```bash
+python3 dev/deployment/lab/preflight.py host \
+  --storage-path /var/lib/docker --memory-mib 6144 --hugepages-mib 8192 \
+  --cpus 4 --disk-gib 60
+```
+
+`--hugepages-mib` is optional, a positive integer with no default. When supplied,
+`requested.hugepages_mib` and `available.hugepages_mib` are included in the JSON
+capacity report. Availability is twice the nonnegative difference between the
+2 MiB pool's free and reserved page counts. Ordinary `--memory-mib` covers only
+non-HugeTLB allocations: QEMU/BMC overhead and any additional stack services.
+The check does not reserve pages or validate cgroup limits. Pool reads fail
+closed; when omitted, the existing host-budget contract is unchanged.
+
+The chart derives equal `hugepages-2Mi` requests and limits from guest RAM and
+requests 1 GiB of ordinary memory by default for process overhead. Explicit
+ordinary `resources` settings still apply; size them for the actual workload.
+See the [chart contract](../../../helm/nico-bmc-target/README.md) for retained
+state and insufficient-pool recovery.
+
+After deleting this lab's targets and cluster, a pool created from zero above
+can be released as follows. Stop if any other workload has claimed the pool:
+
+```bash
+pool=/sys/kernel/mm/hugepages/hugepages-2048kB
+test "$(cat "$pool/free_hugepages")" = "$(cat "$pool/nr_hugepages")"
+test "$(cat "$pool/resv_hugepages")" = 0
+printf '0\n' | sudo tee "$pool/nr_hugepages"
+test "$(cat "$pool/nr_hugepages")" = 0
+```
+
+Target or Helm teardown never shrinks the shared host pool. For kernel allocation
+details, see [Linux HugeTLB administration](https://docs.kernel.org/admin-guide/mm/hugetlbpage.html).
 
 ## KVM execution boundary
 

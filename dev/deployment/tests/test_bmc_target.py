@@ -26,6 +26,77 @@ CONFIG = {'nodeName': 'node', 'bmcAddress': '10.96.40.10', 'clusterUID': 'cluste
 
 
 class TargetTest(unittest.TestCase):
+    def test_hugepage_config_preserves_legacy_identity_and_rejects_backing_changes(self):
+        legacy = TARGET.configuration(CONFIG)
+        self.assertEqual(TARGET.configuration({**CONFIG, 'hugepages': False}), legacy)
+        huge = TARGET.configuration({**CONFIG, 'hugepages': True})
+        self.assertEqual(huge['uuid'], legacy['uuid'])
+        for invalid in [{'hugepages': 'true'}, {'hugepages': True, 'memoryMiB': 4097}]:
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                TARGET.configuration({**CONFIG, **invalid})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            TARGET.claim(root, legacy)
+            with self.assertRaisesRegex(ValueError, 'retained target'):
+                TARGET.claim(root, huge)
+
+    def test_hugepage_xml_requires_explicit_immediate_backing_and_matching_identity(self):
+        config = TARGET.configuration({**CONFIG, 'hugepages': True})
+        xml = TARGET.domain_xml(config)
+        domain = ET.fromstring(xml)
+        self.assertEqual(domain.find('memoryBacking/hugepages/page').attrib, {'size': '2048', 'unit': 'KiB'})
+        self.assertEqual(domain.find('memoryBacking/source').get('type'), 'memfd')
+        self.assertEqual(domain.find('memoryBacking/allocation').get('mode'), 'immediate')
+        TARGET.check_memory_backing(config, xml)
+        for changed in [xml.replace('immediate', 'ondemand'), xml.replace('2048', '1048576'),
+                        xml.replace(config['uuid'], 'wrong'), TARGET.domain_xml(TARGET.configuration(CONFIG))]:
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'retained domain'):
+                TARGET.check_memory_backing(config, changed)
+
+    def test_missing_hugepage_pool_does_not_claim_fresh_storage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_file = root / 'config.json'
+            config_file.write_text(json.dumps({**CONFIG, 'hugepages': True}))
+            data = root / 'data'
+            data.mkdir()
+            with patch.object(TARGET, 'ROOT', data), \
+                    patch.object(sys, 'argv', ['target.py', '--config', str(config_file)]), \
+                    patch.dict(TARGET.os.environ, NODE_NAME=CONFIG['nodeName']), \
+                    patch.object(TARGET.platform, 'machine', return_value='aarch64'), \
+                    patch.object(TARGET.preflight, 'check_kvm'), \
+                    patch.object(TARGET.preflight, 'hugepage_capacity', return_value=2048), \
+                    self.assertRaisesRegex(ValueError, '2 MiB huge pages'):
+                TARGET.main()
+            self.assertEqual(list(data.iterdir()), [])
+
+    def test_saved_domain_mismatch_prevents_bmc_start_and_preserves_saved_state(self):
+        config = TARGET.configuration({**CONFIG, 'hugepages': True})
+        children = []
+        def spawn(command):
+            child = Mock()
+            child.poll.return_value = None
+            children.append(command[0])
+            return child
+        def virsh(*args, **kwargs):
+            return {'list': 'target', 'domuuid': config['uuid'], 'dumpxml': TARGET.domain_xml(config),
+                    'managedsave-dumpxml': TARGET.domain_xml(TARGET.configuration(CONFIG))}[args[0]]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            saved = root / 'libvirt/qemu/save/target.save'
+            saved.parent.mkdir(parents=True)
+            saved.write_bytes(b'retained state')
+            with patch.object(TARGET, 'ROOT', root), patch.object(TARGET, 'READY', root / 'ready'), \
+                    patch.object(TARGET, 'prepare_storage'), patch.object(TARGET, 'bridge'), \
+                    patch.object(TARGET, 'clear_bridge'), patch.object(TARGET.Path, 'mkdir'), \
+                    patch.object(TARGET, 'virsh', side_effect=virsh), \
+                    patch.object(TARGET.subprocess, 'Popen', side_effect=spawn), \
+                    self.assertRaisesRegex(ValueError, 'retained domain'):
+                TARGET.serve(config)
+            self.assertEqual(children, ['virtlogd', 'libvirtd'])
+            self.assertEqual(saved.read_bytes(), b'retained state')
+            self.assertFalse((root / 'ready').exists())
+
     def test_native_domain_preserves_identity_and_boot_contract(self):
         for arch, machine, firmware, index, mac, serial in [
                 ('arm64', 'virt', 'AAVMF', 1, '02:00:00:01:00:02', '020000010001'),
@@ -201,7 +272,7 @@ class TargetTest(unittest.TestCase):
 
         def virsh(*args, **kwargs):
             events.append(('virsh', args[0]))
-            return {'list': 'target', 'domuuid': config['uuid'], 'domstate': 'running'}.get(args[0], '')
+            return {'list': 'target', 'domuuid': config['uuid'], 'domstate': 'running', 'dumpxml': TARGET.domain_xml(config)}.get(args[0], '')
 
         with tempfile.TemporaryDirectory() as directory, patch.object(TARGET, 'ROOT', Path(directory)), \
                 patch.object(TARGET, 'READY', Path(directory) / 'ready'), \

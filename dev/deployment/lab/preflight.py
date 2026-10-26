@@ -54,6 +54,18 @@ def host_capacity(storage_path, meminfo=Path('/proc/meminfo')):
     }
 
 
+def hugepage_capacity(root=Path('/sys/kernel/mm/hugepages/hugepages-2048kB')):
+    """Unreserved 2 MiB pages, expressed in MiB; this does not reserve them."""
+    try:
+        free = int((root / 'free_hugepages').read_text())
+        reserved = int((root / 'resv_hugepages').read_text())
+    except (OSError, ValueError) as error:
+        raise ValueError('cannot read the 2 MiB huge-page pool; configure it on the Linux host') from error
+    if free < 0 or reserved < 0:
+        raise ValueError('invalid 2 MiB huge-page pool counters')
+    return max(0, free - reserved) * 2
+
+
 def capacity_errors(available, requested):
     return [f'insufficient {resource}: requested {amount}, available {available[resource]}'
             for resource, amount in requested.items() if available[resource] < amount]
@@ -82,6 +94,8 @@ def main(argv=None):
                       help='required CPUs in the invoking process affinity mask; not idle CPUs')
     host.add_argument('--disk-gib', required=True, type=positive_integer,
                       help='additional available disk space required, in GiB')
+    host.add_argument('--hugepages-mib', type=positive_integer,
+                      help='additional unreserved 2 MiB HugeTLB capacity; ordinary RAM is budgeted separately')
     args = parser.parse_args(argv)
     report = {'scope': args.scope, 'architecture': None, 'ready': False, 'errors': []}
     try:
@@ -96,8 +110,11 @@ def main(argv=None):
                 # Python before 3.13 reports a symlink loop as RuntimeError.
                 raise ValueError(str(error)) from error
             available = host_capacity(storage_path)
-            report.update(storage_path=str(storage_path), available=available,
-                          requested={key: getattr(args, key) for key in ('memory_mib', 'cpus', 'disk_gib')})
+            requested = {key: getattr(args, key) for key in ('memory_mib', 'cpus', 'disk_gib')}
+            if args.hugepages_mib is not None:
+                available['hugepages_mib'] = hugepage_capacity()
+                requested['hugepages_mib'] = args.hugepages_mib
+            report.update(storage_path=str(storage_path), available=available, requested=requested)
             report['errors'].extend(capacity_errors(report['available'], report['requested']))
     except (OSError, ValueError) as error:
         report['errors'].append(str(error))

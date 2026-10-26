@@ -76,7 +76,7 @@ spec:
               command: ["sh", "-ec", "test -f /run/nico-target-ready && virsh -c qemu:///system domuuid target >/dev/null"]
             periodSeconds: 5
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- include "nico-bmc-target.resources" . | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/nico-target

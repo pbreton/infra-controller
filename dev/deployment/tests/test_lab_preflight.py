@@ -17,6 +17,34 @@ SPEC.loader.exec_module(PREFLIGHT)
 
 
 class PreflightTest(unittest.TestCase):
+    def test_hugepage_capacity_excludes_reserved_pages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for free, reserved, expected in [(4096, 2048, 4096), (2, 3, 0)]:
+                with self.subTest(free=free, reserved=reserved):
+                    (root / 'free_hugepages').write_text(str(free))
+                    (root / 'resv_hugepages').write_text(str(reserved))
+                    self.assertEqual(PREFLIGHT.hugepage_capacity(root), expected)
+            (root / 'free_hugepages').write_text('invalid')
+            with self.assertRaises(ValueError):
+                PREFLIGHT.hugepage_capacity(root)
+
+    def test_host_hugepage_budget_is_separate_from_ordinary_ram(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(PREFLIGHT.platform, 'system', return_value='Linux'), \
+                patch.object(PREFLIGHT.platform, 'machine', return_value='aarch64'), \
+                patch.object(PREFLIGHT, 'check_kvm', return_value=12), \
+                patch.object(PREFLIGHT, 'host_capacity', return_value={'memory_mib': 2048, 'cpus': 4, 'disk_gib': 48}), \
+                patch.object(PREFLIGHT, 'hugepage_capacity', return_value=4096), \
+                patch.object(PREFLIGHT.sys, 'stdout') as output:
+            status = PREFLIGHT.main(['host', '--storage-path', directory, '--memory-mib', '2048',
+                                     '--cpus', '4', '--disk-gib', '48', '--hugepages-mib', '8192'])
+            document = json.loads(''.join(call.args[0] for call in output.write.call_args_list))
+            self.assertEqual(status, 1)
+            self.assertEqual(document['available']['hugepages_mib'], 4096)
+            self.assertEqual(document['requested']['hugepages_mib'], 8192)
+            self.assertEqual(document['errors'], ['insufficient hugepages_mib: requested 8192, available 4096'])
+
     def test_kvm_checks_api_and_releases_vm_and_device(self):
         for architecture, ipa, vm_type in [('amd64', 0, 0), ('arm64', 36, 36), ('arm64', 48, 40)]:
             with self.subTest(architecture=architecture), patch.object(PREFLIGHT.os, 'open', return_value=10), \

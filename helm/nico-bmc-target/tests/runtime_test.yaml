@@ -182,3 +182,58 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].args
           value: [--config, /etc/nico-target/config.json, --dhcp-server, 10.96.40.20, --pod-cidr, 10.244.0.0/24, --uplink, eth0]
+  - it: accounts for huge guest RAM separately from ordinary process memory
+    template: deployment.yaml
+    set:
+      target.hugepages: true
+      target.memoryMiB: 8192
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources
+          value:
+            requests: {cpu: "2", memory: 1024Mi, hugepages-2Mi: 8192Mi}
+            limits: {hugepages-2Mi: 8192Mi}
+  - it: derives the anonymous memory default from guest sizing
+    template: deployment.yaml
+    set:
+      target.memoryMiB: 8192
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources
+          value:
+            requests: {cpu: "2", memory: 9216Mi}
+  - it: preserves explicitly configured process resources
+    template: deployment.yaml
+    set:
+      target.hugepages: true
+      resources.requests.memory: 2Gi
+      resources.limits.memory: 3Gi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources
+          value:
+            requests: {cpu: "2", memory: 2Gi, hugepages-2Mi: 4096Mi}
+            limits: {memory: 3Gi, hugepages-2Mi: 4096Mi}
+  - it: prevents independent huge-page resource overrides
+    template: deployment.yaml
+    set:
+      resources.requests.hugepages-2Mi: 2Gi
+    asserts:
+      - failedTemplate:
+          errorMessage: huge-page resources are derived from target.hugepages and target.memoryMiB
+  - it: serializes the backing policy only when enabled
+    template: configmap.yaml
+    set:
+      target.hugepages: true
+    asserts:
+      - matchRegex:
+          path: data["config.json"]
+          pattern: '"hugepages":true'
+  - it: preserves legacy config shape when the backing policy is omitted
+    template: configmap.yaml
+    set:
+      target.hugepages: null
+    asserts:
+      - notMatchRegex:
+          path: data["config.json"]
+          pattern: hugepages

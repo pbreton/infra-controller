@@ -47,8 +47,32 @@
           "type": "integer",
           "minimum": 8,
           "maximum": 1024
+        },
+        "hugepages": {
+          "type": "boolean"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "hugepages": {
+                "const": true
+              }
+            },
+            "required": [
+              "hugepages"
+            ]
+          },
+          "then": {
+            "properties": {
+              "memoryMiB": {
+                "multipleOf": 2
+              }
+            }
+          }
+        }
+      ]
     },
     "service": {
       "type": "object",
