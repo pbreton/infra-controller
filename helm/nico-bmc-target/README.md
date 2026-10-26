@@ -342,6 +342,10 @@ boot and retention checks use 4 GiB guests. Larger guests need enough storage
 throughput to save within that deadline. The replacement leaves the guest off; Redfish `On` restores
 saved state. Autostart is rejected.
 
+Forced termination can lose guest memory and unflushed writes; retained disks
+are not a backup. A missing initialized disk,
+firmware file, domain or BMC state fails startup and requires restoring the data.
+
 ### Resume a retained guest
 
 For a Core-managed target, use its recorded machine ID and the matching lab context to resume the saved guest. Core uses the
@@ -371,10 +375,6 @@ bash dev/deployment/core-admin.sh scout-stream ping MACHINE_ID
 The ping applies to Scout, not an installed tenant OS. A healthy runtime pod alone
 does not establish guest readiness. A standalone target has no Core machine ID
 and uses Redfish `On` with its configured BMC credential.
-
-Forced termination can lose guest memory and unflushed writes; retained disks
-are not a backup. A missing initialized disk,
-firmware file, domain or BMC state fails startup and requires restoring the data.
 
 ## Huge-page lifecycle
 
