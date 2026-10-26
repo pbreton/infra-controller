@@ -902,7 +902,7 @@ alone does not prove that those transitions work.
 The DHCPv6 Service address is allocated by Kubernetes. After recreating that
 Service (including removal and redeployment of the DHCP chart), read its address
 again and update each target's `network.dhcpv6.server` through Helm. This triggers
-the retained-state restart. Follow the [Core-managed resume procedure](../../../helm/nico-bmc-target/README.md#configuration-and-retention)
+the retained-state restart. Follow the [Core-managed resume procedure](../../../helm/nico-bmc-target/README.md#resume-a-retained-guest)
 to restore the saved guests using Core's rotated BMC credentials.
 Target readiness checks the runtime, not DHCP lease availability. Run the guest
 address and connectivity checks after this recovery.

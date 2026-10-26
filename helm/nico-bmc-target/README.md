@@ -340,8 +340,11 @@ then stops libvirt. Saving is best-effort and bounded to 150 seconds; a timeout
 or storage failure can lose guest memory even during graceful shutdown. The
 boot and retention checks use 4 GiB guests. Larger guests need enough storage
 throughput to save within that deadline. The replacement leaves the guest off; Redfish `On` restores
-saved state. Autostart is rejected. For a Core-managed target, use its recorded
-machine ID and the matching lab context to resume the saved guest. Core uses the
+saved state. Autostart is rejected.
+
+### Resume a retained guest
+
+For a Core-managed target, use its recorded machine ID and the matching lab context to resume the saved guest. Core uses the
 retained, rotated BMC credential:
 
 ```bash
@@ -356,7 +359,9 @@ Run these commands from the repository root. Replace `kind-your-lab` and
 `LOCAL_DEV_NAMESPACE` to the Core namespace if it differs from `nico-system`.
 If the guest was running an installed instance, resume that instance or use the
 [recorded-instance cleanup](../../dev/deployment/lab/README.md#repeat-the-instance-lifecycle)
-before starting a new lifecycle run. A released target must be `Ready` with a
+before starting a new lifecycle run. The cleanup requires that runner's saved
+journal; for a manually allocated instance, use the [instance release command](../../dev/deployment/lab/README.md#allocate-and-recycle-an-instance)
+instead. A released target must be `Ready` with a
 successful live Scout ping before the runner allocates instances:
 
 ```bash
