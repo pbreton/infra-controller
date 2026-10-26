@@ -45,11 +45,11 @@ run_as_user() {
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "devspace.yaml").touch()
-            for missing in ('setup-kind.sh', 'install-tools.py', None):
+            for missing in ('setup-kind.sh', 'install-tools.py', 'docker-host.sh', None):
                 with self.subTest(missing=missing):
                     helper = root / 'dev/deployment'
                     helper.mkdir(parents=True, exist_ok=True)
-                    for name in ('setup-kind.sh', 'install-tools.py'):
+                    for name in ('setup-kind.sh', 'install-tools.py', 'docker-host.sh'):
                         path = helper / name
                         if name == missing:
                             path.unlink(missing_ok=True)
@@ -78,6 +78,7 @@ configure_docker() { :; }
 prepare_user_tool_directories() { :; }
 prepare_checkout() {
   mkdir -p "$REPO_DIR/dev/deployment"
+  printf 'install_docker() { :; }\\n' > "$REPO_DIR/dev/deployment/docker-host.sh"
   printf 'import sys; print("SELECTED_CHECKOUT", sys.argv[1:])\\n' > "$REPO_DIR/dev/deployment/install-tools.py"
 }
 run_as_user() { if [[ "$1" == python3 ]]; then "$@"; fi; }

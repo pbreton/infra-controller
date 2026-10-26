@@ -6,6 +6,43 @@ Ordinary Tilt development with machine-a-tron does not require KVM or this check
 On macOS, run it inside the Linux VM that will host the guests; running it on the
 macOS client reports an unsupported platform.
 
+## Ubuntu host setup
+
+For an existing Ubuntu 22.04 or newer checkout on native ARM64 or AMD64, prepare
+packages and tools before creating the kind cluster:
+
+```bash
+bash dev/deployment/setup-host.sh --user "$USER"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+`--user` defaults to the invoking account (`SUDO_USER` when run as root). It must
+be an existing non-root user with a home directory. Missing values and unknown
+arguments fail; `--help` prints usage without changes. The script invokes sudo
+when needed. Start a new login session afterward for Docker group membership.
+
+Setup installs Git, curl, jq, Python 3, rsync, OpenSSH client and CA certificates
+through apt, and the [pinned native tools](../install-tools.md) in that user's
+`~/.local/bin`. With no Docker/containerd installation, it adds Docker's Ubuntu
+apt repository and installs Docker CE, containerd and Buildx/Compose plugins.
+It enables the services, configures `GODEBUG=tlsmlkem=0` in their systemd drop-ins
+for registry TLS compatibility, and checks daemon access as the developer.
+Packages follow the configured apt repositories; they are not a frozen image.
+
+An existing complete runtime must have containerd and Buildx, a Docker group,
+and a working local daemon at `/var/run/docker.sock`. It is reused without
+service restarts or configuration changes; partial or stopped installations
+fail before package installation and require operator repair. Setup still
+installs the host packages and replaces the selected user tools on repeated
+runs. It does not change shell profiles, create a cluster, or configure KVM,
+huge pages, watcher limits or host networking. Use the capacity and KVM checks
+below before allocating target guests.
+
+For the optional macOS-hosted lab, first create the Ubuntu VM using the
+[standalone VM launcher](../vfkit/README.md#create-a-managed-ubuntu-vm), then run
+this command inside its synced checkout. Ordinary Tilt use can instead use a
+local Docker runtime and the shared tool installer directly.
+
 ## Host budget
 
 Python 3.9 or newer and a Linux AMD64 or ARM64 host are required. Run as the identity that
