@@ -147,7 +147,7 @@ class LabTiltTests(unittest.TestCase):
             ('path', {'targets': '/lab/pair.json'}, {'one': 42, 'two': 'two.json'}, None),
             ('release', {'targets': '/lab/pair.json'}, {'1one': 'one.json', 'two': 'two.json'}, None),
             ('release-suffix', {'targets': '/lab/pair.json'}, {'one-': 'one.json', 'two': 'two.json'}, None),
-            ('release-case', {'targets': '/lab/pair.json'}, {'One': 'one.json', 'two': 'two.json'}, None),
+            ('release-case', {'targets': '/lab/pair.json'}, {'oNe': 'one.json', 'two': 'two.json'}, None),
             ('release-length', {'targets': '/lab/pair.json'}, {'a' * 54: 'one.json', 'two': 'two.json'}, None),
             ('index-default', {'targets': '/lab/pair.json'}, None, ('target', {})),
             ('port-default', {'targets': '/lab/pair.json'}, None, ('service', {'clusterIP': 'fd00::11'})),
