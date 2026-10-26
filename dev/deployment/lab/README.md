@@ -1056,3 +1056,60 @@ for recovery. A short observer smoke run proves capture wiring only: full-window
 evidence requires wrapping the entire lifecycle command. Guest-bridge evidence
 does not establish IPv6-only BMC or control-plane transport, DPU forwarding, or
 Internet reachability; those require their separate checks.
+
+## Owned OS and VPC catalog
+
+After loading and serving the OS bundle, register its image and a separate flat
+VPC through the existing Core admin client:
+
+```bash
+python3 dev/deployment/lab/catalog.py \
+  --context kind-nico-lab --state-dir /tmp/nico-lab-catalog \
+  --artifact-manifest /tmp/nico-os-validation/build-info.json \
+  --pxe-origin http://carbide-pxe.forge:8080
+python3 dev/deployment/lab/catalog.py --state-dir /tmp/nico-lab-catalog --resume
+```
+
+The IPv6 boot profile uses the origin above. For the default boot profile, use
+`http://nico-pxe.nico-system.svc.cluster.local`. The origin must be reachable by
+the guests; this helper does not upload or serve the image or test its download.
+The manifest comes from `build-os-artifact.py`; its SHA256 and native PXE path
+become the catalog entry. The kind cluster must contain one node matching the
+manifest's architecture. Core and its admin-client credentials must already be
+ready; [the Core client wrapper](../core-admin.sh) supplies that connection.
+
+Python 3.9+ and kubectl are required. For a new catalog, `--context` must name a
+kind context; `--artifact-manifest`, `--pxe-origin` and `--state-dir` are required.
+`--namespace` optionally selects the Core namespace, default `nico-system`.
+`--pxe-origin` accepts HTTP or HTTPS with an optional port and trailing slash,
+without any other path, credentials, query or fragment. `--state-dir` must be a
+new directory beneath an existing parent; relative paths use the current working
+directory. It is created privately and locked against concurrent operations.
+`--resume` uses the saved configuration and rejects the four creation options.
+
+The helper creates a generated tenant-organization identifier, one Ready OS
+catalog entry targeting `/dev/vda`, and one flat VPC with matching ownership
+metadata. It prints JSON containing `context`, `cluster`, `owner`, `os_id` and
+`vpc_id`; supply the latter two IDs to the lifecycle runner. No instance, target,
+network segment or REST tenant is created. Flat networking still relies on the
+registered HostInband segments and host routes.
+
+Creation intents are atomically saved and synchronized before their API calls.
+`state.json` retains cluster identity, owner, resource IDs, URL and artifact
+provenance; separate creation logs retain CLI output. A resume verifies ownership,
+Ready image status and relevant configuration before returning existing IDs. A
+changed cluster, ambiguous VPC match, replaced ID or changed image/networking
+fails without overwriting the remote resource.
+
+Core generates VPC IDs and does not treat the name as an idempotency key. After
+an interrupted create, resume adopts only a uniquely matching visible result.
+If none is visible, it stops with an unknown-outcome diagnostic and never repeats
+the create. Inspect the retained log and Core, then resume after the result is
+known. A deliberately removed resource is also not silently recreated. Keep the
+journal; deleting it and rerunning can create duplicates.
+
+The catalog and VPC live for the lifetime of this dedicated disposable cluster.
+The helper provides no remote deletion operation: release all owned instances
+through the lifecycle runner, then explicitly remove the dedicated cluster when
+its evidence has been collected. Retained journals cannot be reused with a
+replacement cluster; create a new catalog there. No database editing is involved.
