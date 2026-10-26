@@ -121,28 +121,13 @@ tilt ci -f dev/deployment/lab/Tiltfile --port 10373 --timeout 60m -- \
   --targets "$LAB_STATE/targets/targets.json" --namespace bmc-lab
 ```
 
-For an optional direct-Helm target comparison after completing the lifecycle
-below, stop or discard the first pair and wait for its pods to disappear before
-reusing the same 8 GiB pool. Concurrent pairs require separately budgeted capacity.
-Create a new lab with the same chosen prefixes and sizing, regenerate its cluster
-identity and live endpoint values, and replace only the final target Tilt command
-with:
-
-```bash
-make images-dev DEV_TARGET=bmc-target DEV_IMAGE=nico-bmc-target:validation
-kind load docker-image nico-bmc-target:validation --name "$LAB_NAME"
-for release in target-one target-two; do
-  helm --kube-context "$LAB_CONTEXT" upgrade --install "$release" helm/nico-bmc-target \
-    --namespace bmc-lab --values "$LAB_STATE/targets/$release.json" \
-    --set image.tag=validation --wait --timeout 5m
-done
-```
-
-This comparison exercises the two target deployment frontends. The preceding
-stack command still uses Tilt. For the independent full-stack Helm run, use
-[the Helm validation procedure](helm-validation.md), which also exercises IPv4
-provisioning and dual-stack installed guests. Each target starts powered off with its development BMC fixture.
-Registering it through Core begins real discovery and Scout admission.
+Each target starts powered off with its development BMC fixture. Registering it
+through Core begins real discovery and Scout admission. Complete the lifecycle
+below for this first lab, then use the [independent Helm procedure](helm-validation.md)
+for the second fresh lab. That run changes both the deployment frontend and the
+network profile to check IPv4 provisioning and dual-stack guests; it is not an
+isolated comparison of the target frontends. Stop the first pair before reusing
+its huge-page capacity, or explicitly budget a separate pool for concurrent pairs.
 
 ## Registration and instance lifecycle
 

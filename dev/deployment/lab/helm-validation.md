@@ -14,6 +14,10 @@ stop it through its lifecycle first or explicitly reserve additional capacity;
 independent kind nodes share the host pool. Do not reclaim pages from an occupied pool or reuse target disks from another
 cluster.
 
+The workflow requires two labs: this dual-stack Helm run and the guarded
+IPv6-only Tilt run. Each completes two instance generations. Additional runs
+that vary only the target frontend are optional.
+
 ## Inputs and fresh cluster
 
 Build or select native API, BMC proxy, DHCP and PXE images through
@@ -149,6 +153,8 @@ owned Kubernetes Secrets and refuses incompatible retained state. The `certs`
 PKI mount is selected by `helm-prereqs/values/local-development.yaml`.
 
 ```bash
+(
+set -euo pipefail
 helm repo add jetstack https://charts.jetstack.io --force-update
 helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update
 helm repo add hashicorp https://helm.releases.hashicorp.com --force-update
@@ -156,7 +162,9 @@ helm repo update jetstack cnpg hashicorp
 helm upgrade --install cert-manager jetstack/cert-manager --version v1.21.1 --namespace cert-manager --create-namespace -f "$LAB_STATE/cert-manager.json" --wait --timeout 5m
 helm upgrade --install cnpg cnpg/cloudnative-pg --version 0.29.0 --namespace cnpg-system --create-namespace -f "$LAB_STATE/cnpg.json" --wait --timeout 5m
 helm upgrade --install nico-vault hashicorp/vault --version 0.34.0 --namespace nico-system --create-namespace -f dev/deployment/tilt/vault-persistent.yaml --wait --timeout 5m
+kubectl -n nico-system wait pvc/data-nico-vault-0 --for=create --timeout=300s
 kubectl -n nico-system wait pvc/data-nico-vault-0 --for=jsonpath='{.status.phase}'=Bound --timeout=300s
+kubectl -n nico-system wait pod/nico-vault-0 --for=create --timeout=300s
 kubectl -n nico-system wait pod/nico-vault-0 --for=condition=Ready --timeout=300s
 python3 dev/deployment/tilt/vault-bootstrap.py --context "$LAB_CONTEXT" --namespace nico-system bootstrap
 helm upgrade --install nico-core-prereqs helm-prereqs --namespace nico-system --wait --timeout 5m -f helm-prereqs/values/local-development.yaml --set vault.tokenSecret.create=false \
@@ -172,12 +180,14 @@ for component in nico-bmc-proxy nico-pxe nico-dhcp; do
 done
 export LOCAL_DEV_KUBE_CONTEXT="$LAB_CONTEXT"
 bash dev/deployment/core-admin.sh -f json machine show
+)
 ```
 
 ## Two targets and dual-stack lifecycle
 
 Continue with [two fresh targets](validation.md#two-fresh-targets), using this
-cluster's UID, node and live DHCPv6 Service. In each generated target values file,
+cluster's UID, node and live DHCPv6 Service, but stop before the target Tilt
+command. In each generated target values file,
 enable IPv4 provisioning with the shared DHCP endpoint and the node's IPv4 pod
 CIDR. Keep the already generated IPv6 relay and bridge settings:
 
@@ -190,9 +200,10 @@ from pathlib import Path
 root = Path(sys.argv[1])
 node = json.loads((root / 'nodes.json').read_text())['items'][0]
 cidr = next(c for c in node['spec']['podCIDRs'] if ':' not in c)
-for name in ('target-one', 'target-two'):
+for offset, name in enumerate(('target-one', 'target-two'), start=12):
     path = root / (name + '.json')
     values = json.loads(path.read_text())
+    values['service']['clusterIP'] = f'10.96.40.{offset}'
     values['network']['provisioning'] = {
         'enabled': True, 'dhcpServer': '10.96.0.20', 'podCIDR': cidr,
     }
@@ -200,12 +211,28 @@ for name in ('target-one', 'target-two'):
 PYTHON
 ```
 
-Make that edit **before** deploying either target. Use the direct-Helm target
-commands in the linked procedure, including building/loading the native target
-image. When registering the pair, select `--network dual-stack` instead of
-`ipv6-only`; the same dedicated IPv6 BMC Service prefix is supported. Using IPv4
-BMC Services instead is also supported, with a matching dedicated IPv4
-`--bmc-prefix`. Never change a registered target's BMC identity in place.
+Make that edit **before** deploying either target. It selects unused IPv4 BMC
+Services `10.96.40.12` and `10.96.40.13`, within kind's Service CIDR; verify they
+are free in the new cluster. Build/load the native target image and deploy both
+releases with their generated values:
+
+```bash
+(
+set -euo pipefail
+make images-dev DEV_TARGET=bmc-target DEV_IMAGE=nico-bmc-target:validation
+kind load docker-image nico-bmc-target:validation --name "$LAB_NAME"
+for release in target-one target-two; do
+  helm --kube-context "$LAB_CONTEXT" upgrade --install "$release" helm/nico-bmc-target \
+    --namespace bmc-lab --values "$LAB_STATE/targets/$release.json" \
+    --set image.tag=validation --wait --timeout 5m
+done
+)
+```
+
+Follow the registration step with `--network dual-stack` and
+`--bmc-prefix 10.96.40.0/24` in place of its IPv6-only profile and IPv6 BMC prefix.
+Both address families are registered for the guests; the BMCs use IPv4. Never
+change a registered target's BMC identity in place.
 
 Create the catalog using this default-profile origin:
 
@@ -213,6 +240,7 @@ Create the catalog using this default-profile origin:
 python3 dev/deployment/lab/catalog.py --context "$LAB_CONTEXT" \
   --state-dir "$LAB_STATE/catalog" --artifact-manifest "$LAB_OS_MANIFEST" \
   --pxe-origin http://nico-pxe.nico-system.svc.cluster.local
+python3 dev/deployment/lab/catalog.py --state-dir "$LAB_STATE/catalog" --resume > "$LAB_STATE/catalog-result.json"
 ```
 
 Select the observed machine IDs and catalog IDs as in the fresh validation
